@@ -383,6 +383,7 @@
         "audio": "Audio",
         "effects": "Effects",
         "scripture": "Scripture",
+        "songbooks": "Song Books",
         "calendar": "Calendar",
         "functions": "Functions",
         "actions": "Actions",
@@ -1427,6 +1428,24 @@
         "ending_times": "times",
         "save_all": "Save and update all",
         "add_slides_from_show": "Include slides from show"
+    },
+    "songbooks": {
+        "no_songs": "No songs found",
+        "verse": "Verse",
+        "chorus": "Chorus",
+        "bridge": "Bridge",
+        "transliteration": "Transliteration",
+        "original": "Original",
+        "author": "Author",
+        "song_number": "Song No.",
+        "scale": "Scale",
+        "language": "Language",
+        "meter": "Meter",
+        "convert_to_show": "Convert to Show",
+        "all_books": "All Song Books",
+        "no_book_selected": "Select a song book",
+        "no_song_selected": "Select a song to view lyrics",
+        "play_song": "Display lyrics"
     },
     "scripture": {
         "collections": "Collections",

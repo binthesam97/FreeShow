@@ -281,6 +281,10 @@ export const scriptureSettings: Writable<any> = writable({
     splitLongVersesSuffix: false
 }) // {default}
 
+// SONGBOOKS
+export const songBooks: Writable<{ [key: string]: { name: string; songs: any[] } }> = writable({})
+export const activeSongBookSong: Writable<{ song: any; showTransliteration: boolean } | null> = writable(null)
+
 // DRAWER
 export const drawerTabsData: Writable<DrawerTabs> = writable({}) // {default}
 export const mediaOptions: Writable<MediaOptions> = writable({ columns: 5, mode: "grid" }) // {default}

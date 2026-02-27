@@ -6,16 +6,19 @@
     import MediaTabs from "./navigation/MediaTabs.svelte"
     import OverlaysTabs from "./navigation/OverlaysTabs.svelte"
     import ScriptureTabs from "./navigation/ScriptureTabs.svelte"
+    import SongBooksTabs from "./navigation/SongBooksTabs.svelte"
     import ShowsTabs from "./navigation/ShowsTabs.svelte"
     import TemplatesTabs from "./navigation/TemplatesTabs.svelte"
 
-    export let id: "shows" | "media" | "overlays" | "audio" | "effects" | "scripture" | "calendar" | "functions" | "templates" | "timers"
+    export let id: "shows" | "media" | "overlays" | "audio" | "effects" | "scripture" | "songbooks" | "calendar" | "functions" | "templates" | "timers"
 </script>
 
 <div class="main">
     <div class="categories context #category_{id}">
         {#if id === "scripture"}
             <ScriptureTabs />
+        {:else if id === "songbooks"}
+            <SongBooksTabs />
         {:else if id === "calendar"}
             <CalendarTabs />
         {:else if id === "functions"}

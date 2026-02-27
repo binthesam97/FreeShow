@@ -5,6 +5,7 @@
     import Audio from "./audio/Audio.svelte"
     import Scripture from "./bible/Scripture.svelte"
     import Calendar from "./calendar/Calendar.svelte"
+    import SongBooks from "./songbooks/SongBooks.svelte"
     import Media from "./media/Media.svelte"
     import Actions from "./pages/Actions.svelte"
     import Overlays from "./pages/Overlays.svelte"
@@ -61,6 +62,8 @@
         <Templates {active} {searchValue} />
     {:else if id === "scripture"}
         <Scripture {active} bind:searchValue />
+    {:else if id === "songbooks"}
+        <SongBooks {active} {searchValue} />
     {:else if id === "calendar"}
         <Calendar {active} {searchValue} />
     {:else if id === "functions"}

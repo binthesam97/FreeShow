@@ -6,6 +6,7 @@ export const drawerTabs = {
     templates: { name: "tabs.templates", icon: "templates" },
 
     scripture: { name: "tabs.scripture", icon: "scripture" },
+    songbooks: { name: "tabs.songbooks", icon: "songbooks" },
     calendar: { name: "tabs.calendar", icon: "calendar" },
 
     functions: { name: "tabs.functions", icon: "functions" }
