@@ -7,7 +7,9 @@ export const drawerTabs = {
 
     scripture: { name: "tabs.scripture", icon: "scripture", title: "" },
     calendar: { name: "tabs.calendar", icon: "calendar", title: "" },
-
+    scripture: { name: "tabs.scripture", icon: "scripture", title: "" },
+    songbooks: { name: "tabs.songbooks", icon: "songbooks", title: "" },
+    calendar: { name: "tabs.calendar", icon: "calendar", title: "" },
     functions: { name: "tabs.functions", icon: "functions", title: "" }
 }
 

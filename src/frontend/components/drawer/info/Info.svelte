@@ -8,6 +8,7 @@
     import FunctionsInfo from "./FunctionsInfo.svelte"
     import MediaInfo from "./MediaInfo.svelte"
     import ScriptureInfo from "./ScriptureInfo.svelte"
+    import SongBooksInfo from "../songbooks/SongBooksInfo.svelte"
     import ShowInfo from "./ShowInfo.svelte"
     import TemplateInfo from "./TemplateInfo.svelte"
 
@@ -27,6 +28,8 @@
         <TemplateInfo />
     {:else if !$forceClock && id === "scripture"}
         <ScriptureInfo />
+    {:else if !$forceClock && id === "songbooks"}
+        <SongBooksInfo />
     {:else if !$forceClock && id === "calendar"}
         <CalendarInfo />
     {:else if !$forceClock && id === "functions"}
