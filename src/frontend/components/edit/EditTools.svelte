@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { Item, ItemType, Line, Slide } from "../../../types/Show"
     import type { TabsObj } from "../../../types/Tabs"
-    import { activeEdit, activeShow, activeTriggerFunction, copyPasteEdit, overlays, selected, showsCache, storedEditMenuState, templates } from "../../stores"
+    import { activeEdit, activeShow, copyPasteEdit, overlays, selected, showsCache, storedEditMenuState, templates } from "../../stores"
     import { getAccess } from "../../utils/profile"
     import Icon from "../helpers/Icon.svelte"
     import T from "../helpers/T.svelte"
@@ -67,8 +67,6 @@
     $: editSlideSelected = $activeEdit.slide !== null && $activeEdit.slide !== undefined
     $: activeIsShow = $activeShow && ($activeShow.type || "show") === "show"
 
-    $: if ($activeTriggerFunction === "slide_notes") active = "slide"
-
     let slides: Slide[] = []
     $: if (allSlideItems && (($activeEdit?.id && editSlideSelected) || showIsActive))
         slides = _show($activeEdit?.id || $activeShow?.id)
@@ -78,7 +76,11 @@
     $: isEmpty = !allSlideItems?.length
     $: tabs.item.disabled = isEmpty
     let previousCount = 0
-    $: if (isEmpty || activeId || activeSlide) previousCount = 0
+    let actualPreviousCount = 0
+    $: if (isEmpty || activeId || activeSlide) {
+        actualPreviousCount = previousCount
+        previousCount = 0
+    }
     $: if (item !== undefined) itemChanged()
     function itemChanged() {
         if (item === null) {
@@ -91,7 +93,8 @@
         if (previousCount === currentCount) return
         previousCount = currentCount
 
-        if (active === "items") active = "text"
+        if (active === "items" && (!actualPreviousCount || actualPreviousCount !== currentCount)) active = "text"
+        actualPreviousCount = 0
         tabs.text.disabled = false
     }
 
@@ -362,7 +365,13 @@
 
     $: slideActive = !!((slides?.length && showIsActive && activeSlide !== null) || activeId)
     let profile = getAccess("shows")
-    $: isLocked = activeId ? false : $showsCache[$activeShow?.id || ""]?.locked || profile.global === "read" || profile[$showsCache[$activeShow?.id || ""]?.category || ""] === "read"
+
+    $: currentShow = $showsCache[$activeShow?.id || ""]
+    $: isSlideLockedFn = () => {
+        const slideId = ref[activeSlide]?.parent?.id || ref[activeSlide]?.id
+        return !!currentShow?.slides?.[slideId]?.locked
+    }
+    $: isLocked = activeId ? false : currentShow?.locked || isSlideLockedFn() || profile.global === "read" || profile[currentShow?.category || ""] === "read"
     // $: isDefault = $activeEdit.type === "overlay" ? $overlays[activeId || ""]?.isDefault : $activeEdit.type === "template" ? $templates[activeId || ""]?.isDefault : false
     $: overflowHidden = !!(isShow || $activeEdit.type === "template")
 
@@ -494,7 +503,12 @@
                 </Button>
             {/if}
         </span> -->
-    {:else if !isLocked}
+    {:else if isLocked}
+        <Center faded>
+            <Icon id="lock" size={2} white />
+            <p style="margin-top: 8px;"><T id="output.state_locked" /></p>
+        </Center>
+    {:else}
         <Center faded>
             <T id="empty.slides" />
         </Center>

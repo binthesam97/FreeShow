@@ -90,7 +90,7 @@ export const _updaters = {
                 return a
             })
 
-            if (!initializing || data.shows?.length) return
+            if (!initializing || data.shows?.length || !get(projectView)) return
 
             activeRename.set("project_" + id)
         },
@@ -174,6 +174,22 @@ export const _updaters = {
         }
     },
     project_template: { store: projectTemplates, empty: EMPTY_PROJECT, timestamp: true },
+    section_template: {
+        store: projectTemplates,
+        empty: EMPTY_SECTION,
+        initialize: (data) => {
+            return replaceEmptyValues(data, { id: uid(5) })
+        },
+        select: (_id: string, data: any) => {
+            activeShow.set({ id: data.data.id, index: data.index, type: "section" })
+
+            // focus on section title input
+            setTimeout(() => {
+                document.getElementById("sectionTitle")?.querySelector("input")?.focus()
+            }, 10)
+        },
+        timestamp: true
+    },
 
     project_key: { store: projects, timestamp: true },
     project_folder_key: { store: folders, timestamp: true },
@@ -269,6 +285,7 @@ export const _updaters = {
     overlay_name: { store: overlays, empty: "", timestamp: true },
     overlay_color: { store: overlays, empty: null, timestamp: true },
     overlay_category: { store: overlays, empty: null, timestamp: true },
+    overlay_key: { store: overlays, empty: {}, timestamp: true },
 
     template: {
         store: templates,
@@ -440,7 +457,9 @@ export const _updaters = {
 
     show_key: {
         store: showsCache,
-        initialize: (data = {}) => {
+        initialize: (data) => {
+            if (typeof data !== "object") return data
+
             if (!data.timestamps) data.timestamps = {}
             data.timestamps.modified = Date.now()
             return data
@@ -596,6 +615,18 @@ function replaceEmptyValues(object: any, replacer: any) {
     return object
 }
 
+function getNextWeekdayDate(currentDate: Date, targetWeekday: number): Date {
+    let daysToAdd = targetWeekday - currentDate.getDay()
+    const result = new Date(currentDate)
+
+    // return today if it's the same day
+    if (daysToAdd === 0) return result
+
+    if (daysToAdd < 0) daysToAdd += 7
+    result.setDate(result.getDate() + daysToAdd)
+    return result
+}
+
 export const projectReplacers = [
     { id: "DD", title: translateText("calendar.day"), value: (date) => addZero(date.getDate()) },
     { id: "MM", title: translateText("calendar.month"), value: (date) => addZero(date.getMonth() + 1) },
@@ -605,7 +636,16 @@ export const projectReplacers = [
     { id: "mm", title: "Minutes", value: (date) => date.getMinutes() },
     { id: "weeknum", title: "Week number", value: (date) => getWeekNumber(date) },
     { id: "weekday", title: "Weekday", value: (date) => getWeekday(date.getDay(), get(dictionary), true) },
-    { id: "monthname", title: "Name of month", value: (date) => getMonthName(date.getMonth(), get(dictionary), true) }
+    { id: "monthname", title: "Name of month", value: (date) => getMonthName(date.getMonth(), get(dictionary), true) },
+
+    { id: "D0", title: "Next Sunday", value: (date) => addZero(getNextWeekdayDate(date, 0).getDate()) },
+    { id: "D1", title: "Next Monday", value: (date) => addZero(getNextWeekdayDate(date, 1).getDate()) },
+    { id: "D2", title: "Next Tuesday", value: (date) => addZero(getNextWeekdayDate(date, 2).getDate()) },
+    { id: "D3", title: "Next Wednesday", value: (date) => addZero(getNextWeekdayDate(date, 3).getDate()) },
+    { id: "D4", title: "Next Thursday", value: (date) => addZero(getNextWeekdayDate(date, 4).getDate()) },
+    { id: "D5", title: "Next Friday", value: (date) => addZero(getNextWeekdayDate(date, 5).getDate()) },
+    { id: "D6", title: "Next Saturday", value: (date) => addZero(getNextWeekdayDate(date, 6).getDate()) },
+    { id: "D7", title: "Next Sunday", value: (date) => addZero(getNextWeekdayDate(date, 0).getDate()) }
 ]
 const DEFAULT_PROJECT_NAME = "{DD}.{MM}.{YY}"
 export function getDefaultProjectName() {
@@ -637,7 +677,15 @@ export function getDefaultProjectName() {
 export function getProjectName(updater = get(special)) {
     let name = updater.default_project_name ?? getDefaultProjectName()
 
-    const date = new Date()
+    let date = new Date()
+
+    // use Dnum date if it exists
+    const dNumMatch = name.match(/{D[0-7]}/)
+    if (dNumMatch) {
+        const dNum = parseInt(dNumMatch[0].match(/\d/)?.[0] || "0")
+        date = getNextWeekdayDate(date, dNum === 7 ? 0 : dNum)
+    }
+
     projectReplacers.forEach((a) => {
         name = name.replaceAll(`{${a.id}}`, a.value(date))
     })

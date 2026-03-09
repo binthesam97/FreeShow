@@ -42,7 +42,7 @@
 
     function checkScriptureExists(scriptureId: string, collId: string): boolean {
         if (!scriptureId || Object.keys($scriptures).length === 0) return false
-        return !!($scriptures[scriptureId] || (collId && $scriptures[collId]))
+        return !!($scriptures[scriptureId] || (collId && $scriptures[collId])) || Object.values($scriptures).find((a) => a.id === scriptureId || collId)
     }
 
     $: scripturesLoaded = Object.keys($scriptures).length > 0
@@ -121,6 +121,8 @@
     let currentVerse = ""
 
     function openScripture(id: string, collection: string = "") {
+        console.log(id)
+
         openedScripture.set(id)
         collectionId.set(collection)
         // reset browsing state when switching between bibles (API/local)
@@ -195,14 +197,10 @@
     }
 
     function next() {
-        // scriptureContentRef?.forward?.()
         send("API:scripture_next")
-        // if (typeof currentVerse === "number") currentVerse++
     }
     function previous() {
-        // scriptureContentRef?.backward?.()
         send("API:scripture_previous")
-        // if (typeof currentVerse === "number") currentVerse--
     }
 
     // UI control visibility
@@ -249,7 +247,6 @@
     type SearchItem = { reference: string; referenceFull: string; verseText: string }
     let searchResults: SearchItem[] = []
     let searchResult: SearchItem = { reference: "", referenceFull: "", verseText: "" }
-    let isApiBible = false
     let usingExternalSearch = false
     let awaitingExternalClear = false
 
@@ -268,9 +265,8 @@
         debouncedSearchValue = searchValue
     })
 
-    $: isApiBible = !!($openedScripture && $scriptures[$openedScripture]?.api === true)
     // Use debounced value for actual search - prevents blocking UI on every keystroke
-    $: updateSearch(debouncedSearchValue, $scriptureCache, $openedScripture, isApiBible)
+    $: updateSearch(debouncedSearchValue, $scriptureCache, $openedScripture, !!($openedScripture && $scriptures[$openedScripture]?.api === true))
     $: handleApiSearchResults($scriptureSearchResults, debouncedSearchValue, $openedScripture)
     $: updateSearchResultsWithLoadedVerses($scriptureCache, searchResults, $openedScripture)
 
@@ -309,30 +305,32 @@
         searchInput.select()
     }
 
+    // Normalize book name for search (handles accented characters, spaces, dots)
+    const normalizeBookName = (name: string) =>
+        (name || "")
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/\p{Diacritic}/gu, "")
+            .replace(/\s/g, "")
+            .replace(/\./g, "")
+
+    // Regex for matching scripture references: "Book 3:16", "Book 3 16", "Book 3.16", "Book 3,16", "Book 1:1-3"
+    const REFERENCE_REGEX = /^(.+?)\s+(\d+)(?:[:.,]\s*(\d+)|\s+(\d+))?(?:-(\d+))?/
+
     // Find a book in the books array using normalized search with Unicode normalization
-    // Uses .normalize("NFD").replace(/\p{Diacritic}/gu, "") to handle accented characters universally
     function findBookInArray(books: any[], value: string): any {
-        const normalized = value.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/\s/g, "").replace(/\./g, "")
-        
+        const normalized = normalizeBookName(value)
+
         // First try exact match
-        const exactMatch = books.find((book: any) => {
-            const bookName = (book.name || "").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/\s/g, "").replace(/\./g, "")
-            return bookName === normalized
-        })
+        const exactMatch = books.find((book: any) => normalizeBookName(book.name) === normalized)
         if (exactMatch) return exactMatch
-        
+
         // Then try starts with
-        const startsWithMatch = books.find((book: any) => {
-            const bookName = (book.name || "").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/\s/g, "").replace(/\./g, "")
-            return bookName.startsWith(normalized)
-        })
+        const startsWithMatch = books.find((book: any) => normalizeBookName(book.name).startsWith(normalized))
         if (startsWithMatch) return startsWithMatch
-        
+
         // Finally try contains
-        return books.find((book: any) => {
-            const bookName = (book.name || "").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/\s/g, "").replace(/\./g, "")
-            return bookName.includes(normalized)
-        })
+        return books.find((book: any) => normalizeBookName(book.name).includes(normalized))
     }
 
     function findChapter(book: any, value: string): any {
@@ -457,14 +455,14 @@
 
             if (!scripture?.books) {
                 // Books not loaded yet, use API search as fallback
-                const referenceMatch = searchVal.match(/^(.+?)\s+(\d+)(?:[:.,]\s*(\d+)|\s+(\d+))?(?:-(\d+))?/)
+                const referenceMatch = searchVal.match(REFERENCE_REGEX)
                 const searchType = referenceMatch ? "reference" : "text"
                 send("SEARCH_SCRIPTURE", { id: openedScriptureId, searchTerm: searchVal, searchType })
                 return
             }
 
             const books = scripture.books
-            const referenceMatch = searchVal.match(/^(.+?)\s+(\d+)(?:[:.,]\s*(\d+)|\s+(\d+))?(?:-(\d+))?/)
+            const referenceMatch = searchVal.match(REFERENCE_REGEX)
 
             if (referenceMatch) {
                 const [, bookPart, chapterPart, versePart1, versePart2] = referenceMatch
@@ -584,8 +582,7 @@
         const books = scripture.books
 
         // Try to parse as scripture reference first
-        // Matches: "John 3:16", "John 3 16", "John 3.16", "John 3,16", "Gen 1:1-3"
-        const referenceMatch = searchVal.match(/^(.+?)\s+(\d+)(?:[:.,]\s*(\d+)|\s+(\d+))?(?:-(\d+))?/)
+        const referenceMatch = searchVal.match(REFERENCE_REGEX)
 
         if (referenceMatch) {
             const [, bookPart, chapterPart, versePart1, versePart2] = referenceMatch
@@ -713,9 +710,22 @@
         // Close search first so ScriptureContent component is rendered
         openScriptureSearch = false
         searchValue = ""
+        debouncedSearchValue = ""
+
+        // Clear search results
+        searchResults = []
+        searchResult = { reference: "", referenceFull: "", verseText: "" }
+        scriptureSearchResults.set(null)
+
+        // In tablet mode, also clear external search if active
+        if (tablet && usingExternalSearch) {
+            usingExternalSearch = false
+            awaitingExternalClear = true
+            dispatch("search-clear")
+        }
 
         // Send the scripture reference to display
-        send("API:start_scripture", { id: collectionId || openedScripture, reference: ref })
+        send("API:start_scripture", { id: $collectionId || $openedScripture, reference: ref })
 
         // Wait for next tick to ensure component is rendered, then navigate
         setTimeout(() => {
@@ -834,8 +844,7 @@
         if (!searchTerm.trim()) return text
 
         // Don't highlight if it looks like a scripture reference
-        const referenceMatch = searchTerm.match(/^(.+?)\s+(\d+)(?:[:.,]\s*(\d+)|\s+(\d+))?(?:-(\d+))?/)
-        if (referenceMatch) return text
+        if (searchTerm.match(REFERENCE_REGEX)) return text
 
         const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")
         return text.replace(regex, '<mark style="background-color: #ffeb3b; color: #000; padding: 0 2px;">$1</mark>')
@@ -929,7 +938,7 @@
                         No results found for "{searchValue}"
                     </div>
                 {:else}
-                    <ScriptureContentTablet id={$collectionId || $openedScripture} scripture={$scriptureCache[$openedScripture]} scriptures={collectionScripturesData} {isCollection} selectedTranslationIndex={$selectedTranslationIndex} bind:currentBook bind:currentChapter bind:currentVerse bind:this={scriptureContentRef} />
+                    <ScriptureContentTablet id={$collectionId || $openedScripture} openedScriptureId={$openedScripture} scripture={$scriptureCache[$openedScripture]} scriptures={collectionScripturesData} {isCollection} selectedTranslationIndex={$selectedTranslationIndex} bind:currentBook bind:currentChapter bind:currentVerse bind:this={scriptureContentRef} />
                 {/if}
             {:else}
                 <ScriptureContent id={$collectionId || $openedScripture} scripture={$scriptureCache[$openedScripture]} scriptures={collectionScripturesData} {isCollection} bind:depth bind:currentBook bind:currentChapter bind:currentVerse bind:this={scriptureContentRef} />
@@ -951,24 +960,20 @@
                     <Button on:click={() => scriptureViewList.set(!$scriptureViewList)} center dark class="floating-control-button" title={$scriptureViewList ? "Grid View" : "List View"}>
                         <Icon id={$scriptureViewList ? "list" : "grid"} white size={1.2} />
                     </Button>
-                    <Button 
+                    <Button
                         on:click={() => {
                             scriptureMultiSelect.set(!$scriptureMultiSelect)
                             if (!$scriptureMultiSelect) selectedVerses.set([])
-                        }} 
-                        center 
-                        dark 
+                        }}
+                        center
+                        dark
                         class="floating-control-button {$scriptureMultiSelect ? 'active' : ''}"
-                        title={$scriptureMultiSelect ? "Exit Multi-Select" : "Multi-Select Verses"}>
+                        title={$scriptureMultiSelect ? "Exit Multi-Select" : "Multi-Select Verses"}
+                    >
                         <Icon id={$scriptureMultiSelect ? "close" : "check"} white size={1.2} />
                     </Button>
                     {#if $scriptureMultiSelect && $selectedVerses.length > 0}
-                        <Button 
-                            on:click={() => scriptureContentRef?.playSelectedVerses?.()} 
-                            center 
-                            dark 
-                            class="floating-control-button show-selected-button" 
-                            title="Show Selected ({$selectedVerses.length})">
+                        <Button on:click={() => scriptureContentRef?.playSelectedVerses?.()} center dark class="floating-control-button show-selected-button" title="Show Selected ({$selectedVerses.length})">
                             <Icon id="play" white size={1.2} />
                             <span class="verse-count">{$selectedVerses.length}</span>
                         </Button>
@@ -1173,9 +1178,6 @@
         background-color: var(--hover);
     }
 
-    .header-action {
-        transform: scale(1);
-    }
     .bible {
         flex: 1;
         overflow-y: hidden;

@@ -6,7 +6,7 @@
     import { requestMain } from "../../../IPC/main"
     import { AudioMicrophone } from "../../../audio/audioMicrophone"
     import { AudioPlayer } from "../../../audio/audioPlayer"
-    import { activePopup, activeShow, alertMessage, driveData, media, outLocked, outputs, playingAudio, showsCache, styles } from "../../../stores"
+    import { activePopup, activeShow, alertMessage, media, outLocked, outputs, playingAudio, showsCache, styles } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { getAccess } from "../../../utils/profile"
     import { send } from "../../../utils/request"
@@ -16,7 +16,7 @@
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
     import { clone, sortByName } from "../../helpers/array"
-    import { getExtension, getMedia, getMediaStyle, getMediaType, isMediaExtension } from "../../helpers/media"
+    import { getExtension, getMedia, getMediaStyle, getMediaType, isMediaExtension, mediaSize } from "../../helpers/media"
     import { findMatchingOut, getActiveOutputs, getCurrentStyle, setOutput } from "../../helpers/output"
     import { _show } from "../../helpers/shows"
     import Button from "../../inputs/Button.svelte"
@@ -73,8 +73,6 @@
             if (!show.media?.[a]) return
 
             let path: string = show.media[a].path || show.media[a].id || ""
-            let cloudId = $driveData.mediaId
-            if (cloudId && cloudId !== "default") path = show.media[a].cloud?.[cloudId] || path
 
             let type = (show.media[a].type || getMediaType(getExtension(path))) as MediaType
 
@@ -92,9 +90,6 @@
             if (!show.media?.[a]) return
 
             let path = show.media[a].path!
-            // no need for cloud when audio can be stacked
-            // let cloudId = $driveData.mediaId
-            // if (cloudId && cloudId !== "default") path = show.media[a].cloud?.[cloudId] || path
 
             let type: MediaType = "audio"
 
@@ -120,7 +115,7 @@
 
     function setBG(id: string, key: string, value: boolean) {
         if (show.locked) {
-            alertMessage.set("show.locked_info")
+            alertMessage.set("show.locked")
             activePopup.set("alert")
             return
         }
@@ -156,7 +151,7 @@
     let similarBgs: { path: string; name: string }[] = []
     $: if (bgs.length) getSimularPaths()
     function getSimularPaths() {
-        if (!bgs.filter((a) => !a.path?.includes("http") && !a.path?.includes("data:")).length) return
+        if (!bgs.filter((a) => !a.path?.startsWith("http") && !a.path?.startsWith("data:")).length) return
 
         requestMain(Main.GET_SIMILAR, { paths: bgs.map((a) => a.path || "") }, (data) => {
             similarBgs = data.filter((a) => isMediaExtension(getExtension(a.path))).slice(0, 3)
@@ -169,7 +164,7 @@
         bgs.forEach(async (bgMedia) => {
             let bgPath = bgMedia.path || ""
 
-            const media = await getMedia(bgPath)
+            const media = await getMedia(bgPath, mediaSize.small)
             if (media) newMedia[bgPath] = media
         })
     }
@@ -205,7 +200,7 @@
                             <MediaLoader name={background.name} path={media.path} thumbnailPath={media.thumbnail} type={background.type} {mediaStyle} />
                         </HoverButton>
 
-                        <p data-title={media.path}>{background.name}</p>
+                        <p data-title={decodeURIComponent(media.path || background.path || "")}>{background.name}</p>
 
                         {#if background.count > 1}
                             <span style="color: var(--secondary);font-weight: bold;">{background.count}</span>
@@ -215,7 +210,7 @@
                             <Button style="flex: 0;padding: 14px 5px;" center title={translateText(background.muted !== false ? "actions.unmute" : "actions.mute")} on:click={() => setBG(background.id || "", "muted", background.muted === false)} dark>
                                 <Icon id={background.muted !== false ? "muted" : "volume"} white={background.muted !== false} size={1.2} />
                             </Button>
-                            <Button style="flex: 0;padding: 14px 5px;" center title={translateText("media._loop")} on:click={() => setBG(background.id || "", "loop", background.loop === false)} dark>
+                            <Button style="flex: 0;padding: 14px 5px;" center title={translateText("media._loop" + (background.loop !== false ? ": settings.enabled" : ""))} on:click={() => setBG(background.id || "", "loop", background.loop === false)} dark>
                                 <Icon id="loop" white={background.loop === false} size={1.2} />
                             </Button>
                         {/if}

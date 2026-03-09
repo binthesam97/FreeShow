@@ -23,6 +23,7 @@
     import Screens from "../live/Screens.svelte"
     import Windows from "../live/Windows.svelte"
     import PlayerVideos from "../player/PlayerVideos.svelte"
+    import Canva from "./Canva.svelte"
     import ContentLibraryBrowser from "./ContentLibraryBrowser.svelte"
     import Folder from "./Folder.svelte"
     import Media from "./MediaCard.svelte"
@@ -90,6 +91,8 @@
             contentProviders = allProviders.filter((p) => p.hasContentLibrary && $providerConnections[p.providerId])
         })
     }
+
+    $: activeProviderId = (isProviderSection && active ? active : null) as ContentProviderId | null
 
     let screenTab = $drawerTabsData.media?.openedSubSubTab?.screens || "screens"
     let onlineTab = $drawerTabsData.media?.openedSubSubTab?.online || "youtube"
@@ -171,12 +174,11 @@
             captureFolderContent = false
         }
 
-        // WIP generateThumbnails - might be better to generate dynamically, instead of full folder at once
         // WIP only list folders with any recursive media content?
 
         requesting++
         let currentRequest = requesting
-        const data = await requestMain(Main.READ_FOLDER, { path, depth, generateThumbnails: $mediaOptions.mode === "grid", captureFolderContent })
+        const data = await requestMain(Main.READ_FOLDER, { path, depth, captureFolderContent })
         if (requesting !== currentRequest) return
 
         // check if there's any audio files that the user might want to find
@@ -244,6 +246,7 @@
     let activeFile: null | number = null
     $: mediaFilesOnly = searchedFiles.filter((a) => !a.isFolder)
     function hightlightActive() {
+        if (!Array.isArray(mediaFilesOnly)) return
         const activeShowPath = $activeShow?.type === "image" || $activeShow?.type === "video" ? $activeShow?.id : ""
         const index = mediaFilesOnly.findIndex((a) => a.path === activeShowPath)
         activeFile = index < 0 ? null : index
@@ -431,6 +434,17 @@
     }
 
     $: pathString = path.replace(rootPath, "").replace(folderName, "").replaceAll("\\", "/").split("/").filter(Boolean).join("/")
+
+    function handleDisconnect() {
+        requestMain(Main.PROVIDER_DISCONNECT, { providerId: "canva" }, (result) => {
+            if (result.success) {
+                providerConnections.update((c) => {
+                    c.canva = false
+                    return c
+                })
+            }
+        })
+    }
 </script>
 
 <!-- TODO: download pixabay images!!! -->
@@ -479,6 +493,15 @@
             <Icon style={onlineTab === "unsplash" ? "fill: #bbbbbb" : ""} size={1.2} id="unsplash" white />
             <p>Unsplash</p>
         </MaterialButton>
+        <!-- hidden until approved! -->
+        <!-- <MaterialButton style="flex: 1;" isActive={onlineTab === "canva"} on:click={() => setSubSubTab("canva")}>
+            {#if onlineTab === "canva"}
+                <CLogo />
+            {:else}
+                <Icon size={1.2} id="canva" white />
+            {/if}
+            <p>Canva</p>
+        </MaterialButton> -->
     </div>
 {/if}
 
@@ -486,12 +509,14 @@
 
 <div class="scroll" style="flex: 1;overflow-y: auto;" bind:this={scrollElem}>
     <div class="grid" class:list={$mediaOptions.mode === "list"} style="height: 100%;">
-        {#if isProviderSection}
-            <ContentLibraryBrowser providerId={active} columns={$mediaOptions.columns} {searchValue} />
+        {#if isProviderSection && activeProviderId}
+            <ContentLibraryBrowser providerId={activeProviderId} columns={$mediaOptions.columns} {searchValue} />
         {:else if active === "online" && (onlineTab === "youtube" || onlineTab === "vimeo")}
             <div class="gridgap">
                 <PlayerVideos active={onlineTab} {searchValue} />
             </div>
+        {:else if active === "online" && onlineTab === "canva"}
+            <Canva />
         {:else if active === "screens"}
             <div class="gridgap">
                 {#if screenTab === "screens"}
@@ -580,7 +605,15 @@
             </MaterialButton>
         </FloatingInputs>
     {:else}
-        <FloatingInputs>
+        <FloatingInputs arrow={onlineTab === "canva" && $providerConnections.canva}>
+            <svelte:fragment slot="menu">
+                {#if onlineTab === "canva" && $providerConnections.canva}
+                    <MaterialButton title="settings.disconnect_from" replace={["Canva"]} on:click={handleDisconnect} icon="logout">
+                        <T id="settings.disconnect_from" replace={["Canva"]} />
+                    </MaterialButton>
+                {/if}
+            </svelte:fragment>
+
             {#if onlineTab === "pixabay"}
                 <MaterialButton title="media.image" on:click={() => (activeView = "image")}>
                     <Icon size={1.2} id="image" white={activeView !== "image"} />

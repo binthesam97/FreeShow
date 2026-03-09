@@ -6,6 +6,7 @@ import type { ExifData } from "exif"
 import { ExifImage } from "exif"
 import fs, { type Stats } from "fs"
 import path, { join, parse } from "path"
+import { fileURLToPath } from "url"
 import { uid } from "uid"
 import upath from "upath"
 import { OUTPUT } from "../../types/Channels"
@@ -103,6 +104,15 @@ export function readFolderAsync(filePath: string): Promise<string[]> {
     )
 }
 
+async function readFolderWithTypesAsync(folderPath: string): Promise<fs.Dirent[]> {
+    return new Promise((resolve, reject) => {
+        fs.readdir(folderPath, { withFileTypes: true }, (err, entries) => {
+            if (err) reject(err)
+            else resolve(entries)
+        })
+    })
+}
+
 export async function writeFileAsync(filePath: string, content: string | NodeJS.ArrayBufferView, id = ""): Promise<boolean> {
     // don't know if it's necessary to check the file
     if (await fileContentMatchesAsync(content, filePath)) return false
@@ -131,17 +141,23 @@ export function writeFile(filePath: string, content: string | NodeJS.ArrayBuffer
 }
 
 export function deleteFile(filePath: string) {
-    fs.unlinkSync(filePath)
+    try {
+        fs.unlinkSync(filePath)
+        return true
+    } catch (err) {
+        actionComplete(err, "Could not delete file")
+        return false
+    }
 }
 
-// export function deleteFileAsync(filePath: string) {
-//     return new Promise<boolean>((resolve) => {
-//         fs.unlink(filePath, (err) => {
-//             actionComplete(err, "Could not delete file")
-//             resolve(!err)
-//         })
-//     })
-// }
+export function deleteFileAsync(filePath: string) {
+    return new Promise<boolean>((resolve) => {
+        fs.unlink(filePath, (err) => {
+            actionComplete(err, "Could not delete file")
+            resolve(!err)
+        })
+    })
+}
 
 export function copyFileAsync(sourcePath: string, destPath: string) {
     return new Promise<boolean>((resolve) => {
@@ -154,9 +170,21 @@ export function copyFileAsync(sourcePath: string, destPath: string) {
 
 export function moveFileAsync(oldPath: string, newPath: string) {
     return new Promise<boolean>((resolve) => {
-        fs.rename(oldPath, newPath, (err) => {
-            actionComplete(err, "Could not rename file")
-            resolve(!err)
+        fs.rename(oldPath, newPath, async (err) => {
+            if (err && err.code === "EXDEV") {
+                // cross-device link not permitted, fallback to copy + delete
+                try {
+                    await copyFileAsync(oldPath, newPath)
+                    await deleteFileAsync(oldPath)
+                    resolve(true)
+                } catch (copyErr) {
+                    actionComplete(copyErr as Error, "Could not copy file for cross-device move")
+                    resolve(false)
+                }
+            } else {
+                actionComplete(err, "Could not rename file")
+                resolve(!err)
+            }
         })
     })
 }
@@ -529,8 +557,14 @@ async function extractCodecInfo(data: { path: string }): Promise<{ path: string;
             const mp4boxfile = MP4Box.createFile()
             mp4boxfile.onError = (err: Error) => console.error("MP4Box error:", err)
             mp4boxfile.onReady = (info: { tracks: { codec: string }[]; [key: string]: any }) => {
-                const codecs = info.tracks.map((track: { codec: string }) => track.codec)
                 const mimeType = getMimeType(data.path)
+
+                if (!Array.isArray(info?.tracks)) {
+                    resolve({ ...data, codecs: [], mimeType, mimeCodec: "" })
+                    return
+                }
+
+                const codecs = info.tracks.map((track: { codec: string }) => track.codec)
                 const mimeCodec = `${mimeType}; codecs="${codecs.join(", ")}"`
                 resolve({ ...data, codecs, mimeType, mimeCodec })
             }
@@ -578,6 +612,11 @@ async function extractSubtitles(data: { path: string }): Promise<{ path: string;
         const mp4boxfile = MP4Box.createFile()
         mp4boxfile.onError = (e: Error) => console.error("MP4Box error:", e)
         mp4boxfile.onReady = (info: any) => {
+            if (!Array.isArray(info?.tracks)) {
+                resolve({ ...data, tracks: [] })
+                return
+            }
+
             const tracks: Subtitle[] = []
             let trackCount = 0
             let completed = 0
@@ -650,105 +689,154 @@ export function setMediaSyncFolderPath(folderPath: string) {
     setStoreValue({ file: "config", key: "mediaFolderPath", value: folderPath })
 }
 
+function fileNamesMatch(nameA: string, nameB: string) {
+    return normalizeFileNameForMatch(nameA) === normalizeFileNameForMatch(nameB)
+}
+function normalizeFileNameForMatch(name: string) {
+    return name.normalize("NFC").toLowerCase()
+}
+
+function normalizeLocalPath(filePath: string) {
+    if (!filePath || typeof filePath !== "string") return ""
+
+    let normalizedPath = filePath
+
+    if (normalizedPath.startsWith("file://")) {
+        try {
+            normalizedPath = fileURLToPath(normalizedPath)
+        } catch {
+            normalizedPath = normalizedPath.replace(/^file:\/\//, "")
+        }
+    }
+
+    try {
+        normalizedPath = decodeURI(normalizedPath)
+    } catch {
+        // ignore malformed URI sequences and keep original
+    }
+
+    return normalizedPath
+}
+
 // SEARCH FOR MEDIA FILE (in drawer media folders & their following folders)
 const NESTED_SEARCH = 8 // folder levels deep
 export async function locateMediaFile({ filePath, folders }: { filePath: string; folders: string[] }) {
-    if (await doesPathExistAsync(filePath)) return { path: filePath, hasChanged: false }
-
-    const matches: string[] = []
+    const normalizedOriginalPath = normalizeLocalPath(filePath)
+    if (await doesPathExistAsync(normalizedOriginalPath)) return { path: normalizedOriginalPath, hasChanged: false }
 
     // Media Sync Folder
     const mediaFolder = getMediaSyncFolderPath()
-    const folderId = getFileParentFolderId(filePath)
-    const mediaFilePath = path.join(mediaFolder, folderId, upath.basename(filePath))
+    const folderId = getFileParentFolderId(normalizedOriginalPath)
+    const fileName = upath.basename(normalizedOriginalPath)
+    const mediaFilePath = path.join(mediaFolder, folderId, fileName)
     if (await doesPathExistAsync(mediaFilePath)) return { path: mediaFilePath, hasChanged: true }
-    folders.unshift(mediaFolder)
+    const searchFolders = [mediaFolder, ...folders].map(normalizeLocalPath).filter((folderPath) => folderPath)
 
     // lookup already replaced paths from cache
     const syncCache = getStore("CACHE_SYNC")
     if (!syncCache.replacedPaths) syncCache.replacedPaths = {}
-    const cachedPath = syncCache.replacedPaths[folderId]
-    if (cachedPath && (await doesPathExistAsync(cachedPath))) {
+    const cacheId = `${folderId}_${fileName}`
+    const cachedPath = syncCache.replacedPaths[cacheId]
+    // TEMP disable in case the wrong file is cached
+    if (false && cachedPath && (await doesPathExistAsync(cachedPath))) {
         return { path: cachedPath, hasChanged: false }
     }
 
-    const fileName = upath.basename(filePath)
+    const parentFolderName = upath.basename(upath.dirname(normalizedOriginalPath))
 
-    await findMatches()
-    const newPath = matches?.[0]
+    const newPath = await findMatches()
     if (!newPath) return null
 
     // store replaced path in cache
-    syncCache.replacedPaths[folderId] = newPath
+    syncCache.replacedPaths[cacheId] = newPath
     setStore(_store.CACHE_SYNC, syncCache)
 
     return { path: newPath, hasChanged: true }
 
     async function findMatches() {
-        for (const folderPath of folders) {
-            // if (matches.length > 1) return // this might be used if we want the user to choose if more than one match is found
-            if (matches.length) return
-            await searchInFolder(folderPath)
+        for (const folderPath of searchFolders) {
+            const newPath = await searchInFolder(folderPath)
+            if (newPath) return newPath
         }
+        return null
     }
 
-    async function searchInFolder(folderPath: string, level = 1) {
-        if (level > NESTED_SEARCH || matches.length) return
-        if (!(await doesPathExistAsync(folderPath))) return
+    async function searchInFolder(folderPath: string, level = 1): Promise<string | null> {
+        if (level > NESTED_SEARCH) return null
+        if (!(await doesPathExistAsync(folderPath))) return null
 
         // check any path with same parent folder for matches first to limit search a bit
         // this should also help if multiple files has the same name, but originates from different folders
-        const parentFolderName = upath.basename(upath.dirname(filePath))
         const potentialPath = path.join(folderPath, parentFolderName, fileName)
         if (await doesPathExistAsync(potentialPath)) {
-            matches.push(potentialPath)
-            return
+            return potentialPath
         }
 
-        const currentFolderFolders: string[] = []
-        const files = await readFolderAsync(folderPath)
-
-        await Promise.all(
-            files.map(async (name) => {
-                const currentFilePath: string = path.join(folderPath, name)
-                const isFolder = await checkIsFolder(currentFilePath)
-
-                if (isFolder) {
-                    // search all files in current folder before searching in any nested folders
-                    currentFolderFolders.push(currentFilePath)
-                } else {
-                    checkFileForMatch(name, folderPath)
-                    if (matches.length) return
-                }
-            })
-        )
-
-        if (matches.length) return
-
-        await Promise.all(
-            currentFolderFolders.map(async (folderName) => {
-                await searchInFolder(folderName, level + 1)
-                if (matches.length) return
-            })
-        )
-    }
-
-    function checkFileForMatch(currentFileName: string, folderPath: string) {
-        if (matches.length) return
-
-        // simple search: match by file name only
-        if (currentFileName === fileName) {
-            matches.push(path.join(folderPath, currentFileName))
+        let entries: fs.Dirent[] = []
+        try {
+            entries = await readFolderWithTypesAsync(folderPath)
+        } catch {
+            return null
         }
+
+        const subFolders: string[] = []
+
+        // ---- Scan files & collect subfolders
+        let found: string | null = null
+
+        // search all files in current folder before searching in any nested folders
+        for (const entry of entries) {
+            const currentPath = path.join(folderPath, entry.name)
+
+            if (entry.isDirectory()) {
+                subFolders.push(currentPath)
+                continue
+            }
+
+            if (fileNamesMatch(entry.name, fileName)) {
+                return currentPath
+            }
+        }
+
+        if (found) return found
+
+        // ---- Scan files in subfolders
+        await asyncPool(8, subFolders, async (sub) => {
+            if (found) return
+
+            const result = await searchInFolder(sub, level + 1)
+            if (result) {
+                found = result
+            }
+        })
+
+        return found
     }
 }
 
-async function checkIsFolder(filePath: string): Promise<boolean> {
-    return new Promise((resolve) =>
-        fs.stat(filePath, (err, stats) => {
-            resolve(err ? false : stats.isDirectory())
-        })
-    )
+// poolLimit = number of concurrent promises
+async function asyncPool<T>(poolLimit: number, array: T[], iteratorFn: (item: T) => Promise<void>) {
+    const ret: Promise<void>[] = []
+    const executing: Promise<void>[] = []
+
+    for (const item of array) {
+        if ((iteratorFn as any).shouldStop?.()) break
+        const p = Promise.resolve().then(() => iteratorFn(item))
+        ret.push(p)
+
+        if (poolLimit <= array.length) {
+            const e: Promise<void> = p.then(() => {
+                executing.splice(executing.indexOf(e), 1)
+            })
+            executing.push(e)
+
+            if (executing.length >= poolLimit) {
+                await Promise.race(executing)
+            }
+        }
+    }
+
+    await Promise.all(ret)
 }
 
 /////
@@ -758,6 +846,8 @@ async function checkIsFolder(filePath: string): Promise<boolean> {
 // - suggest importing videos/images/pdfs
 // - WIP extract & import zip files with media content
 export async function detectNewFiles() {
+    if (!getStore("SETTINGS").initialized) return
+
     const downloadsFolder = app.getPath("downloads")
     const MAX_TIME = 16 * 60 * 60 * 1000 // 16 hours
     const ONE_MINUTE = 60 * 1000
@@ -788,41 +878,45 @@ export async function detectNewFiles() {
     sendToMain(ToMain.RECENTLY_ADDED_FILES, { paths: allRecentFiles })
 
     // watch for file changes
-    fs.watch(downloadsFolder, { persistent: false }, async (eventType, filename) => {
-        if (eventType !== "rename" || !filename) return
+    try {
+        fs.watch(downloadsFolder, { persistent: false }, async (eventType, filename) => {
+            if (eventType !== "rename" || !filename) return
 
-        const ext = path.extname(filename).toLowerCase()
-        if (temporaryExtensions.includes(ext)) return
+            const ext = path.extname(filename).toLowerCase()
+            if (temporaryExtensions.includes(ext)) return
 
-        const filePath = path.join(downloadsFolder, filename)
+            const filePath = path.join(downloadsFolder, filename)
 
-        const exists = await doesPathExistAsync(filePath)
-        if (!exists) {
-            const isKnown = knownFiles.delete(filename)
-            if (!isKnown) return
+            const exists = await doesPathExistAsync(filePath)
+            if (!exists) {
+                const isKnown = knownFiles.delete(filename)
+                if (!isKnown) return
 
-            const idx = allRecentFiles.indexOf(filePath)
-            if (idx === -1) return
+                const idx = allRecentFiles.indexOf(filePath)
+                if (idx === -1) return
 
-            allRecentFiles.splice(idx, 1)
-            sendToMain(ToMain.RECENTLY_ADDED_FILES, { paths: allRecentFiles })
-            return
-        }
+                allRecentFiles.splice(idx, 1)
+                sendToMain(ToMain.RECENTLY_ADDED_FILES, { paths: allRecentFiles })
+                return
+            }
 
-        if (knownFiles.has(filename)) return
+            if (knownFiles.has(filename)) return
 
-        // treat as potential new download after a short write-wait
-        setTimeout(async () => {
-            const stats = await getFileStatsAsync(filePath)
-            if (!stats) return
+            // treat as potential new download after a short write-wait
+            setTimeout(async () => {
+                const stats = await getFileStatsAsync(filePath)
+                if (!stats) return
 
-            knownFiles.add(filename)
-            if (stats.birthtimeMs < Date.now() - ONE_MINUTE) return
+                knownFiles.add(filename)
+                if (stats.birthtimeMs < Date.now() - ONE_MINUTE) return
 
-            if (!allRecentFiles.includes(filePath)) allRecentFiles.push(filePath)
-            sendToMain(ToMain.RECENTLY_ADDED_FILES, { paths: allRecentFiles })
-        }, WRITE_WAIT_MS)
-    })
+                if (!allRecentFiles.includes(filePath)) allRecentFiles.push(filePath)
+                sendToMain(ToMain.RECENTLY_ADDED_FILES, { paths: allRecentFiles })
+            }, WRITE_WAIT_MS)
+        })
+    } catch (err) {
+        console.warn("No permission to watch folder:", err)
+    }
 }
 
 /// ///
@@ -959,7 +1053,7 @@ function getFileParentFolderId(filePath: string) {
 
 // LOAD SHOWS
 
-export function loadShows(returnShows = false, newShows: string[] = []) {
+export function loadShows(returnShows = false, reCacheNames: string[] = []) {
     const showsPath = getDataFolderPath("shows")
 
     specialCaseFixer()
@@ -974,7 +1068,7 @@ export function loadShows(returnShows = false, newShows: string[] = []) {
     // create a map for quick lookup of cached shows by name
     const cachedShowNames = new Map<string, string>()
     for (const [id, show] of Object.entries(cachedShows)) {
-        if (show?.name && !newShows.includes(show.name)) cachedShowNames.set(show.name, id)
+        if (show?.name && !reCacheNames.includes(show.name)) cachedShowNames.set(show.name, id)
     }
 
     filesInFolder = filesInFolder

@@ -1,11 +1,12 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import type { Item, ItemType, Slide } from "../../../../types/Show"
-    import { activeEdit, activePopup, activeShow, alertMessage, overlays, selected, shownTips, showsCache, templates, theme, themes, timers } from "../../../stores"
+    import { activeEdit, activePopup, activeShow, alertMessage, categories, styles as outputStyles, overlays, selected, shownTips, showsCache, special, templates, theme, themes, timers } from "../../../stores"
     import { newToast } from "../../../utils/common"
     import { clone } from "../../helpers/array"
     import { history } from "../../helpers/history"
     import { getExtension, getMediaType } from "../../helpers/media"
+    import { getAllEnabledOutputs } from "../../helpers/output"
     import { getLayoutRef } from "../../helpers/show"
     import { _show } from "../../helpers/shows"
     import { getStyles } from "../../helpers/style"
@@ -13,7 +14,6 @@
     import { addFilterString, addStyle, addStyleString, getItemStyleAtPos, getItemText, getLastLineAlign, getLineText, getSelectionRange, setCaret } from "../scripts/textStyle"
     import { itemBoxes, setBoxInputValue } from "../values/boxes"
     import EditValues from "./EditValues.svelte"
-    import { openDrawer } from "../scripts/edit"
 
     export let id: ItemType
     export let allSlideItems: Item[] = []
@@ -398,6 +398,8 @@
             // WIP changing the default "Name" overlay causes textbox swapping....
 
             allItems.forEach((_itemIndex, i) => {
+                if (!currentItems[i]) return
+
                 let allValues: any = Object.values(values)[0]
                 let currentValue: any = allValues[i] ?? allValues[0]
                 // some textboxes don't have lines, this will break things, so make sure it has lines!
@@ -502,7 +504,33 @@
     // check if the same changes are made to multiple slides, and notify the user to consider using templates
     let changes: { [key: string]: { [key: string]: string } } = {}
     $: if (changes) checkChanges()
+    let shownTemplateTip = false
     function checkChanges() {
+        // alert if category has template
+        if (!shownTemplateTip && ($activeEdit.type || "show") === "show") {
+            const categoryId = $showsCache[$activeShow?.id || ""]?.category || ""
+            const categoryTemplate = $categories[categoryId]?.template || ""
+            if (categoryTemplate) {
+                alertMessage.set("tips.category_template")
+                activePopup.set("alert")
+                shownTemplateTip = true
+                return
+            }
+        }
+
+        // alert if all outputs has style templates
+        if (!shownTemplateTip && $special.styleTemplatePreview !== false) {
+            const outputsHasStyleTemplate = getAllEnabledOutputs().every((output) => {
+                return !!$outputStyles[output?.style || ""]?.template
+            })
+            if (outputsHasStyleTemplate) {
+                alertMessage.set("tips.style_template_active")
+                activePopup.set("alert")
+                shownTemplateTip = true
+                return
+            }
+        }
+
         if ($shownTips.includes("consider_templates")) return
 
         const SLIDES = 3
@@ -515,7 +543,7 @@
 
         const duplicates = Array.from(valueCounts.entries()).filter(([_value, count]) => count > SLIDES)
         if (duplicates.length > 0) {
-            openDrawer("templates")
+            // openDrawer("templates")
             alertMessage.set("tips.consider_templates")
             activePopup.set("alert")
             shownTips.set([...$shownTips, "consider_templates"])

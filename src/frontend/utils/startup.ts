@@ -20,7 +20,13 @@ import { save, unsavedUpdater } from "./save"
 let initialized = false
 let startupProfile = ""
 
-export function startup() {
+export async function startup() {
+    if (!window.api) {
+        // wait for window.api to be available (preload script might not be ready yet) - not likely
+        await waitUntilValueIsDefined(() => window.api, 20, 5000)
+        if (!window.api) return console.error("window.api is not available after waiting")
+    }
+
     window.api.receive(
         STARTUP,
         (msg) => {
@@ -52,10 +58,10 @@ async function startupMain() {
     setupMainReceivers()
     getMainData()
 
-    await wait(100)
+    await wait(50)
     getStoredData()
 
-    await waitUntilValueIsDefined(() => get(loaded), 100, 8000)
+    await waitUntilValueIsDefined(() => get(loaded), 50, 8000)
 
     if (startupProfile) openProfileByName(startupProfile)
     else autoOpenLastUsedProfile()
@@ -63,17 +69,18 @@ async function startupMain() {
     storeSubscriber()
     remoteListen()
     checkStartupActions()
-    autoBackup()
     startTracking()
     contentProviderSync()
 
     // custom alert
-    if (get(language) === "no" && !get(activePopup) && !Object.values(get(scriptures)).find((a) => ["eea18ccd2ca05dde-01", "7bcaa2f2e77739d5-01"].includes(a.id || "")) && Math.random() < 0.2) {
+    if (get(language) === "no" && !get(activePopup) && !Object.values(get(scriptures)).find((a) => ["eea18ccd2ca05dde-01", "7bcaa2f2e77739d5-01"].includes(a.id || "")) && Math.random() < 0.05) {
         alertMessage.set('Bibel 2011 Bokmål/Nynorsk er nå tilgjengelig som API i "Bibel"-menyen!')
         activePopup.set("alert")
     }
 
-    await wait(5000)
+    await wait(2000)
+    autoBackup()
+    await wait(3000)
     unsavedUpdater()
     cameraManager.initializeCameraWarming()
 
@@ -124,7 +131,7 @@ export function contentProviderSync() {
 
     setTimeout(() => {
         const hasDriveSync = typeof get(driveKeys) === "object" && Object.keys(get(driveKeys)).length
-        if (!Object.keys(get(providerConnections)).length && !get(activePopup) && Math.random() < (hasDriveSync ? 0.5 : 0.2)) {
+        if (!Object.keys(get(providerConnections)).length && !get(activePopup) && Math.random() < (hasDriveSync ? 0.3 : 0.03)) {
             alertMessage.set("You can now set up free cloud sync with ChurchApps! Go to Settings>Files to log in." + (hasDriveSync ? "<br>It's recommended to switch over from your current Google Sync!" : ""))
             activePopup.set("alert")
         }

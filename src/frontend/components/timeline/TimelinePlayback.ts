@@ -1,7 +1,11 @@
 import { get, Unsubscriber } from "svelte/store"
+import { Main } from "../../../types/IPC/Main"
 import type { TimelineAction } from "../../../types/Show"
+import { sendMain } from "../../IPC/main"
+import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
 import { activeShow, isTimelinePlaying, outputs, playingAudio, showsCache, timecode } from "../../stores"
+import { triggerFunction } from "../../utils/common"
 import { runAction } from "../actions/actions"
 import { clone } from "../helpers/array"
 import { getFirstActiveOutput } from "../helpers/output"
@@ -9,14 +13,42 @@ import { loadShows } from "../helpers/setShow"
 import { _show } from "../helpers/shows"
 import { ShowTimeline } from "./ShowTimeline"
 import { TimelineType } from "./TimelineActions"
-import { getProjectShowDurations } from "./timeline"
-import { sendMain } from "../../IPC/main"
-import { Main } from "../../../types/IPC/Main"
 import { startListeningLTC, stopListeningLTC } from "./timecode"
+import { getProjectShowDurations } from "./timeline"
 
 let activePlayback: TimelinePlayback | null = null
-export function getActiveTimelinePlayback() {
-    return activePlayback
+export function getActiveTimelinePlayback(type: TimelineType | null = null) {
+    const active = activePlayback
+    if (type !== null && active?.type !== type) return null
+    return active
+}
+
+// function getOrCreateTimeline(type: TimelineType) {
+//     const active = getActiveTimelinePlayback(type)
+//     if (active) return active
+//     return new TimelinePlayback(type)
+// }
+
+// API ACTIONS
+export function startTimeline(type: TimelineType) {
+    // const timeline = getOrCreateTimeline(type)
+    // timeline.play()
+    triggerFunction(`start_${type}_timeline`)
+}
+export function pauseTimeline(type: TimelineType) {
+    const timeline = getActiveTimelinePlayback(type)
+    if (!timeline) return
+    timeline.pause()
+}
+export function stopTimeline(type: TimelineType) {
+    const timeline = getActiveTimelinePlayback(type)
+    if (!timeline) return
+    timeline.stop()
+}
+export function setTimelineTime(type: TimelineType, timeMs: number) {
+    const timeline = getActiveTimelinePlayback(type)
+    if (!timeline) return
+    timeline.setTime(timeMs)
 }
 
 const ONE_MINUTE = 60000
@@ -25,7 +57,7 @@ const MIN_DURATION = ONE_MINUTE * 5
 export class TimelinePlayback {
     currentTime: number = 0 // ms
     isPlaying: boolean = false
-    private type: TimelineType
+    type: TimelineType
     private ref: { id: string; layoutId?: string }
 
     getId() {
@@ -51,6 +83,8 @@ export class TimelinePlayback {
     play(isListener: boolean = false) {
         this.listenerPaused = false
         if (isListener) return
+
+        this.playingAudio = []
 
         this.setAsPlayer()
         isTimelinePlaying.set(true)
@@ -203,11 +237,13 @@ export class TimelinePlayback {
 
     // TICK
 
+    // time in ms
     private offset: number = 0
     private getTimeWithOffset(time: number) {
         return time + this.offset
     }
 
+    private lastSlideTrigger = ""
     private tick() {
         if (this.listenerPaused) return
 
@@ -242,6 +278,8 @@ export class TimelinePlayback {
             }
         }
 
+        this.playClosestSlide(this.actions)
+
         // check end
         if (this.currentTime >= this.duration) {
             this.currentTime = this.duration
@@ -259,11 +297,15 @@ export class TimelinePlayback {
         } else if (action.type === "slide") {
             this.previousSlide = action.data
             ShowTimeline.playSlide(action.data, ref)
+
+            const triggerId = `${action.data.id}-${action.data.index}`
+            this.lastSlideTrigger = triggerId
         } else {
             console.log("Unknown Timeline Action:", action)
         }
     }
 
+    private playingAudio: string[] = []
     private hasPlayed: string[] = []
     private checkAudio(action: TimelineAction) {
         const path = action.data?.path
@@ -280,13 +322,18 @@ export class TimelinePlayback {
             return
         }
 
+        const hasBeenPlaying = this.playingAudio.includes(path)
         if (!playing) {
+            // was playing, but has been cleared
+            if (hasBeenPlaying) return
+
             AudioPlayer.start(path, { name: "" }, { pauseIfPlaying: false, playMultiple: true })
             playing = get(playingAudio)[path]
         } else if (playing.paused) {
             AudioPlayer.play(path)
         }
 
+        if (!hasBeenPlaying) this.playingAudio.push(path)
         if (!playing?.audio) return
 
         // seek to correct position (with tolerance)
@@ -321,7 +368,7 @@ export class TimelinePlayback {
             if (action.type === "audio") {
                 const a = action.data
                 if (a && a.path && get(playingAudio)[a.path]) {
-                    AudioPlayer.stop(a.path)
+                    clearAudio(a.path)
                 }
             }
 
@@ -389,6 +436,31 @@ export class TimelinePlayback {
                 this.playAction(action, data.ref)
             }
         }
+
+        this.playClosestSlide(showTimelineActions)
+    }
+
+    // play the closest slide with less time than current time
+    private slideCount = 0
+    private playClosestSlide(actions: TimelineAction[]) {
+        // throttle as this does not need to be as precise
+        this.slideCount++
+        if (this.slideCount < 10) return
+        this.slideCount = 0
+
+        const slideActions = actions.filter((a) => a.type === "slide")
+        const now = this.getTimeWithOffset(this.currentTime) + 50 // add small offset to not interfere with exact timing of actions
+        const closestSlide = slideActions.reduce((prev, curr) => (curr.time > (prev?.time ?? -1) && curr.time <= now ? curr : prev), null as TimelineAction | null)
+        if (!closestSlide) return
+
+        const lastAction = slideActions.reduce((prev, curr) => (curr.time > (prev?.time || 0) ? curr : prev), null as TimelineAction | null)
+        const isLastAction = lastAction?.id === closestSlide.id
+        if (isLastAction) return
+
+        const triggerId = `${closestSlide.data.id}-${closestSlide.data.index}`
+        if (this.lastSlideTrigger === triggerId) return
+
+        this.playAction(closestSlide, this.ref)
     }
 
     // TIMECODE

@@ -20,13 +20,14 @@ import { importFromClipboard } from "../converters/importHelpers"
 import { addSection } from "../converters/project"
 import { requestMain, sendMain } from "../IPC/main"
 import { changeSlidesView } from "../show/slides"
-import { activeDrawerTab, activeEdit, activeFocus, activePage, activePopup, activeStage, alertMessage, contextActive, drawer, focusedArea, focusMode, guideActive, media, os, outLocked, outputs, outputSlideCache, quickSearchActive, refreshEditSlide, selected, showRecentlyUsedProjects, showsCache, special, spellcheck, styles, textEditActive, timelineRecordingAction, topContextActive, videosData, volume } from "../stores"
+import { activeDrawerTab, activeEdit, activeFocus, activePage, activePopup, activeProject, activeStage, alertMessage, contextActive, drawer, focusedArea, focusMode, guideActive, media, os, outLocked, outputs, outputSlideCache, projects, quickSearchActive, refreshEditSlide, selected, showRecentlyUsedProjects, showsCache, special, spellcheck, styles, textEditActive, timelineRecordingAction, topContextActive, videosData, volume } from "../stores"
 import { audioExtensions, imageExtensions, videoExtensions } from "../values/extensions"
 import { drawerTabs } from "../values/tabs"
 import { activeShow } from "./../stores"
 import { hideDisplay, isOutputWindow, togglePanels } from "./common"
 import { send } from "./request"
 import { save } from "./save"
+import { runActionId } from "../components/actions/actions"
 
 const menus: TopViews[] = ["show", "edit", "stage", "draw", "settings"]
 
@@ -232,8 +233,15 @@ export function keydown(e: KeyboardEvent) {
  *
  * This ensures shortcuts like Ctrl+Z, Ctrl+C, Ctrl+V work consistently across all keyboard layouts
  */
+const cyrillicRegex = /[\u0400-\u04FF]/
+function shouldNormalizeShortcutKey(e: KeyboardEvent): boolean {
+    return e.key.length === 1 && cyrillicRegex.test(e.key)
+}
+
 const keyCodeMap: { [code: string]: string } = { KeyA: "a", KeyB: "b", KeyC: "c", KeyD: "d", KeyE: "e", KeyF: "f", KeyG: "g", KeyH: "h", KeyI: "i", KeyJ: "j", KeyK: "k", KeyL: "l", KeyM: "m", KeyN: "n", KeyO: "o", KeyP: "p", KeyQ: "q", KeyR: "r", KeyS: "s", KeyT: "t", KeyU: "u", KeyV: "v", KeyW: "w", KeyX: "x", KeyY: "y", KeyZ: "z" }
 export function getNormalizedKey(e: KeyboardEvent): string {
+    if (!shouldNormalizeShortcutKey(e)) return e.key
+
     if (!keyCodeMap[e.code]) return e.key
     if (e.shiftKey) return keyCodeMap[e.code].toUpperCase()
     return keyCodeMap[e.code]
@@ -363,6 +371,12 @@ export const previewShortcuts = {
             if (currentShow?.type === "overlay") {
                 e.preventDefault()
                 return setOutput("overlays", currentShow.id, false, "", true)
+            } else if (currentShow?.type === "section") {
+                // play section action if any
+                const itemSettings = get(projects)[get(activeProject) || ""]?.shows?.find((s) => s.id === currentShow.id)?.data?.settings
+                const actionId = itemSettings?.triggerAction || get(special).sectionTriggerAction
+                if (actionId) runActionId(actionId)
+                return
             }
             return togglePlayingMedia(e)
         }
@@ -414,7 +428,8 @@ export function closeContextMenu() {
 function createNew() {
     const selectId = get(selected)?.id || get(focusedArea)
 
-    if (selectId === "slide")
+    if (get(activePage) === "show" && get(activeDrawerTab) === "scripture") createScriptureShow()
+    else if (selectId === "slide")
         history({ id: "SLIDES" }) // show
     else if (selectId === "show")
         addSection() // project
@@ -429,7 +444,6 @@ function createNew() {
     else if (["action", "variable", "trigger"].includes(selectId)) activePopup.set(selectId as any)
     else if (get(activePage) === "edit") addItem("text")
     else if (get(activePage) === "stage") history({ id: "UPDATE", location: { page: "stage", id: "stage" } })
-    else if (get(activePage) === "show" && get(activeDrawerTab) === "scripture") createScriptureShow()
     else {
         console.info("CREATE NEW:", selectId)
         activePopup.set("show")
@@ -500,8 +514,8 @@ export async function playFolder(path: string, back = false) {
     const currentlyPlaying = currentOutput?.out?.background?.path
 
     const mediaExtensions = [...videoExtensions, ...imageExtensions, ...audioExtensions]
-    const files = keysToID(await requestMain(Main.READ_FOLDER, { path, generateThumbnails: true }))
-    const folderFiles = sortByName(files.filter((a) => mediaExtensions.includes(getExtension(a.name))).map((a) => ({ path: a.path, name: a.name, type: getMediaType(getExtension(a.name)), thumbnail: (a as any).thumbnailPath })))
+    const files = keysToID(await requestMain(Main.READ_FOLDER, { path }))
+    const folderFiles = sortByName(files.filter((a) => mediaExtensions.includes(getExtension(a.name))).map((a) => ({ path: a.path, name: a.name, type: getMediaType(getExtension(a.name)) })))
     if (!folderFiles.length) return
 
     const mediaFiles = folderFiles.filter((a) => a.type !== "audio")

@@ -3,6 +3,7 @@ import type { MidiValues, TransitionType } from "../../../types/Show"
 import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
 import { AudioPlaylist } from "../../audio/audioPlaylist"
+import { markItemsAsPlayed } from "../../converters/project"
 import { convertText } from "../../converters/txt"
 import { sendMain } from "../../IPC/main"
 import { transposeText } from "../../utils/chordTranspose"
@@ -16,9 +17,11 @@ import { getSlideThumbnail, getThumbnail } from "../helpers/media"
 import { changeStageOutputLayout, startCamera, startScreen, toggleOutput, toggleOutputs } from "../helpers/output"
 import { activateTriggerSync, changeOutputStyle, nextSlideIndividual, playSlideTimers, previousSlideIndividual, randomSlide, replaceDynamicValues, selectProjectShow, sendMidi, startShowSync } from "../helpers/showActions"
 import { startTimerById, startTimerByName, stopTimers } from "../helpers/timerTick"
+import { muteOutput, unmuteOutput } from "../helpers/video"
 import { clearAll, clearBackground, clearDrawing, clearOverlay, clearOverlays, clearSlide, clearTimers, restoreOutput } from "../output/clear"
 import { formatText } from "../show/formatTextEditor"
 import { getPlainEditorText } from "../show/getTextEditor"
+import { pauseTimeline, setTimelineTime, startTimeline, stopTimeline } from "../timeline/TimelinePlayback"
 import { runActionByName, runActionId, toggleAction } from "./actions"
 import { getOutput, getOutputGroupName, getOutputSlideText, getPlayingAudioData, getPlayingAudioDuration, getPlayingAudioTime, getPlayingPlaylist, getPlayingVideoDuration, getPlayingVideoState, getPlayingVideoTime, getPlaylists, getProject, getProjects, getShow, getShowLayout, getShows, getSlide, getVariable, getVariables } from "./apiGet"
 import {
@@ -57,6 +60,7 @@ import {
     selectShowByName,
     selectSlideByIndex,
     selectSlideByName,
+    setNextSlideTimer,
     setShowAPI,
     setTemplate,
     startPlaylistByName,
@@ -103,6 +107,7 @@ type API_id = { id: string }
 export type API_id_optional = { id?: string }
 type API_index = { index: number }
 type API_strval = { value: string }
+type API_numval = { value: number }
 type API_volume = { volume?: number } // no values will mute/unmute
 export type API_id_index = { id: string; index: number }
 export type API_slide = { showId?: string | "active"; slideId?: string }
@@ -139,6 +144,9 @@ export type API_variable = {
     key?: "text" | "number" | "random_number" | "text_set" | "value" | "enabled" | "step" | "name" | "type" | "increment" | "decrement" | "expression" | "randomize" | "reset" | "next" | "previous" // default: "enabled"
     value?: string | number | boolean
     variableAction?: "increment" | "decrement"
+
+    text_set?: string
+    text_set_number?: number
 }
 
 export interface API_midi extends MidiValues {
@@ -191,6 +199,7 @@ export const API_ACTIONS = {
     next_project_item: () => selectProjectShow("next"), // BC
     previous_project_item: () => selectProjectShow("previous"), // BC
     index_select_project_item: (data: API_index) => selectProjectShow(data.index), // BC
+    mark_active_as_played: (data: API_toggle_specific) => markItemsAsPlayed("active", data.value),
 
     // SHOWS
     name_select_show: (data: API_strval) => selectShowByName(data.value), // BC
@@ -201,6 +210,7 @@ export const API_ACTIONS = {
     rearrange_groups: (data: API_rearrange) => rearrangeGroups(data),
     add_group: (data: API_group) => addGroup(data),
     set_template: (data: API_id) => setTemplate(data.id),
+    set_next_slide_timer: (data: API_numval) => setNextSlideTimer(data.value),
     transpose_show_up: (data: API_id) => formatText(transposeText(getPlainEditorText(data.id), 1), data.id),
     transpose_show_down: (data: API_id) => formatText(transposeText(getPlainEditorText(data.id), -1), data.id),
 
@@ -253,6 +263,8 @@ export const API_ACTIONS = {
     change_output_style: (data: API_output_style) => changeOutputStyle(data),
     change_stage_output_layout: (data: API_stage_output_layout) => changeStageOutputLayout(data),
     change_transition: (data: API_transition) => updateTransition(data), // BC
+    mute_output: (data: API_id) => muteOutput(data.id),
+    unmute_output: (data: API_id) => unmuteOutput(data.id),
 
     // STAGE
     id_select_stage_layout: (data: API_id) => moveStageConnection(data.id), // BC
@@ -283,6 +295,12 @@ export const API_ACTIONS = {
     name_pause_timer: (data: API_strval) => pauseTimerByName(data.value),
     id_stop_timer: (data: API_id) => stopTimerById(data.id),
     name_stop_timer: (data: API_strval) => stopTimerByName(data.value),
+
+    // TIMELINE (SHOW)
+    start_timeline: () => startTimeline("show"),
+    stop_timeline: () => stopTimeline("show"),
+    pause_timeline: () => pauseTimeline("show"),
+    set_timeline_time: (data: API_seek) => setTimelineTime("show", data.seconds * 1000),
 
     // FUNCTIONS
     change_variable: (data: API_variable) => changeVariable(data), // BC

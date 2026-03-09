@@ -1,8 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte"
     import type { Tree } from "../../../types/Projects"
-    import { activeProject, folders, labelsDisabled, openedFolders, projects } from "../../stores"
-    import { translateText } from "../../utils/language"
+    import { activeProfile, activeProject, folders, labelsDisabled, openedFolders, projects } from "../../stores"
     import { history } from "../helpers/history"
     import Icon from "../helpers/Icon.svelte"
     import T from "../helpers/T.svelte"
@@ -150,29 +149,30 @@
                 <div class="rootFolder">
                     {#each tree as project}
                         {#if project.id === "ROOT"}
-                            <div class="title">{translateText("category.unlabeled")}</div>
+                            <div class="title"><T id="category.unlabeled" /></div>
                         {:else}
                             {@const opened = $openedFolders.includes(project.id)}
                             {@const shown = checkIfShown(project, $openedFolders)}
                             {@const isArchivedShown = !project.archived || visibleArchives.includes(project.parent)}
                             {@const isEmpty = project.type === "folder" && foldersWithoutContent.includes(project.id)}
                             {@const isReadOnly = readOnly || project.readOnly}
+                            {@const noEditing = !!($activeProfile && project.parent === "/")}
                             {@const projectsCount = project.parent === "/" ? tree.reduce((value, a) => (a.type !== "folder" ? value + 1 : value), 0) : 0}
 
                             <div class="projectItem" class:indented={project.parent !== "/"} style="margin-inline-start: {8 * (project.index || 0)}px;background-color: rgb(255 255 255 / {0.01 * (project.index || 0)});">
                                 <!-- , path: project.path -->
-                                <SelectElem id={project.type || "project"} data={{ type: project.type || "project", id: project.id }} draggable trigger="column" borders="center">
+                                <SelectElem id={project.type || "project"} data={{ type: project.type || "project", id: project.id }} draggable={!isReadOnly && !noEditing} trigger="column" borders="center">
                                     {#if project.type === "folder" && (project.parent === "/" || shown)}
-                                        <MaterialButton style="width: 100%;padding: 0.22rem 0.65rem;" on:click={(e) => toggleFolder(e, project, opened)} class="folder {readOnly ? 'context #folder_readonly' : 'context #folder__projects'}" isActive={pathToActive.includes(project.id)} tab>
+                                        <MaterialButton style="width: 100%;padding: 0.22rem 0.65rem;" title="{opened ? 'actions.close' : 'main.open'}: <b>{project.name}</b>" on:click={(e) => toggleFolder(e, project, opened)} class="folder context #folder{isReadOnly ? '_readonly' : noEditing ? '_noediting' : ''}" isActive={pathToActive.includes(project.id)} tab>
                                             <Icon id={opened ? "folderOpen" : "folder"} white />
-                                            <HiddenInput value={project.name} id={"folder_" + project.id} on:edit={(e) => renameFolder(project.id, e.detail.value)} bind:edit={editActive} allowEdit={!isReadOnly} />
+                                            <HiddenInput value={project.name} id={"folder_" + project.id} on:edit={(e) => renameFolder(project.id, e.detail.value)} bind:edit={editActive} allowEdit={!isReadOnly && !noEditing} />
 
                                             {#if projectsCount}
                                                 <span class="count">{projectsCount}</span>
                                             {/if}
                                         </MaterialButton>
                                     {:else if project.id && shown && isArchivedShown}
-                                        <MaterialButton style="width: 100%;padding: 0.08rem 0.65rem;font-weight: normal;" on:click={(e) => open(e, project.id)} class="context #project_button{readOnly ? '_readonly' : ''}" isActive={$activeProject === project.id} tab>
+                                        <MaterialButton style="width: 100%;padding: 0.08rem 0.65rem;font-weight: normal;" title="actions.id_select_project: <b>{project.name}</b>" on:click={(e) => open(e, project.id)} class="context #project_button{isReadOnly ? '_readonly' : ''}" isActive={$activeProject === project.id} tab>
                                             <Icon id={$projects[project.id]?.archived ? "archive" : "project"} white={$projects[project.id]?.archived} />
                                             <HiddenInput value={project.name} id={"project_" + project.id} on:edit={(e) => rename(project.id, e.detail.value)} bind:edit={editActive} allowEdit={!isReadOnly} />
                                         </MaterialButton>

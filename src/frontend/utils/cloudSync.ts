@@ -1,14 +1,18 @@
-import { get } from "svelte/store"
+import { get, type Unsubscriber } from "svelte/store"
 import { Main } from "../../types/IPC/Main"
+import { clone } from "../components/helpers/array"
+import { generateLightRandomColor } from "../components/helpers/color"
 import { isLocalFile } from "../components/helpers/media"
 import { loadShows } from "../components/helpers/setShow"
 import { requestMain, sendMain } from "../IPC/main"
-import { activeEdit, activePopup, activeShow, alertMessage, cloudSyncData, deletedShows, popupData, providerConnections, renamedShows, saved, scripturesCache, shows, showsCache, special } from "../stores"
-import { isMainWindow, newToast, setStatus } from "./common"
+import { activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, cloudSyncData, cloudUsers, deletedShows, focusMode, popupData, providerConnections, renamedShows, saved, scripturesCache, shows, showsCache, special } from "../stores"
+import { hasNewerUpdate, isMainWindow, newToast, setStatus, wait } from "./common"
 import { confirmCustom } from "./popup"
-import { save } from "./save"
+import { getSyncedSettings, save } from "./save"
+import { SocketHelper } from "./SocketHelper"
 
 export async function setupCloudSync(auto: boolean = false) {
+    if (get(cloudSyncData).enabled === false) return
     if (auto && get(cloudSyncData).id) {
         syncWithCloud()
         return
@@ -18,7 +22,8 @@ export async function setupCloudSync(auto: boolean = false) {
     const teams = await requestMain(Main.GET_TEAMS)
     if (!teams.length) {
         const addTeam = "Get added to a team, or create one in B1.church>Serving>Plans>Ministry>Teams!"
-        alertMessage.set(auto ? "You can setup cloud sync with ChurchApps, but no teams were found in your account. " + addTeam : "No teams were found in your account. " + addTeam)
+        const msg = auto ? "You can setup cloud sync with ChurchApps, but no teams were found in your account. " + addTeam : "No teams were found in your account. " + addTeam
+        alertMessage.set(msg + "<br><br>If you already did, try disconnecting and connecting again!")
         activePopup.set("alert")
         return
     }
@@ -46,9 +51,12 @@ export async function changeTeam() {
 
 export async function chooseTeam(team: { id: string; churchId: string; name: string; count?: number }) {
     const id = "churchApps"
+    const deviceName = get(cloudSyncData).deviceName || (await requestMain(Main.GET_DEVICE_NAME))
+
+    socketDisconnect()
 
     cloudSyncData.update((a) => {
-        a = { ...a, id, enabled: true, team }
+        a = { ...a, id, enabled: true, deviceName, team }
         return a
     })
 
@@ -64,7 +72,7 @@ export async function chooseTeam(team: { id: string; churchId: string; name: str
 
 let isSyncing = false
 // let lastSync = 0
-export async function syncWithCloud(initialize: boolean = false) {
+export async function syncWithCloud(initialize: boolean = false, isClosing: boolean = false) {
     if (!get(providerConnections).churchApps) return false
 
     if (isSyncing) return false
@@ -84,13 +92,15 @@ export async function syncWithCloud(initialize: boolean = false) {
 
     if (method === "replace") {
         // reset cached data
-        showsCache.set({})
+        if (!get(focusMode)) showsCache.set({})
         scripturesCache.set({})
         deletedShows.set([])
         renamedShows.set([])
         activeShow.set(null)
         activeEdit.set({ items: [] })
     }
+
+    if (!isClosing) socketConnect()
 
     isSyncing = true
     setStatus("syncing")
@@ -115,6 +125,8 @@ export async function syncWithCloud(initialize: boolean = false) {
     }
 
     setStatus("synced", 3)
+
+    if (isClosing) return true
 
     // reset cached shows as they might have changed
     const allShowIds = Object.keys(get(shows))
@@ -149,4 +161,223 @@ export function addToMediaFolder(filePath: string) {
 
     if (!get(special).cloudSyncMediaFolder) return
     sendMain(Main.MEDIA_FOLDER_COPY, { paths: [filePath] })
+}
+
+// SOCKET
+
+let cloudSocketHelper: SocketHelper | null = null
+let cachedConversationId: string | null = null
+
+function getCloudSocket() {
+    return cloudSocketHelper
+}
+
+async function createCloudSocket(): Promise<SocketHelper | null> {
+    if (cloudSocketHelper) return cloudSocketHelper
+
+    const team = get(cloudSyncData).team
+    if (!team) return null
+
+    const name = get(cloudSyncData).deviceName || ""
+    if (!cachedConversationId) cachedConversationId = await requestMain(Main.GET_CONVERSATION_ID, { teamId: team.id })
+
+    try {
+        cloudSocketHelper = new SocketHelper({ churchId: team.churchId, teamId: team.id, displayName: name, conversationId: cachedConversationId || undefined })
+        return cloudSocketHelper
+    } catch (err) {
+        console.error("Failed to create cloud socket:", err)
+        return null
+    }
+}
+
+export async function socketDisconnect() {
+    if (!cloudSocketHelper) return
+    const socket = cloudSocketHelper
+
+    clearStoreListeners()
+
+    await cloudSyncMessage("presence", { action: "bye" })
+    await wait(100) // ensure message is sent before disconnecting
+    socket.disconnect()
+
+    // clear local reference immediately so new connections create a new socket
+    cloudSocketHelper = null
+    cachedConversationId = null
+    cloudUsers.set([])
+}
+
+async function socketConnect() {
+    const socket = await createCloudSocket()
+    if (!socket) return
+
+    // initialize receivers
+    socket.addHandler("presence", CLOUD_RECEIVERS.presence)
+    socket.addHandler("settings_update", CLOUD_RECEIVERS.settings_update)
+
+    // announce self and get responses from all users
+    broadcastPresence("iamnew")
+
+    // setup listeners
+    setupStoreListeners()
+}
+
+let presenceUnsubscribers: (() => void)[] = []
+function setupStoreListeners() {
+    clearStoreListeners()
+    presenceUnsubscribers.push(activePage.subscribe(() => broadcastPresence()))
+    presenceUnsubscribers.push(activeShow.subscribe(() => broadcastPresence()))
+    presenceUnsubscribers.push(activeProject.subscribe(() => broadcastPresence()))
+
+    setupSettingsListeners()
+}
+
+function clearStoreListeners() {
+    presenceUnsubscribers.forEach((u) => u())
+    presenceUnsubscribers = []
+
+    clearSettingsListeners()
+}
+
+function broadcastPresence(action: string = "update") {
+    // don't send if in use by another user
+    if (isActiveShowInUseByCloudUser()) return
+
+    const page = get(activePage)
+    const show = clone(get(activeShow))
+    delete show?.index
+
+    cloudSyncMessage("presence", { action, activePage: page, activeShow: show, activeProject: get(activeProject) })
+}
+
+export function getCloudUsers(updater = get(cloudUsers)) {
+    const name = get(cloudSyncData).deviceName || ""
+    return updater.filter((a) => a.displayName !== name)
+}
+
+export function isActiveShowInUseByCloudUser(_updater: any = null) {
+    const users = getCloudUsers()
+    const activeShowId = get(activeShow)?.id
+    return users.some((user) => user.activeShow?.id === activeShowId)
+}
+
+export async function cloudSyncMessage(id: string = "", data: { [key: string]: any } = {}) {
+    const socket = getCloudSocket() || (await createCloudSocket())
+    if (!socket) return
+
+    if (!(await socket.waitUntilConnected())) return
+
+    socket.sendMessage(id, data)
+}
+
+// RECEIVERS
+
+const CLOUD_RECEIVERS = {
+    presence: (data: { displayName?: string; action?: string; activePage?: string; activeShow?: any; activeProject?: any }) => {
+        const currentName = get(cloudSyncData).deviceName || ""
+        const name = data.displayName
+        if (!name || name === currentName) return
+
+        const isBye = data.action === "bye"
+        const userData = { displayName: name, lastUpdate: Date.now(), activePage: data.activePage, activeShow: data.activeShow, activeProject: data.activeProject }
+
+        // store a persistent color
+        let color = get(special).cloudUserColors?.[name]
+        if (!color) {
+            color = generateLightRandomColor()
+            special.update((s) => {
+                s.cloudUserColors = { ...s.cloudUserColors, [name!]: color }
+                return s
+            })
+        }
+
+        let isNewUser = data.action === "iamnew"
+        cloudUsers.update((users) => {
+            const existingIndex = users.findIndex((u) => u.displayName === name)
+
+            // remove user
+            if (isBye) {
+                if (existingIndex < 0) return users
+                users.splice(existingIndex, 1)
+                return users
+            }
+
+            // add user
+            if (existingIndex < 0) {
+                isNewUser = true
+                return [...users, { ...userData, color }]
+            }
+
+            // update user
+            users[existingIndex] = { ...users[existingIndex], ...userData }
+            return users
+        })
+
+        if (isNewUser) broadcastPresence("iamhere")
+        else if (data.action === "presence") removeInactive()
+    },
+    settings_update: (data: { id: string; key: string; value: any }) => {
+        const syncedSettings = getSyncedSettings()
+        const store = syncedSettings[data.id]
+        if (!store) return
+
+        currentlyUpdatingSettings.add(data.id)
+        store.update((s) => {
+            s[data.key] = data.value
+            return s
+        })
+    }
+}
+
+async function removeInactive() {
+    if (await hasNewerUpdate("CLOUD_USERS", 1000)) return
+
+    const timeout = 60 * 3000 // 3 minutes
+    const now = Date.now()
+    cloudUsers.update((users) => users.filter((u) => now - (u.lastUpdate || 0) < timeout))
+}
+
+// SEND SYNCED SETTINGS CHANGES REAL-TIME
+// this can only be done for the stores that don't use the "deleted"/"created" system
+
+const activeListeners = new Map<string, Unsubscriber>()
+const previousData = new Map<string, any>()
+function setupSettingsListeners() {
+    const syncedSettings = getSyncedSettings()
+    Object.keys(syncedSettings).forEach((key) => {
+        if (activeListeners.has(key)) return
+
+        const store = syncedSettings[key]
+        const unsubscriber = store.subscribe((a) => settingsListener(key, a))
+        activeListeners.set(key, unsubscriber)
+
+        setTimeout(() => previousData.set(key, clone(get(store))), 50)
+    })
+}
+function clearSettingsListeners() {
+    activeListeners.forEach((unsubscribe, key) => {
+        unsubscribe()
+        activeListeners.delete(key)
+    })
+}
+
+const currentlyUpdatingSettings = new Set<string>()
+function settingsListener(key: string, data: any) {
+    if (currentlyUpdatingSettings.has(key)) {
+        currentlyUpdatingSettings.delete(key)
+        return
+    }
+    if (!previousData.has(key)) return
+    if (typeof data !== "object" || data === null) return
+
+    const previous = previousData.get(key)
+
+    // find changed key(s)
+    const changedKeys = Object.keys(data).filter((k) => JSON.stringify(data[k]) !== JSON.stringify(previous[k]))
+    if (!changedKeys.length) return
+
+    changedKeys.forEach((k) => {
+        cloudSyncMessage("settings_update", { id: key, key: k, value: data[k] })
+    })
+
+    previousData.set(key, clone(data))
 }

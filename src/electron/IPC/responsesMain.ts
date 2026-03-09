@@ -8,8 +8,9 @@ import type { MainResponses } from "../../types/IPC/Main"
 import { Main } from "../../types/IPC/Main"
 import type { ErrorLog, LyricSearchResult, OS } from "../../types/Main"
 import { openNowPlaying, setPlayingState, unsetPlayingAudio } from "../audio/nowPlaying"
-import { canSync, getSyncTeams, hasDataChanged, hasTeamData, syncData } from "../cloud/syncManager"
+import { canSync, getSyncTeams, hasDataChanged, hasTeamData, markAsNewSync, syncData } from "../cloud/syncManager"
 import { ContentProviderRegistry } from "../contentProviders"
+import { ChurchAppsChat } from "../contentProviders/churchApps/ChurchAppsChat"
 import { deleteBackup, getBackups, restoreFiles } from "../data/backup"
 import { getLocalIPs } from "../data/bonjour"
 import { checkIfMediaDownloaded, downloadLessonsMedia, downloadMedia } from "../data/downloadMedia"
@@ -41,6 +42,7 @@ export const mainResponses: MainResponses = {
     [Main.VERSION]: () => getVersion(),
     [Main.GET_OS]: () => getOS(),
     [Main.DEVICE_ID]: () => getMachineId(),
+    [Main.GET_DEVICE_NAME]: () => getDeviceName(),
     [Main.IP]: () => getLocalIPs(),
     [Main.CHECK_RAM_USAGE]: () => checkRamUsage(),
     // STORES
@@ -104,7 +106,7 @@ export const mainResponses: MainResponses = {
     [Main.OUTPUT]: (_, e) => (e.sender.id === getMainWindow()?.webContents.id ? "false" : "true"),
     // MEDIA
     [Main.DOES_MEDIA_EXIST]: (data) => doesMediaExist(data),
-    [Main.GET_THUMBNAIL]: (data) => getThumbnail(data),
+    [Main.GET_THUMBNAIL]: async (data) => await getThumbnail(data),
     [Main.SAVE_IMAGE]: (data) => saveImage(data),
     [Main.PDF_TO_IMAGE]: (data) => pdfToImage(data),
     [Main.READ_EXIF]: (data) => readExifData(data),
@@ -167,8 +169,11 @@ export const mainResponses: MainResponses = {
     [Main.CLOUD_DATA]: (data) => hasTeamData(data),
     [Main.CLOUD_CHANGED]: (data) => hasDataChanged(data),
     [Main.CLOUD_SYNC]: (data) => syncData(data),
+    [Main.GET_CONVERSATION_ID]: (data) => getConversationId(data.teamId),
+    [Main.SEND_SOCKET_MESSAGE]: (data) => sendSocketMessage(data),
     // Provider-based routing
     [Main.PROVIDER_LOAD_SERVICES]: async (data) => {
+        if (data.cloudOnly) markAsNewSync()
         await ContentProviderRegistry.loadServices(data.providerId, data.cloudOnly || false)
     },
     [Main.PROVIDER_DISCONNECT]: (data) => {
@@ -293,8 +298,22 @@ function getVersion() {
     }
 }
 
+async function getConversationId(teamId: string): Promise<string | null> {
+    return ChurchAppsChat.getOrCreateConversation(teamId)
+}
+
+async function sendSocketMessage(data: { churchId: string; teamId: string; displayName: string; content: string }): Promise<boolean> {
+    const conversationId = await ChurchAppsChat.getOrCreateConversation(data.teamId)
+    if (!conversationId) return false
+    return ChurchAppsChat.sendMessage({ churchId: data.churchId, conversationId, displayName: data.displayName, content: data.content })
+}
+
 function getOS() {
     return { platform: os.platform(), name: os.hostname(), arch: os.arch() } as OS
+}
+
+function getDeviceName() {
+    return (os.hostname() || "").replace(".local", "")
 }
 
 function checkRamUsage() {

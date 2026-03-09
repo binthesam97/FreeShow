@@ -3,7 +3,8 @@
     import { uid } from "uid"
     import type { Item, Line } from "../../../../types/Show"
     import { VIRTUAL_BREAK_CHAR } from "../../../show/slides"
-    import { activeEdit, activeShow, activeStage, activeTriggerFunction, overlays, redoHistory, refreshListBoxes, stageShows, templates } from "../../../stores"
+    import { activeEdit, activeShow, activeStage, activeTriggerFunction, overlays, redoHistory, refreshListBoxes, showsCache, stageShows, templates } from "../../../stores"
+    import { newToast } from "../../../utils/common"
     import T from "../../helpers/T.svelte"
     import { clone } from "../../helpers/array"
     import { history } from "../../helpers/history"
@@ -20,6 +21,7 @@
     export let ref: {
         type?: "show" | "overlay" | "template" | "stage"
         showId?: string
+        origin?: string
         id: string
     }
     export let index: number
@@ -91,7 +93,7 @@
 
     function getStyle() {
         if (!plain && $activeEdit.slide === null) return
-        let result = EditboxHelper.getStyleHtml(item, plain, currentStyle)
+        let result = EditboxHelper.getStyleHtml(item, plain, currentStyle, ref.origin === "powerpoint")
         html = result.html
         currentStyle = result.currentStyle
         previousHTML = html
@@ -270,6 +272,24 @@
 
             history({ id: "SHOW_ITEMS", newData: { key: "lines", data: clone([newLines]), slides: [ref.id], items: [index], showId: ref.showId }, location: { page: "none", override: itemRef } })
 
+            // update stored scripture custom dynamic values
+            if ($showsCache[ref.showId || ""]?.slides?.[ref.id]?.customDynamicValues) {
+                showsCache.update((a) => {
+                    if (!a[ref.showId || ""]?.slides?.[ref.id]?.customDynamicValues) return a
+                    newLines.forEach((line) => {
+                        line.text?.forEach((text) => {
+                            if (text.sourceDynamicKey?.includes("scripture_text")) {
+                                const key = text.sourceDynamicKey.split(":")[0]
+                                const index = text.sourceDynamicKey.split(":")[1] || "0"
+                                if (!a[ref.showId!].slides[ref.id].customDynamicValues![key]?.[index]?.[1]) return
+                                a[ref.showId!].slides[ref.id].customDynamicValues![key][index][1] = text.value
+                            }
+                        })
+                    })
+                    return a
+                })
+            }
+
             // refresh list view boxes
             if (plain) refreshListBoxes.set(editIndex)
         }
@@ -407,7 +427,13 @@
                 let customIndex = style.indexOf("--custom")
                 if (customIndex > -1) style = style.slice(0, customIndex)
 
-                newLines[pos].text.push({ style, value: lineText })
+                // GET sourceDynamicKey
+                let sourceDynamicKey = child.getAttribute("data-sourcedynamickey") || undefined
+
+                const text: any = { style, value: lineText }
+                if (sourceDynamicKey) text.sourceDynamicKey = sourceDynamicKey
+
+                newLines[pos].text.push(text)
 
                 currentStyle += style
 
@@ -540,6 +566,20 @@
             navigator.clipboard.readText().then((clipText: string) => {
                 paste(e, clipText)
             })
+        }
+
+        if (e.key === "<") {
+            // Bamini font character "<" (ஈ)
+            // https://github.com/ChurchApps/FreeShow/issues/2899
+            if (item?.lines?.some((line) => line.text?.some((text) => text.style?.toLowerCase()?.includes("bamini")))) {
+                e.preventDefault()
+                document.execCommand("insertHTML", false, "ஈ")
+                return
+            }
+
+            // HTML (will be invisible in editor)
+            // &lt; is currently read and replaced as < when editing
+            newToast("Note: < is treated as HTML")
         }
     }
 

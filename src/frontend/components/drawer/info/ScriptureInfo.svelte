@@ -142,7 +142,7 @@
         activePage.set("edit")
     }
 
-    $: containsJesusWords = Object.values(biblesContent?.[0]?.verses?.[0] || {})?.find((text: any) => text?.includes('<span class="wj"') || text?.includes("<red") || text?.includes("!{"))
+    $: containsJesusWords = Object.values(biblesContent?.[0]?.verses?.[0] || {})?.find((text: any) => text?.includes('<span class="wj"') || text?.includes("<red") || text?.includes("color:red;") || text?.includes("!{"))
 
     $: previousSlides = "{}"
     let currentOutputSlides: any[] = []
@@ -235,7 +235,7 @@
 
         {#if useOldSystem || (styleScriptureTemplate ? useOldScriptureSystem(styleScriptureTemplate) : false)}
             <p style="margin-bottom: 10px;font-size: 0.9rem;opacity: 0.7;white-space: normal;">
-                You are using an outdated scripture template! - <Link url="https://freeshow.app/docs/scripture#template">Read more</Link>
+                You are using a template with no scripture values! - <Link url="https://freeshow.app/docs/scripture#template">Read more</Link>
             </p>
         {/if}
         {#if useOldSystem}
@@ -243,7 +243,7 @@
                 {#if usingDefault}
                     Convert template to new system
                 {:else}
-                    Switch to new scripture system
+                    Use default template
                 {/if}
             </MaterialButton>
         {/if}
@@ -284,6 +284,7 @@
                     {#if $scriptureSettings.splitLongVerses}
                         <MaterialToggleSwitch label="scripture.split_long_verses_suffix" checked={$scriptureSettings.splitLongVersesSuffix} defaultValue={false} on:change={(e) => update("splitLongVersesSuffix", e.detail)} />
                         <MaterialNumberInput label="edit.size" value={$scriptureSettings.longVersesChars || 100} defaultValue={100} min={50} on:change={(e) => update("longVersesChars", e.detail)} />
+                        <MaterialNumberInput label="scripture.tolerance" value={$scriptureSettings.longVersesTolerance || 0} defaultValue={0} min={0} max={100} on:change={(e) => update("longVersesTolerance", e.detail)} />
                     {/if}
                 </svelte:fragment>
             </InputRow>

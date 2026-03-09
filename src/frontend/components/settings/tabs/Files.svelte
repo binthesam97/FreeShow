@@ -4,7 +4,7 @@
     import { Main } from "../../../../types/IPC/Main"
     import { requestMain, sendMain } from "../../../IPC/main"
     import { activePopup, autosave, cloudSyncData, dataPath, driveData, driveKeys, providerConnections, saved, special, statusIndicator } from "../../../stores"
-    import { changeTeam, setupCloudSync } from "../../../utils/cloudSync"
+    import { changeTeam, setupCloudSync, socketDisconnect } from "../../../utils/cloudSync"
     import { previousAutosave, startAutosave, wait } from "../../../utils/common"
     import { validateKeys } from "../../../utils/drive"
     import { translateText } from "../../../utils/language"
@@ -183,8 +183,10 @@
         })
     }
 
-    function contentProviderConnect(providerId: ContentProviderId) {
+    let disconnecting = false
+    async function contentProviderConnect(providerId: ContentProviderId) {
         if (!$providerConnections[providerId]) {
+            cloudSyncData.set({})
             special.update((a) => {
                 a.churchAppsCloudOnly = true
                 return a
@@ -192,20 +194,31 @@
 
             sendMain(Main.PROVIDER_LOAD_SERVICES, { providerId, cloudOnly: true })
         } else {
+            if (providerId === "churchApps" && !$special.churchAppsCloudOnly) {
+                const enabled = !$cloudSyncData.enabled
+                cloudSyncData.set({ enabled, id: "churchApps" })
+                toggleSync(enabled)
+                return
+            }
+
+            disconnecting = true
+            await socketDisconnect()
             requestMain(Main.PROVIDER_DISCONNECT, { providerId }, (a) => {
+                disconnecting = false
                 if (!a.success) return
                 providerConnections.update((c) => {
                     c[providerId] = false
                     return c
                 })
             })
+
+            if ($cloudSyncData.id === providerId) cloudSyncData.set({})
         }
     }
 
     let resetValue = 0
     $: if ($activePopup) resetValue++
-    function toggleSync(e) {
-        const enabled = e.detail
+    function toggleSync(enabled: boolean) {
         if (enabled) {
             setupCloudSync()
         } else {
@@ -259,7 +272,7 @@
 <!-- cloud -->
 <Title label="settings.cloud" icon="cloud" title="cloud.info" />
 
-{#if !$providerConnections.churchApps}
+{#if !$providerConnections.churchApps || (!$special.churchAppsCloudOnly && !$cloudSyncData.enabled)}
     <InputRow>
         <MaterialButton on:click={() => contentProviderConnect("churchApps")} style="flex: 1;" icon="login">
             <T id="settings.connect_to" replace={["ChurchApps"]} />
@@ -267,7 +280,7 @@
     </InputRow>
 {:else}
     <InputRow>
-        <MaterialButton on:click={() => contentProviderConnect("churchApps")} style="flex: 1;border-bottom: 2px solid var(--connected) !important;" icon="logout">
+        <MaterialButton disabled={disconnecting} on:click={() => contentProviderConnect("churchApps")} style="flex: 1;border-bottom: 2px solid var(--connected) !important;" icon="logout">
             <T id="settings.disconnect_from" replace={["ChurchApps"]} />
         </MaterialButton>
         {#if $cloudSyncData.enabled}
@@ -280,7 +293,7 @@
     <InputRow arrow={$cloudSyncData.enabled}>
         <InputRow style="flex: 1;">
             {#key resetValue}
-                <MaterialToggleSwitch label="Enable sync" data={$cloudSyncData?.team?.name} checked={$cloudSyncData.enabled} style="flex: 1;" on:change={toggleSync} />
+                <MaterialToggleSwitch label="Enable sync" data={$cloudSyncData?.team?.name} checked={$cloudSyncData.enabled} style="flex: 1;" on:change={(e) => toggleSync(e.detail)} />
             {/key}
 
             {#if $cloudSyncData.enabled && ($cloudSyncData.team?.count || 0) > 1}
@@ -289,6 +302,8 @@
         </InputRow>
 
         <svelte:fragment slot="menu">
+            <MaterialTextInput label="inputs.name" value={$cloudSyncData.deviceName || ""} on:change={(e) => updateCloudData("deviceName", e.detail)} />
+
             <!-- changing team directly without toggling "Enable sync" off/on -->
             <MaterialToggleSwitch label="cloud.read_only" title="cloud.readonly_tip" checked={$cloudSyncData.cloudMethod === "read_only"} defaultValue={false} on:change={(e) => updateCloudData("cloudMethod", e.detail ? "read_only" : "merge")} />
 
@@ -309,7 +324,7 @@
 
 <!-- DEPRECATED: -->
 
-{#if validKeys}
+{#if !$providerConnections.churchApps && validKeys}
     <MaterialMediaPicker label="Google API service account key" title="Import keys file" value="Update keys file" filter={{ name: "Key file", extensions: ["json"] }} icon="key" on:change={receiveKeysFile} allowEmpty />
     <MaterialToggleSwitch label="Disable uploading data" checked={$driveData.disableUpload} defaultValue={false} on:change={(e) => toggleData(e.detail, "disableUpload")} />
 

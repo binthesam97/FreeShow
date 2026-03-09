@@ -55,6 +55,8 @@ export interface ClickEvent {
 }
 
 export type SelectIds =
+    | "files"
+    | "urls"
     | "slide"
     | "slide_icon"
     | "group"
@@ -64,7 +66,6 @@ export type SelectIds =
     | "show_drawer"
     | "project"
     | "folder"
-    | "files"
     | "category_shows"
     | "category_media"
     | "category_overlays"
@@ -254,7 +255,7 @@ export interface Variable {
     eachNumberOnce?: boolean
     sets?: { name: string; minValue?: number; maxValue?: number }[]
     setName?: string // chosen random set
-    setLog?: { name: string; number: number }[]
+    setLog?: { name: string; number: string }[]
 
     // text
     text?: string
@@ -367,6 +368,7 @@ export type Popups =
     | "restore"
     | "reset_all"
     | "alert"
+    | "new_update"
     | "history"
     | "action_history"
     | "manage_emitters"

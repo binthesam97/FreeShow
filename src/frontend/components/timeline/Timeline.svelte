@@ -4,7 +4,7 @@
     import { uid } from "uid"
     import type { TimelineAction } from "../../../types/Show"
     import { createWaveform } from "../../audio/audioWaveform"
-    import { activePopup, activeShow, activeTriggerFunction, resized, showsCache, special, timecode, timeline as timelineStore } from "../../stores"
+    import { activePopup, activeShow, activeTriggerFunction, resized, selected, showsCache, special, timecode, timeline as timelineStore } from "../../stores"
     import { DEFAULT_WIDTH } from "../../utils/common"
     import { translateText } from "../../utils/language"
     import { actionData } from "../actions/actionData"
@@ -200,6 +200,9 @@
     function startContentInteraction(e: MouseEvent) {
         if (e.button !== 0) return
 
+        // remove any selection
+        selected.set({ id: null, data: [] })
+
         // Store origin in content space (relative to track)
         const rect = trackWrapper.getBoundingClientRect()
         const offsetX = e.clientX - rect.left + trackWrapper.scrollLeft
@@ -387,6 +390,9 @@
 
         if (e.button !== 0) return
 
+        // remove any selection
+        selected.set({ id: null, data: [] })
+
         if (e.ctrlKey || e.metaKey || e.shiftKey) {
             const index = selectedActionIds.indexOf(id)
             if (index === -1) selectedActionIds = [...selectedActionIds, id]
@@ -561,6 +567,8 @@
         else player.play()
     }
 
+    $: if ($activeTriggerFunction === `start_${type}_timeline`) player.play()
+
     $: if ($activeTriggerFunction === "delete_selected_nodes") deleteSelectedNodes()
     function deleteSelectedNodes() {
         if (isClosed || !selectedActionIds.length) return
@@ -623,6 +631,11 @@
     }
 
     $: disablePlayback = type === "project" && $timecode.type === "receive"
+
+    $: actionsByTime = actions.slice().sort((a, b) => a.time - b.time)
+    $: slideActions = actionsByTime.filter((a) => a.type === "slide")
+    $: firstSlideAction = slideActions[0]
+    $: lastSlideAction = slideActions[slideActions.length - 1]
 </script>
 
 <svelte:window on:keydown={keydown} />
@@ -758,6 +771,11 @@
                             {/if}
                         {/each}
                     </div>
+
+                    <!-- Slide Action Bar -->
+                    {#if firstSlideAction}
+                        <div class="slide-action-bar" style="left: {(firstSlideAction.time / 1000) * zoomLevel}px;top: {getActionBaseY(firstSlideAction)}px;width: {((lastSlideAction.time - firstSlideAction.time) / 1000) * zoomLevel}px;"></div>
+                    {/if}
 
                     <!-- Actions -->
                     {#each actions as action (action.id)}
@@ -1050,6 +1068,17 @@
     }
     .action-marker.slide .action-head {
         border-radius: 4px;
+    }
+
+    .slide-action-bar {
+        position: absolute;
+        transform: translateY(15px);
+        height: 8px;
+        width: 100%;
+
+        border-radius: 4px;
+        background-color: var(--secondary);
+        opacity: 0.3;
     }
 
     .action-clip {

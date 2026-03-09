@@ -66,7 +66,7 @@
         mediaPath = bgPath
         let thumbnailPath = getThumbnailPath(mediaPath, mediaSize.slideSize)
 
-        const media = await getMedia(bgPath)
+        const media = await getMedia(bgPath, mediaSize.slideSize)
         if (!media) return
 
         mediaPath = media.path
@@ -89,7 +89,9 @@
 
     $: if (!$currentWindow && $slideVideoData) updateVideo()
     function updateVideo() {
-        const videoData = $slideVideoData[id]?.[mediaPath]
+        if (!bgPath) return
+
+        const videoData = $slideVideoData[id]?.[bgPath]
         if (!videoElem || !videoData) return
 
         if (videoData.isPaused && !videoElem.paused) {
@@ -109,12 +111,12 @@
 
             const videoData = { currentTime: videoElem.currentTime, duration: videoElem.duration, isPaused: videoElem.paused, loop: videoElem.loop }
             // send(Main.MAIN_SLIDE_VIDEO, videoData)
-            send(OUTPUT, ["MAIN_SLIDE_VIDEO"], { id, path: mediaPath, data: videoData })
+            send(OUTPUT, ["MAIN_SLIDE_VIDEO"], { id, path: bgPath, data: videoData })
         }, 200)
 
         const videoReceiver = {
             SLIDE_VIDEO_STATE: (data: any) => {
-                if (data.slideId !== id || data.path !== mediaPath) return
+                if (data.slideId !== id || data.path !== bgPath) return
                 if (!videoElem) return
 
                 if (data.action === "play") {
@@ -160,9 +162,9 @@
         <!-- WIP image flashes when loading new image (when changing slides with the same image) -->
         <!-- TODO: use custom transition... -->
         {#if item.fit === "blur"}
-            <Image style="{mediaStyleBlurString}{mediaStyleCombinedString}" src={mediaPath} {updater} alt="" transition={!edit && item.actions?.transition?.duration && item.actions?.transition?.type !== "none"} />
+            <Image style="{mediaStyleBlurString}{mediaStyleCombinedString}" src={mediaPath} {updater} alt="" transition={!edit && item.actions?.transition?.duration && item.actions?.transition?.type !== "none"} cropping={item.cropping} />
         {/if}
-        <Image style="{mediaStyleString}{mediaStyleCombinedString}" src={mediaPath} {updater} alt="" transition={!edit && item.actions?.transition?.duration && item.actions?.transition?.type !== "none"} />
+        <Image style="{mediaStyleString}{mediaStyleCombinedString}" src={mediaPath} {updater} alt="" transition={!edit && item.actions?.transition?.duration && item.actions?.transition?.type !== "none"} cropping={item.cropping} />
         <!-- {/key} -->
     {/if}
 {/if}

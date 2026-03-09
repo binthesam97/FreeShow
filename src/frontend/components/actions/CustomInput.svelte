@@ -109,7 +109,9 @@
         // WIP remove all actions that reference this action and so on - to prevent infinite loop
         run_action: () => convertToOptions($actions).filter((a) => a.label && a.value !== mainId),
         set_template: () => convertToOptions($templates),
-        toggle_output: () => convertToOptions($outputs)
+        toggle_output: () => convertToOptions($outputs),
+        mute_output: () => sortByName(keysToID($outputs).filter((a) => !a.stageOutput)).map((a) => ({ value: a.id, label: a.name }), "label"),
+        unmute_output: () => sortByName(keysToID($outputs).filter((a) => !a.stageOutput)).map((a) => ({ value: a.id, label: a.name }), "label")
     }
 
     $: options = getOptions[actionId]?.() || []
@@ -176,12 +178,16 @@
 {:else if inputId === "number"}
     <!-- action wait (seconds) -->
     <MaterialNumberInput label="timer.seconds" value={value?.number || 0} step={0.5} on:change={(e) => updateValue("number", e)} />
+{:else if inputId === "seconds"}
+    <MaterialNumberInput label="timer.seconds" value={value?.seconds || 0} on:change={(e) => updateValue("seconds", e)} />
 {:else if inputId === "index"}
     <!-- run by index -->
     <MaterialNumberInput label="variables.value" value={value?.index || 0} on:change={(e) => updateValue("index", e)} />
 {:else if inputId === "strval"}
     <!-- run by name -->
     <MaterialTextInput label="inputs.name" value={value?.value || ""} on:change={(e) => updateValue("value", e)} />
+{:else if inputId === "numval"}
+    <MaterialNumberInput label="variables.value" value={value?.value || 0} on:change={(e) => updateValue("value", e)} />
 {:else if inputId === "toggle"}
     <MaterialDropdown label="variables.value" options={stateOptions} value={typeof value?.value === "boolean" ? (value.value ? "on" : "off") : ""} on:change={textStateChange} />
 {:else if inputId === "output_lock"}

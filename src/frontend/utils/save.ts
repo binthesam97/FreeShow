@@ -24,6 +24,7 @@ import {
     customMetadata,
     customizedIcons,
     dataPath,
+    deletedDefaults,
     deletedShows,
     disabledServers,
     drawSettings,
@@ -64,6 +65,7 @@ import {
     profiles,
     projectTemplates,
     projects,
+    providerConnections,
     redoHistory,
     remotePassword,
     renamedShows,
@@ -103,7 +105,7 @@ import {
 } from "../stores"
 import type { SaveActions, SaveData, SaveList, SaveListSettings, SaveListSyncedSettings } from "./../../types/Save"
 import { audioStreams, companion } from "./../stores"
-import { syncWithCloud } from "./cloudSync"
+import { socketDisconnect, syncWithCloud } from "./cloudSync"
 import { newToast, setStatus } from "./common"
 import { syncDrive } from "./drive"
 
@@ -175,35 +177,10 @@ export function save(closeWhenFinished = false, customTriggers: SaveActions = {}
         contentProviderData: get(contentProviderData)
     }
 
-    // settings exclusive to the local machine (path names that shouldn't be synced with cloud)
-    const syncedSettings: { [key in SaveListSyncedSettings]: any } = {
-        categories: get(categories),
-        drawSettings: get(drawSettings),
-        groups: get(groups),
-        overlayCategories: get(overlayCategories),
-        scriptures: get(scriptures),
-        scriptureSettings: get(scriptureSettings),
-        templateCategories: get(templateCategories),
-        styles: get(styles),
-        profiles: get(profiles),
-        timers: get(timers),
-        variables: get(variables),
-        triggers: get(triggers),
-        audioStreams: get(audioStreams),
-        audioPlaylists: get(audioPlaylists),
-        midiIn: get(actions),
-        emitters: get(emitters),
-        playerVideos: get(playerVideos),
-        videoMarkers: get(videoMarkers),
-        mediaTags: get(mediaTags),
-        actionTags: get(actionTags),
-        variableTags: get(variableTags),
-        customizedIcons: get(customizedIcons),
-        companion: get(companion),
-        globalTags: get(globalTags),
-        customMetadata: get(customMetadata),
-        effects: get(effects)
-    }
+    const syncedSettings: { [key: string]: any } = {}
+    Object.entries(getSyncedSettings()).forEach(([key, store]) => {
+        syncedSettings[key] = get(store)
+    })
 
     const allSavedData: SaveData = {
         // SETTINGS
@@ -244,6 +221,38 @@ export function save(closeWhenFinished = false, customTriggers: SaveActions = {}
     setTimeout(() => sendMain(Main.SAVE, saveData))
 }
 
+export function getSyncedSettings(): { [key in SaveListSyncedSettings]: any } {
+    return {
+        categories,
+        drawSettings,
+        groups,
+        overlayCategories,
+        scriptures,
+        scriptureSettings,
+        templateCategories,
+        styles,
+        profiles,
+        timers,
+        variables,
+        triggers,
+        audioStreams,
+        audioPlaylists,
+        midiIn: actions,
+        emitters,
+        playerVideos,
+        videoMarkers,
+        mediaTags,
+        actionTags,
+        variableTags,
+        customizedIcons,
+        companion,
+        globalTags,
+        customMetadata,
+        effects,
+        deletedDefaults
+    }
+}
+
 export async function saveComplete({ closeWhenFinished, customTriggers }: { closeWhenFinished: boolean; customTriggers?: SaveActions }) {
     const alreadySaved = get(saved)
     if (!closeWhenFinished) {
@@ -254,10 +263,18 @@ export async function saveComplete({ closeWhenFinished, customTriggers }: { clos
     }
 
     // cloud sync
-    if (customTriggers?.autosave || closeWhenFinished) {
+    if ((customTriggers?.autosave || closeWhenFinished) && (get(providerConnections).churchApps || !get(driveData)?.mainFolderId)) {
+        if (closeWhenFinished) {
+            alertMessage.set("actions.closing")
+            activePopup.set("alert")
+        }
+
         // only sync when autosaving or closing
-        if (!customTriggers?.autosave || !alreadySaved) await syncWithCloud()
-        if (closeWhenFinished) closeApp()
+        if (!customTriggers?.autosave || !alreadySaved) await syncWithCloud(false, closeWhenFinished)
+        if (closeWhenFinished) {
+            await socketDisconnect()
+            closeApp()
+        }
         return
     }
 
@@ -428,5 +445,6 @@ const saveList: { [key in SaveList]: any } = {
     globalTags,
     customMetadata: null,
     contentProviderData,
-    effects
+    effects,
+    deletedDefaults: null
 }

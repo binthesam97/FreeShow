@@ -1,7 +1,7 @@
 import type { AutosizeTypes } from "../frontend/components/edit/scripts/autosize"
 import type { Input } from "./Input"
 import type { Animation } from "./Output"
-import type { Resolution } from "./Settings"
+import type { Cropping, Resolution } from "./Settings"
 
 export interface Shows {
     [key: string]: Show
@@ -31,14 +31,10 @@ export interface Show {
         modified: null | number
         used: null | number
     }
-    message?: {
-        text: string
-        template?: string
-    }
     metadata?: {
-        override: boolean
-        display: string
-        template: string
+        // override: boolean
+        // display: string
+        // template: string
         tags?: string[]
     }
     meta: {
@@ -87,15 +83,19 @@ export interface Slide {
     group: null | string
     color: null | string
     globalGroup?: string
+    locked?: boolean // lock slide group to prevent changes
     settings: {
         template?: string
         background?: boolean
         color?: string
+        backgroundImage?: string
         resolution?: Resolution
     }
     children?: string[]
     notes: string
     items: Item[]
+
+    customDynamicValues?: { [key: string]: string | [string, string][] } // used for scripture slides
 }
 
 export interface Item {
@@ -105,17 +105,19 @@ export interface Item {
     auto?: boolean // DEPRECATED - use textFit
     textFit?: AutosizeTypes // auto size text fix option (default: shrinkToFit)
     autoFontSize?: number // only used to store the calculated auto size text size
+    previewAutoFontSize?: number // only used to store the calculated auto size text size for the preview
     style: string
     align?: string
     specialStyle?: any // line gap && line background
     media?: any
+    cropping?: Cropping // in percentage based on original image size
     // timer?: Timer // pre 0.8.3 // also local backup?
     timer?: { id: string; [key: string]: any }
     timerId?: string // pre 1.5.0
     clock?: Clock
     events?: DynamicEvent
     type?: ItemType
-    decoration?: boolean // ppt imported shapes (no selection directly)
+    decoration?: boolean // ppt imported shapes & scripture items (no selection directly)
     mirror?: Mirror
     src?: string // media item path
     customSvg?: string
@@ -184,6 +186,8 @@ export interface Timer {
     showHours?: boolean // use just minutes or minutes and hours
     start?: number
     end?: number
+    startDynamic?: string
+    endDynamic?: string
     event?: string
     time?: string
 
@@ -256,6 +260,7 @@ export interface Line {
         value: string
         style: string
         customType?: string // "disableTemplate"
+        sourceDynamicKey?: string // used for scripture slides to link back to the dynamic value key (only scripture_text currently)
     }[]
     chords?: Chords[]
 }
@@ -373,6 +378,7 @@ export interface Transition {
     type: TransitionType
     duration: number
     easing: string
+    fadeInOffset?: number // when to start fading in (default = 50%)
     delay?: number // item in/out wait
     custom?: any // e.g. transition direction
 
@@ -485,6 +491,7 @@ export interface Overlay {
     modified?: number // cloud sync
     items: Item[]
     locked?: boolean
+    actions?: any[]
     placeUnderSlide?: boolean
     displayDuration?: number
 }
@@ -513,8 +520,8 @@ export interface TemplateSettings {
     backgroundPath?: string
     overlayId?: string
     firstSlideTemplate?: string
-    maxLinesPerSlide?: number // auto break slides if more than set lines
-    breakLongLines?: number // auto break lines if longer than set words
+    maxLinesPerSlide?: number | string // auto break slides if more than set lines
+    breakLongLines?: number | string // auto break lines if longer than set words
     actions?: any[]
     styleOverrides?: TemplateStyleOverride[]
 }
@@ -561,6 +568,7 @@ export interface OutSlide {
 
     translations?: number // scripture translations count (for style template)
     attributionString?: string // scripture custom attributionString
+    customDynamicValues?: { [key: string]: string | [string, string][] } // used for scripture slides
 }
 
 export interface OutTransition {
@@ -591,6 +599,6 @@ export interface Tag {
 
 export type ID = string
 export type ItemType = "text" | "list" | "media" | "camera" | "timer" | "clock" | "button" | "events" | "weather" | "variable" | "web" | "mirror" | "icon" | "slide_tracker" | "visualizer" | "captions" | "metronome" | "current_output" // "shape" | "video"
-export type ShowType = "show" | "image" | "video" | "audio" | "player" | "section" | "overlay" | "pdf" | "ppt" | "screen" | "ndi" | "camera" | "folder" // "private"
+export type ShowType = "DIVIDER" | "show" | "image" | "video" | "audio" | "player" | "section" | "overlay" | "pdf" | "ppt" | "screen" | "ndi" | "camera" | "folder" // "private"
 export type TransitionType = "none" | "blur" | "fade" | "crossfade" | "fly" | "scale" | "slide" | "spin"
 export type MediaType = "media" | "video" | "image" | "effect" | "screen" | "ndi" | "camera" | "player" | "audio"

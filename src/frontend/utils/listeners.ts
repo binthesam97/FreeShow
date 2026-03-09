@@ -2,7 +2,7 @@ import { get } from "svelte/store"
 import { OUTPUT, REMOTE, STAGE } from "../../types/Channels"
 import { AudioPlayer } from "../audio/audioPlayer"
 import { midiInListen } from "../components/actions/midi"
-import { getActiveOutputs } from "../components/helpers/output"
+import { getAllActiveOutputIds, getAllNormalOutputs } from "../components/helpers/output"
 import { loadShows } from "../components/helpers/setShow"
 import { getShowCacheId, updateCachedShow, updateCachedShows, updateShowsList } from "../components/helpers/show"
 import {
@@ -16,6 +16,7 @@ import {
     audioChannelsData,
     audioData,
     cachedShowsData,
+    categories,
     colorbars,
     customMessageCredits,
     customMetadata,
@@ -55,8 +56,8 @@ import {
     timers,
     transitionData,
     triggers,
-    variableTags,
     variables,
+    variableTags,
     volume
 } from "../stores"
 import { hasNewerUpdate } from "./common"
@@ -122,6 +123,18 @@ export function storeSubscriber() {
         if (Object.keys(data).length < 100) updateCachedShows(data)
     })
 
+    // show category metadata display
+    categories.subscribe(async (data) => {
+        if (await hasNewerUpdate("LISTENER_CATEGORIES", 50)) return
+
+        send(OUTPUT, ["CATEGORIES"], data)
+    })
+
+    groups.subscribe(async (data) => {
+        if (await hasNewerUpdate("LISTENER_GROUPS", 50)) return
+
+        send(OUTPUT, ["GROUPS"], data)
+    })
     templates.subscribe(async (data) => {
         if (await hasNewerUpdate("LISTENER_TEMPLATES", 50)) return
 
@@ -232,27 +245,24 @@ export function storeSubscriber() {
     draw.subscribe((data) => {
         // if (await hasNewerUpdate("LISTENER_DRAW")) return
 
-        const allOutputs = getActiveOutputs(get(outputs), false, false, true)
-        const activeOutputs = getActiveOutputs(get(outputs), true, false, true)
-        allOutputs.forEach((id) => {
-            if (activeOutputs.includes(id)) send(OUTPUT, ["DRAW"], { id, data })
+        const activeOutputIds = getAllActiveOutputIds()
+        getAllNormalOutputs().forEach(({ id }) => {
+            if (activeOutputIds.includes(id)) send(OUTPUT, ["DRAW"], { id, data })
             else send(OUTPUT, ["DRAW"], { id, data: null })
         })
     })
     drawTool.subscribe((data) => {
         // WIP changing tool while output is not active, will not update tool in output if set to active before changing tool again
-        const allOutputs = getActiveOutputs(get(outputs), false, false, true)
-        const activeOutputs = getActiveOutputs(get(outputs), true, false, true)
-        allOutputs.forEach((id) => {
-            if (activeOutputs.includes(id)) send(OUTPUT, ["DRAW_TOOL"], { id, data })
+        const activeOutputIds = getAllActiveOutputIds()
+        getAllNormalOutputs().forEach(({ id }) => {
+            if (activeOutputIds.includes(id)) send(OUTPUT, ["DRAW_TOOL"], { id, data })
             else send(OUTPUT, ["DRAW_TOOL"], { id, data: "focus" })
         })
     })
     drawSettings.subscribe((data) => {
-        const allOutputs = getActiveOutputs(get(outputs), false, false, true)
-        const activeOutputs = getActiveOutputs(get(outputs), true, false, true)
-        allOutputs.forEach((id) => {
-            if (activeOutputs.includes(id)) send(OUTPUT, ["DRAW_SETTINGS"], data)
+        const activeOutputIds = getAllActiveOutputIds()
+        getAllNormalOutputs().forEach(({ id }) => {
+            if (activeOutputIds.includes(id)) send(OUTPUT, ["DRAW_SETTINGS"], data)
             else {
                 send(OUTPUT, ["DRAW_TOOL"], { id, data: "focus" })
                 send(OUTPUT, ["DRAW"], { id, data: null })
@@ -446,10 +456,12 @@ const initalOutputData = {
     STYLES: "styles",
     TRANSITION: "transitionData",
     SHOWS: "showsCache",
+    CATEGORIES: "categories",
 
     TEMPLATES: "templates",
     OVERLAYS: "overlays",
     EVENTS: "events",
+    GROUPS: "groups",
 
     DRAW: { data: "draw" },
     DRAW_TOOL: { data: "drawTool" },

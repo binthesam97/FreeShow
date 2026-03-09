@@ -15,7 +15,7 @@ import { itemBoxes } from "../values/boxes"
 import { getLikelyPosition } from "./autoPosition"
 import { getItemText, setCaret } from "./textStyle"
 
-export const DEFAULT_ITEM_STYLE = "top:120px;left:50px;height:840px;width:1820px;"
+export const DEFAULT_ITEM_STYLE = "top:88px;left:50px;height:904px;width:1820px;"
 
 function getDefaultStyles(type: ItemType, templateItems: Item[] | null = null) {
     // Get position styles from template or use default from boxes.ts
@@ -36,7 +36,7 @@ function getDefaultStyles(type: ItemType, templateItems: Item[] | null = null) {
     return styleString
 }
 
-export function addItem(type: ItemType, id: string | null = null, options: any = {}, textValue = "") {
+export function addItem(type: ItemType, id: string | null = null, options: any = {}, textValue = "", customStyles: { [key: string]: string } | null = null) {
     const activeTemplate: string | null = get(activeShow)?.id ? get(showsCache)[get(activeShow)!.id]?.settings?.template : null
     const template = activeTemplate ? get(templates)[activeTemplate]?.items : null
 
@@ -49,6 +49,16 @@ export function addItem(type: ItemType, id: string | null = null, options: any =
     const currentItems = getEditItems()
     const itemsCount = currentItems.length
     if (itemsCount && itemsCount >= (template?.length || 0)) newData.style = getLikelyPosition(currentItems, newData.style)
+
+    // set custom style values (like position)
+    if (customStyles) {
+        const styles = getStyles(newData.style)
+        Object.entries(customStyles).forEach(([key, value]) => {
+            styles[key] = value
+        })
+        newData.style = ""
+        Object.entries(styles).forEach((obj) => (newData.style += obj[0] + ":" + obj[1] + ";"))
+    }
 
     // deselect previous selection & select new item
     activeEdit.set({ ...get(activeEdit), items: [itemsCount] })
@@ -347,8 +357,11 @@ export function checkConditionValue(cVal: ConditionValue, itemsText: string, typ
     let value = ""
     if (element === "text") value = itemsText
     else if (element === "timer") value = getTimerValue(elementId)
-    else if (element === "variable") value = _getVariableValue(elementId)
-    else if (element === "dynamicValue") value = getDynamicValue(elementId, type)
+    else if (element === "variable") {
+        const val = _getVariableValue(elementId)
+        if (Array.isArray(val)) value = val[Number(cVal.index ?? 0)]
+        else value = val
+    } else if (element === "dynamicValue") value = getDynamicValue(elementId, type)
 
     if (operator === "is") {
         return value === dataValue

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { cameraManager } from "../../media/cameraManager"
-    import { actions, activeEdit, activeProject, activeRecording, activeShow, categories, colorbars, dictionary, disabledServers, drawerTabsData, effects, effectsLibrary, events, forceClock, livePrepare, media, mediaFolders, os, outputs, overlayCategories, overlays, projects, redoHistory, scriptures, selected, shows, showsCache, slidesOptions, stageShows, styles, templateCategories, timers, topContextActive, undoHistory } from "../../stores"
+    import { actions, activeEdit, activeProject, activeRecording, activeShow, categories, colorbars, dictionary, disabledServers, drawerTabsData, effects, effectsLibrary, events, forceClock, globalTags, livePrepare, media, mediaFolders, os, outputs, overlayCategories, overlays, projects, redoHistory, scriptures, selected, shows, showsCache, slidesOptions, special, stageShows, styles, templateCategories, timers, topContextActive, undoHistory } from "../../stores"
     import { translateText } from "../../utils/language"
     import { closeContextMenu } from "../../utils/shortcuts"
     import { keysToID } from "../helpers/array"
@@ -22,6 +22,7 @@
 
     let hide = false
     let enabled: boolean = menu?.enabled ? true : false
+    let customTitle: string = ""
 
     const conditions = {
         // slide views
@@ -80,9 +81,13 @@
             if (!$styles[styleId]) disabled = true
             menu.label += `: ${styleId ? $styles[styleId]?.name || "error.not_found" : "main.none"}`
         },
-        lock_show: () => {
-            if (!$shows[$selected.data[0]?.id]?.locked) return
-            enabled = !!$shows[$selected.data[0].id].locked
+        lock_group: () => {
+            if ($selected.id !== "group") return
+
+            const slideId = $selected.data?.[0]?.id
+            const show = $showsCache[$activeShow?.id || ""]
+            const isLocked = show?.slides?.[slideId]?.locked || false
+            enabled = isLocked
         },
         disable: () => {
             let isEnabled = false
@@ -99,6 +104,10 @@
 
             enabled = isEnabled
             menu.label = isEnabled ? "actions.enable" : "actions.disable"
+        },
+        display_tags: () => {
+            enabled = $special.displayTags
+            hide = !Object.keys($globalTags).length
         },
         move_connections: () => {
             hide = $disabledServers.stage === true
@@ -124,29 +133,30 @@
             }
         },
         remove_group: () => {
-            if ($selected.id !== "slide" || $selected.data?.length > 1) return
+            if ($selected.id !== "slide" || !$selected.data?.length) return
 
-            const ref = getLayoutRef()
-            const slideIndex = $selected.data[0]?.index
-            const currentSlideId = ref[slideIndex]?.parent?.id || ref[slideIndex]?.id
-            if (!currentSlideId) return
+            hide = $selected.data.every(({ index }) => {
+                const ref = getLayoutRef()
+                const currentSlideId = ref[index]?.parent?.id || ref[index]?.id
+                if (!currentSlideId) return true
 
-            const show = $showsCache[$activeShow?.id || ""]
+                const show = $showsCache[$activeShow?.id || ""]
 
-            // if parent slide and has children, don't hide
-            const isParent = ref[slideIndex]?.type === "parent"
-            if (isParent && (show.slides[currentSlideId]?.children || []).length) {
-                hide = false
-                return
-            }
+                // if parent slide and has children, don't hide
+                const isParent = ref[index]?.type === "parent"
+                if (isParent && (show.slides[currentSlideId]?.children || []).length) {
+                    // hide if group is set to "None"
+                    return show.slides[currentSlideId].group === "."
+                }
 
-            const currentSlideInstances = Object.values(show.layouts)
-                .map((a) => a.slides)
-                .flat()
-                .filter((b) => b.id === currentSlideId)
+                const currentSlideInstances = Object.values(show.layouts)
+                    .map((a) => a.slides)
+                    .flat()
+                    .filter((b) => b.id === currentSlideId)
 
-            // hide if there is just one instance of the slide group across all layouts
-            hide = currentSlideInstances.length < 2
+                // hide if there is just one instance of the slide group across all layouts
+                return currentSlideInstances.length < 2
+            })
         },
         remove: () => {
             if ($selected.id !== "show" || _show($selected.data[0]?.id).get("private") !== true) return
@@ -296,6 +306,19 @@
         //     if (item is bound) enabled = true
         // }
 
+        category_action: () => {
+            const categoryId = $selected.data[0]
+            enabled = !!$categories[categoryId]?.action
+        },
+        category_template: () => {
+            const categoryId = $selected.data[0]
+            enabled = !!$categories[categoryId]?.template
+        },
+        metadata_display: () => {
+            const categoryId = $selected.data[0]
+            enabled = !!$categories[categoryId]?.metadata
+        },
+
         // Media type
         type_default: () => {
             const folderId = $selected.data[0]
@@ -360,7 +383,7 @@
 </script>
 
 <div on:click={contextItemClick} class:enabled class:disabled class:hide class:highlighted class:group data-title={translateText(menu?.tooltip || "")} style="color: {menu?.color || 'unset'};font-weight: {menu?.color ? '500' : 'normal'};{menu?.style || ''}" tabindex={0} on:keydown={keydown} role="menuitem">
-    <span class="item" data-title={group && !menu?.tooltip ? `${shortcut}` : ""}>
+    <span class="item" data-title={group && !menu?.tooltip ? `${shortcut}` : customTitle || ""}>
         <!-- white={menu.icon !== "edit"} -->
         {#if menu?.icon}<Icon style="opacity: 0.7;color: {(topBar ? '' : menu.iconColor) || 'var(--text)'};" id={menu.icon} size={group ? 1.4 : 1} white />{/if}
         {#if enabled === true}<Icon id="check" style="fill: var(--text);" size={0.7} white />{/if}

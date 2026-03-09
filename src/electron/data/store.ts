@@ -3,7 +3,7 @@
 // https://www.npmjs.com/package/electron-store
 
 import Store from "electron-store"
-import { mkdirSync, renameSync, statSync } from "fs"
+import { mkdirSync, statSync } from "fs"
 import path from "path"
 import type { Event } from "../../types/Calendar"
 import type { History } from "../../types/History"
@@ -15,7 +15,7 @@ import type { Overlays, Templates, TrimmedShows } from "../../types/Show"
 import type { StageLayouts } from "../../types/Stage"
 import type { ContentProviderId } from "../contentProviders/base/types"
 import { sendMain, sendToMain } from "../IPC/main"
-import { dataFolderNames, deleteFile, doesPathExist, getDataFolderPath, getDataFolderRoot, getDefaultDataFolderRoot, readFile, readFolder } from "../utils/files"
+import { dataFolderNames, deleteFile, doesPathExist, getDataFolderPath, getDataFolderRoot, getDefaultDataFolderRoot, moveFileAsync, readFile, readFolder } from "../utils/files"
 import { clone, wait } from "../utils/helpers"
 import "./contentProviders"
 import { defaultConfig, defaultSettings, defaultSyncedSettings } from "./defaults"
@@ -52,8 +52,8 @@ export const storeFilesData = {
 export const appDataPath = path.dirname(config.path)
 checkStores(appDataPath)
 
-export function setupStores() {
-    const oldLocation = migrateConfig()
+export async function setupStores() {
+    const oldLocation = await migrateConfig()
     createStores(oldLocation, true)
 
     checkStores(getDataFolderRoot())
@@ -220,7 +220,7 @@ export function getStore<T extends keyof typeof storeFilesData | "config">(id: T
 // GET STORE VALUE (used in special cases - currently only some "config" keys)
 export function getStoreValue(data: { file: "config" | keyof typeof _store; key: string }) {
     const store = data.file === "config" ? config : _store[data.file]
-    return (store as any).get(data.key)
+    return (store as any).get(data.key) ?? null
 }
 // SET STORE VALUE (used in special cases - currently only some "config" keys)
 export function setStoreValue(data: { file: "config" | keyof typeof _store; key: string; value: any }) {
@@ -275,7 +275,7 @@ function moveStore(key: keyof typeof storeFilesData, previousLocation: string, s
 }
 
 // move pre 1.5.3 data path & config
-export function migrateConfig() {
+export async function migrateConfig() {
     const configDataPath = config.get("dataPath")
     if (configDataPath) return null // already set
 
@@ -289,7 +289,7 @@ export function migrateConfig() {
 
     // move shows content to data/Shows if not already
     if (showsPath && (!showsPath.includes(dataPath) || !showsPath.includes("Shows"))) {
-        moveShowsToDataFolder(showsPath)
+        await moveShowsToDataFolder(showsPath)
     }
 
     const useDataPath = !!settings.special?.customUserDataLocation
@@ -299,7 +299,7 @@ export function migrateConfig() {
     return noConfig ? appDataPath : null
 }
 
-function moveShowsToDataFolder(oldShowsPath: string) {
+async function moveShowsToDataFolder(oldShowsPath: string) {
     if (!doesPathExist(oldShowsPath)) return
 
     console.log("Moving shows to data location")
@@ -307,16 +307,18 @@ function moveShowsToDataFolder(oldShowsPath: string) {
     const files = readFolder(oldShowsPath)
     const showsFolderPath = getDataFolderPath("shows")
 
-    files.forEach((file) => {
-        if (!file.endsWith(".show")) return
+    await Promise.all(
+        files.map(async (file) => {
+            if (!file.endsWith(".show")) return
 
-        const oldPath = path.join(oldShowsPath, file)
-        const newPath = path.join(showsFolderPath, file)
+            const oldPath = path.join(oldShowsPath, file)
+            const newPath = path.join(showsFolderPath, file)
 
-        try {
-            renameSync(oldPath, newPath)
-        } catch (err) {
-            console.error("Could not move show file to new data folder:", err)
-        }
-    })
+            try {
+                await moveFileAsync(oldPath, newPath)
+            } catch (err) {
+                console.error("Could not move show file to new data folder:", err)
+            }
+        })
+    )
 }

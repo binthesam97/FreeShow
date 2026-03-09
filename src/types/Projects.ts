@@ -15,6 +15,8 @@ export interface Project {
     shows: ProjectShowRef[]
     timeline?: Timeline
     archived?: boolean
+    sectionsLocked?: boolean // if true, sections cannot be edited or removed
+    sourcePath?: string // used to save directly to file import location
 }
 
 export interface ProjectShowRef extends ShowRef {

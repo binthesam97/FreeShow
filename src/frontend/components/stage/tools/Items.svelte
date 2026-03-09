@@ -28,11 +28,16 @@
         // { id: "text" }, // video time/countdown ... (preset with dynamic values)
         // { id: "variable" }, // added as dynamic value in textbox
         { id: "media", icon: "image" },
-        { id: "camera" },
+        { id: "web" },
         { id: "timer" },
         { id: "clock" },
+
+        { id: "camera" },
         { id: "slide_tracker", icon: "percentage" },
         { id: "metronome", maxAmount: 1 },
+        { id: "visualizer", maxAmount: 1 },
+
+        // { id: "icon" },
         { id: "current_output", icon: "screen" }
     ]
 
@@ -86,7 +91,7 @@
         updateSortedStageItems()
 
         // select item
-        if (Object.keys($stageShows[stageId]?.items).length > 1) {
+        if (Object.keys($stageShows[stageId]?.items || {}).length > 1) {
             activeStage.update((a) => {
                 a.items = [itemId]
                 return a
@@ -220,8 +225,8 @@
                             {#if getIdentifier[type]}<p style="margin-inline-start: 10px;max-width: 120px;opacity: 0.5;font-size: 0.8em;max-width: 40%;">{getIdentifier[type](currentItem)}</p>{/if}
                         </span>
                         <span>
-                            <MaterialButton disabled={i === allItems.length - 1} icon="down" style="padding: 8px;" on:click={() => rearrangeStageItems("backward", id)} />
-                            <MaterialButton disabled={i === 0} icon="up" style="padding: 8px;" on:click={() => rearrangeStageItems("forward", id)} />
+                            <MaterialButton disabled={i === allItems.length - 1} icon="down" title="actions.backward" style="padding: 8px;" on:click={() => rearrangeStageItems("backward", id)} />
+                            <MaterialButton disabled={i === 0} icon="up" title="actions.forward" style="padding: 8px;" on:click={() => rearrangeStageItems("forward", id)} />
                         </span>
                     </MaterialButton>
                 {/each}

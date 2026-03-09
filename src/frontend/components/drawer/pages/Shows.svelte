@@ -3,7 +3,7 @@
     // import VirtualList from "@sveltejs/svelte-virtual-list"
     // import VirtualList from "./VirtualList2.svelte"
     import type { ShowList } from "../../../../types/Show"
-    import { activeEdit, activeFocus, activePopup, activeProject, activeShow, activeTagFilter, categories, drawer, focusedArea, focusMode, labelsDisabled, shows, sorted, sortedShowsList } from "../../../stores"
+    import { activeEdit, activeFocus, activePopup, activeProfile, activeProject, activeShow, activeTagFilter, categories, drawer, focusedArea, focusMode, labelsDisabled, shows, sorted, sortedShowsList } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { getAccess } from "../../../utils/profile"
     import { formatSearch, isRefinement, showSearch, tokenize } from "../../../utils/search"
@@ -35,8 +35,8 @@
     //     if (JSON.stringify(updateSorted) !== JSON.stringify(updatedSorted)) updatedSorted = clone(showsSorted)
     // }
 
-    const profile = getAccess("shows")
-    const readOnly = profile.global === "read"
+    $: profile = $activeProfile ? getAccess("shows") : {}
+    $: readOnly = profile.global === "read"
 
     let filteredShows: ShowList[] = []
     let filteredStored: ShowList[] = []
@@ -138,7 +138,7 @@
 
     let showLoading = false
     function keydown(e: KeyboardEvent) {
-        if (e.target?.closest(".search")) {
+        if (e.target?.closest(".drawer_search")) {
             // get preview of shows
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault()
@@ -301,11 +301,18 @@
             <T id="category.create_nonexistent" />
         </MaterialButton>
     </FloatingInputs>
+{:else if active === "all" && !searchValue && filteredShows.length < 20}
+    <FloatingInputs side="left" onlyOne>
+        <MaterialButton variant="outlined" title="actions.import [Ctrl+I]" on:click={() => activePopup.set("import")}>
+            <Icon id="import" />
+            <T id="actions.import" />
+        </MaterialButton>
+    </FloatingInputs>
 {/if}
 
 <FloatingInputs onlyOne gradient>
     <div role="none" class="overflow-interact" on:click={(e) => createShow(e, true)}>
-        <MaterialButton icon="add" class="context #drawer_new_show" title="tooltip.show [Ctrl+N]" disabled={readOnly} on:click={createShow}>
+        <MaterialButton icon="add" class="context #drawer_new_show" title="tooltip.show [Ctrl+N]" disabled={readOnly} on:click={createShow} white>
             {#if !$labelsDisabled}<T id="new.show" />{/if}
         </MaterialButton>
     </div>

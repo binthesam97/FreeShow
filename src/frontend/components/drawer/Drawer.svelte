@@ -209,7 +209,7 @@
             {#each tabs as tab, i}
                 {#if $drawerTabsData[tab.id]?.enabled !== false && getAccess(tab.id).global !== "none" && (!$focusMode || !hiddenInFocusMode.includes(tab.id))}
                     <!-- overflow: unset; -->
-                    <MaterialButton id={tab.id} style="border-radius: 0;border-bottom: 2px solid var(--primary);padding: 0.2em 0.8em;" class="context #drawer_top" title="{tab.name.split('.')[0]}.{tab.name.split('.')[1]} [Ctrl+{i + 1}]" isActive={activeTab === tab.id} on:click={() => openDrawerTab(tab)} on:dblclick={closeDrawer}>
+                    <MaterialButton id={tab.id} style="border-radius: 0;border-bottom: 2px solid var(--primary);padding: 0.2em 0.8em;" class="context #drawer_top" title="<b>{tab.name.split('.')[0]}.{tab.name.split('.')[1]}</b>{tab.title ? `\n${tab.title}` : ''} [Ctrl+{i + 1}]" isActive={activeTab === tab.id} on:click={() => openDrawerTab(tab)} on:dblclick={closeDrawer}>
                         <Icon id={tab.icon} size={1.3} white={activeTab === tab.id} />
                         {#if !$labelsDisabled && !$focusMode}
                             <span><T id={tab.name} /></span>
@@ -219,7 +219,7 @@
             {/each}
         </span>
 
-        <input bind:this={searchElem} class:hidden={!searchActive && !searchValue.length} class="search edit" type="text" placeholder={translateText("main.search...")} bind:value={searchValue} on:input={search} use:selectTextOnFocus />
+        <input bind:this={searchElem} class:hidden={!searchActive && !searchValue.length} class="search edit drawer_search" type="text" placeholder={translateText("main.search...")} bind:value={searchValue} on:input={search} use:selectTextOnFocus />
         {#if !searchActive && !searchValue.length}
             <Button class="search" style="border-bottom: 2px solid var(--secondary);" on:click={() => (searchActive = true)} title={translateText("tabs.search_tip [Ctrl+F]")} bold={false}>
                 <Icon id="search" size={1.4} white right={!$labelsDisabled && !$focusMode} />

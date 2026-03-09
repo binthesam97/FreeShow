@@ -30,7 +30,7 @@ import { convertLessonsPresentation } from "../converters/lessonsChurch"
 import { convertMediaShout } from "../converters/mediashout"
 import { convertOpenLP } from "../converters/openlp"
 import { convertOpenSong } from "../converters/opensong"
-import { convertPowerpoint } from "../converters/powerpoint"
+import { convertPowerpoint } from "../converters/powerpoint/powerpointImporter"
 import { addToProject, importProject, updateRecentlyAddedFiles } from "../converters/project"
 import { convertProPresenter } from "../converters/propresenter"
 import { convertQuelea } from "../converters/quelea"
@@ -87,6 +87,8 @@ import { initializeClosing, saveComplete } from "../utils/save"
 import { updateSettings, updateSyncedSettings, updateThemeValues } from "../utils/updateSettings"
 import type { MainReturnPayloads } from "./../../types/IPC/Main"
 import { Main } from "./../../types/IPC/Main"
+import { invalidateSearchIndex } from "../utils/searchFast"
+import { sendMain } from "./main"
 
 type MainHandler<ID extends Main | ToMain> = (data: ID extends keyof ToMainSendPayloads ? ToMainSendPayloads[ID] : ID extends keyof MainReturnPayloads ? Awaited<MainReturnPayloads[ID]> : undefined) => void
 export type MainResponses = {
@@ -141,6 +143,7 @@ export const mainResponses: MainResponses = {
     },
     [Main.CACHE]: (a) => {
         textCache.set(a.text || {})
+        invalidateSearchIndex()
     },
     [Main.USAGE]: (a) => usageLog.set(a),
 
@@ -249,7 +252,9 @@ export const mainResponses: MainResponses = {
         // get "actual" variables
         Object.entries(get(variables)).forEach(([id, a]) => {
             if (!a.name) return
-            variableData[`variable_${getLabelId(a.name, false)}`] = _getVariableValue(id)
+            let val = _getVariableValue(id)
+            if (Array.isArray(val)) val = val[0]
+            variableData[`variable_${getLabelId(a.name, false)}`] = val
         })
 
         // get timers
@@ -300,6 +305,7 @@ export const mainResponses: MainResponses = {
 
         const replaceIds: { [key: string]: string } = {}
         const allShows = keysToID(get(shows))
+        const providerLocalAlways = get(contentProviderData)[data.providerId]?.localAlways ?? false
 
         // CREATE SHOWS
         const tempShows: { id: string; show: Show }[] = []
@@ -313,15 +319,25 @@ export const mainResponses: MainResponses = {
             const linkedShow = linkKey && allShows.find(({ quickAccess }) => quickAccess?.[linkKey] === id)
             if (linkedShow) {
                 replaceIds[id] = linkedShow.id
+                if (providerLocalAlways) continue
+                Object.values<Slide>(show.slides).forEach((slide) => {
+                    if (slide.globalGroup || !slide.group) return
+
+                    const globalGroup = getGlobalGroup(slide.group)
+                    if (globalGroup) slide.globalGroup = globalGroup
+                })
+
+                const origin = data.providerId === "planningcenter" ? "pco" : data.providerId
+                tempShows.push({ id: linkedShow.id, show: { ...show, origin, name: checkName(show.name, linkedShow.id), quickAccess: { ...(linkedShow.quickAccess || {}), [linkKey]: id } } })
                 continue
             }
 
             // find existing show with same name and ask to replace
             const providerName = data.providerId === "planningcenter" ? "Planning Center" : data.providerId === "churchApps" ? "ChurchApps" : "the cloud"
-            const existingShow = allShows.find(({ name }) => name.toLowerCase() === show.name.toLowerCase())
+            const existingShow = allShows.find(({ id: existingId, name }) => existingId !== id && name.toLowerCase() === show.name.toLowerCase())
             // const existingShowHasContent = existingShow && (await loadShows([existingShow.id])) && getSlidesText(get(showsCache)[existingShow.id].slides)
             if (existingShow) {
-                const useLocal = get(contentProviderData)[data.providerId]?.localAlways ?? (await confirmCustom(`There is an existing show with the same name: ${existingShow.name}.<br><br>Would you like to use the local version instead of the one from ${providerName}?`))
+                const useLocal = providerLocalAlways || (await confirmCustom(`There is an existing show with the same name: ${existingShow.name}.<br><br>Would you like to use the local version instead of the one from ${providerName}?`))
                 if (useLocal) {
                     replaceIds[id] = existingShow.id
 
@@ -336,8 +352,7 @@ export const mainResponses: MainResponses = {
                 }
             }
 
-            // don't add/update if already existing (to not mess up any set styles)
-            if (get(shows)[id]) continue
+            if (providerLocalAlways && get(shows)[id]) continue
 
             // replace group names with existing global groups
             Object.values<Slide>(show.slides).forEach((slide) => {
@@ -394,7 +409,11 @@ export const mainResponses: MainResponses = {
 
         const receiveFilePathIMPORT = {
             // Media
-            pdf: () => addToProject("pdf", mainData as string[]),
+            pdf: () => {
+                // convert to images directly - drag and drop to keep as PDF
+                ;(mainData as string[]).forEach((path) => sendMain(Main.PDF_TO_IMAGE, { filePath: path }))
+                // addToProject("pdf", mainData as string[])
+            },
             powerkey: () => addToProject("ppt", mainData as string[])
         }
         if (mainData.find((dataValue) => typeof dataValue === "string")) {

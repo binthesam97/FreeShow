@@ -57,7 +57,7 @@
     //     if (msInterval) clearInterval(msInterval)
     // })
 
-    $: if (timer?.type) currentTime = getCurrentTimerValue(timer, ref, today, $activeTimers)
+    $: if (timer?.type) currentTime = getCurrentTimerValue(timer, ref, today, $activeTimers, updateDynamic)
     else currentTime = 0
 
     $: min = Math.min(timer.start || 0, timer.end || 0)
@@ -118,6 +118,30 @@
 
     $: playingTimer = $activeTimers.filter((a) => a.id === ref.id)[0]
     $: isPaused = playingTimer?.paused
+
+    // DYNAMIC VALUES
+    $: hasDynamicValues = timer.startDynamic !== undefined || timer.endDynamic !== undefined
+
+    // only update if text contains dynamic values
+    $: if (hasDynamicValues) startInterval()
+    else stopInterval()
+    let dynamicInterval: NodeJS.Timeout | null = null
+    function startInterval() {
+        stopInterval()
+        dynamicInterval = setInterval(update, 5000)
+    }
+    function stopInterval() {
+        if (dynamicInterval) clearInterval(dynamicInterval)
+        dynamicInterval = null
+    }
+
+    let updateDynamic = 0
+    function update() {
+        if (!hasDynamicValues) return
+        updateDynamic++
+    }
+
+    onDestroy(() => stopInterval())
 </script>
 
 {#if item?.timer?.viewType === "line"}

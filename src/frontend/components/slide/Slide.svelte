@@ -3,7 +3,7 @@
     import type { MediaStyle } from "../../../types/Main"
     import type { Item, Media, Show, Slide, SlideData } from "../../../types/Show"
     import { removeTagsAndContent } from "../../show/slides"
-    import { activeEdit, activePage, activeTimers, activeTriggerFunction, effects, focusMode, fullColors, groups, media, outputs, overlays, refreshListBoxes, refreshSlideThumbnails, slidesOptions, slideTimers, special, styles, textEditActive } from "../../stores"
+    import { activeEdit, activePage, activeTimers, effects, focusMode, fullColors, groups, media, outputs, overlays, refreshListBoxes, refreshSlideThumbnails, slideNotesActive, slidesOptions, slideTimers, special, styles, textEditActive } from "../../stores"
     import { wait } from "../../utils/common"
     import { translateText } from "../../utils/language"
     import { getAccess } from "../../utils/profile"
@@ -14,9 +14,10 @@
     import { clone } from "../helpers/array"
     import { getContrast, hexToRgb, splitRgb } from "../helpers/color"
     import Icon from "../helpers/Icon.svelte"
-    import { getMedia, getMediaCached, getMediaStyle, getThumbnailPath, mediaSize } from "../helpers/media"
+    import { getMedia, getMediaCached, getMediaStyle, mediaSize } from "../helpers/media"
     import { allOutputsHasStyleTemplate, getActiveOutputs, getFirstActiveOutput, getResolution, getSlideFilter, setTemplateStyle } from "../helpers/output"
     import { getGroupName } from "../helpers/show"
+    import { _show } from "../helpers/shows"
     import Effect from "../output/effects/Effect.svelte"
     import SelectElem from "../system/SelectElem.svelte"
     import Actions from "./Actions.svelte"
@@ -46,14 +47,11 @@
     $: isLessons = show?.reference?.type === "lessons"
 
     $: viewMode = isLessons ? "grid" : $slidesOptions.mode || "grid"
-    $: background = layoutSlide.background ? show.media[layoutSlide.background] : null
+    $: background = layoutSlide.background ? show.media[layoutSlide.background] : slide?.settings?.backgroundImage ? { path: slide.settings.backgroundImage } : null
 
     let ghostBackground: Media | null = null
-    let bgIndex = -1
-    let isFirstGhost = false
-    // don't show ghost backgrounds if over slide 60 (because of loading/performance!)
-    // $: capped = ghostBackground && !background && index >= 60
-    $: if (!background && index < ($special.optimizedMode ? 20 : 60) && layoutSlides.length) setTimeout(checkGhostBackground)
+    // don't show ghost slides above 40 when using optimized mode
+    $: if (!background && ($special.optimizedMode ? index < 40 : true) && layoutSlides.length) setTimeout(checkGhostBackground)
     function checkGhostBackground() {
         ghostBackground = null
         layoutSlides.forEach((a, i) => {
@@ -62,14 +60,11 @@
             if (slideHasAction(a.actions, "clear_background") && (!a.disabled || i === index)) ghostBackground = null
             else if (a.background && !a.disabled) {
                 ghostBackground = show.media[a.background]
-                bgIndex = i
             }
 
             const mediaData = a.background && show.media[a.background]
             // WIP getMediaLayerType - use what is set in show only
             if (mediaData && (mediaData?.loop === false || $media[mediaData?.path || ""]?.videoType === "foreground")) ghostBackground = null
-
-            if (ghostBackground && i === index && bgIndex === i - 1) isFirstGhost = true
         })
     }
 
@@ -84,30 +79,40 @@
     let thumbnailPath = ""
     let mediaStyle: MediaStyle = {}
 
+    let ghostSize = $special.optimizedMode || index + 1 > 28 ? mediaSize.small : mediaSize.drawerSize
+
     $: bg = clone(background || ghostBackground)
     $: bgPath = bg?.path || bg?.id || ""
     $: if (bgPath && !disableThumbnails) setTimeout(loadBackground)
     async function loadBackground() {
         mediaPath = bgPath
-        thumbnailPath = getThumbnailPath(mediaPath, mediaSize.slideSize)
+        thumbnailPath = ""
+        // thumbnailPath = getThumbnailPath(mediaPath, ghostBackground ? ghostSize : mediaSize.slideSize)
 
         // make sure it's downloaded
         if (isLessons) await wait(1000)
 
         // first ghost creates image (if not created) - as it's a different resolution
-        if (ghostBackground && !isFirstGhost) {
-            // wait for first ghost to create image - this also reduces loading lag a bit
-            await wait(200)
+        if (ghostBackground) {
+            // ghost thumbnails does not need to be rendered right away
+            await wait(50)
 
             // load ghost thumbnails
-            const media = getMediaCached(bgPath)
+            const media = await getMediaCached(bgPath, ghostSize)
             if (!media) return
 
             thumbnailPath = media.thumbnail
             return
         }
 
-        const media = await getMedia(bgPath, ghostBackground ? mediaSize.drawerSize : mediaSize.slideSize)
+        // create ghost ready thumbnails
+        if (!bgPath.startsWith("http")) {
+            getMedia(bgPath, mediaSize.drawerSize)
+            const refs = _show().layouts().ref()
+            if ($special.optimizedMode || refs.some((a) => a.length > 28)) getMedia(bgPath, mediaSize.small)
+        }
+
+        const media = await getMedia(bgPath, mediaSize.slideSize)
         if (!media) return
 
         mediaPath = media.path
@@ -161,10 +166,20 @@
         colorStyle = ""
         style = ""
         // $fullColors &&
-        if (viewMode !== "lyrics" || noQuickEdit) colorStyle += `background-color: ${color};`
-        if (!$fullColors && (viewMode !== "lyrics" || noQuickEdit)) colorStyle += `color: ${color};`
+        if (viewMode !== "lyrics" || noQuickEdit) colorStyle += `background-color: black;` // ${color}
+        if (!$fullColors && (viewMode !== "lyrics" || noQuickEdit)) {
+            const rgb = hexToRgb(color || "")
+            const isBlack = rgb.r < 30 && rgb.g < 30 && rgb.b < 30
+            if (!isBlack) colorStyle += `color: ${color};`
+        }
         if (viewMode === "lyrics" && !noQuickEdit) colorStyle += "background-color: transparent;"
         if (viewMode !== "grid" && viewMode !== "simple" && viewMode !== "groups" && !noQuickEdit && viewMode !== "lyrics") style += `width: calc(${100 / columns}% - 6px)`
+    }
+
+    function fadeColor(hexColor: string | null) {
+        if (typeof hexColor !== "string" || !hexColor.startsWith("#")) return ""
+        const rgb = hexToRgb(hexColor)
+        return `rgba(${rgb.r} ${rgb.g} ${rgb.b} / 0.7)`
     }
 
     $: slideFilter = getSlideFilter(layoutSlide)
@@ -180,7 +195,7 @@
 
     function openNotes() {
         if ($textEditActive) textEditActive.set(false)
-        activeTriggerFunction.set("slide_notes")
+        slideNotesActive.set(true)
 
         activeEdit.set({ slide: index, items: [], showId })
         activePage.set("edit")
@@ -193,7 +208,8 @@
     }
 
     let profile = getAccess("shows")
-    $: isLocked = show?.locked || profile.global === "read" || profile[show?.category || ""] === "read"
+    $: isGroupLocked = !!slide?.locked // WIP get group slide
+    $: isLocked = show?.locked || isGroupLocked || profile.global === "read" || profile[show?.category || ""] === "read"
 
     // correct view order based on arranged order in Items.svelte (?.reverse())
     $: itemsList = clone(slide.items) || []
@@ -202,8 +218,9 @@
     $: if ($special.styleTemplatePreview !== false) updateItemsList(slide)
     else itemsList = clone(slide.items) || []
     function updateItemsList(_updater: any = null) {
+        // WIP show scripture style preview as well
         if (!allOutputsHasStyleTemplate(show?.reference?.type === "scripture")) return
-        itemsList = setTemplateStyle(null, currentStyle, itemsList, outputId)
+        itemsList = setTemplateStyle(null, currentStyle, itemsList, outputId, slide?.customDynamicValues)
     }
 
     // $: styleTemplate = getStyleTemplate(null, currentStyle)
@@ -226,10 +243,10 @@
     //     sendMain(Main.URL, url)
     // }
 
-    let updater = 0
+    let conditionsUpdater = 0
     onMount(() => {
         const interval = setInterval(() => {
-            if (itemsList.find((a) => a?.conditions)) updater++
+            if (itemsList.find((a) => a?.conditions)) conditionsUpdater++
         }, 3000)
 
         return () => {
@@ -246,7 +263,7 @@
     <!-- icons -->
     {#if icons && !altKeyPressed && viewMode !== "simple" && !$focusMode}
         <Icons {slide} {timer} {layoutSlide} {background} {backgroundCount} {duration} {columns} {index} style={viewMode === "lyrics" ? "padding-top: 23px;" : ""} />
-        <Actions {columns} {index} actions={layoutSlide.actions || {}} />
+        <Actions {slide} {columns} {index} actions={layoutSlide.actions || {}} />
     {/if}
     <!-- content -->
     <div class="slide context #{isLocked ? 'default' : $focusMode ? 'slideFocus' : name === null ? 'slideChild' : 'slide'}" class:disabled={layoutSlide.disabled} class:afterEnd={endIndex !== null && index > endIndex} {style} role="none" on:click>
@@ -259,11 +276,11 @@
                     <!-- border-bottom: 1px dashed {color}; -->
                     <div class="label" data-title={removeTagsAndContent(name || "")} style="color: {color};margin-bottom: 5px;">
                         <span style="color: var(--text);opacity: 0.85;font-size: 0.9em;">{index + 1}</span>
-                        <span class="text">{@html name === null ? "" : name === "." ? "" : name || "—"}</span>
+                        <span class="text">{@html name === null || name === "." ? "" : name || "—"}</span>
                     </div>
                 {/if}
                 <Zoomed
-                    background={slide.items?.length && (viewMode !== "lyrics" || noQuickEdit) ? (transparentOutput || $special.transparentSlides ? "var(--primary);" : slide.settings?.color || currentStyle.background || "black") : (viewMode !== "lyrics" || noQuickEdit ? color : "") || "transparent"}
+                    background={slide.items?.length && (viewMode !== "lyrics" || noQuickEdit) ? (transparentOutput || $special.transparentSlides ? "var(--primary);" : slide.settings?.color || currentStyle.background || "black") : (viewMode !== "lyrics" || noQuickEdit ? fadeColor(color) : "") || "transparent"}
                     checkered={viewMode !== "lyrics" && slide.items?.length > 0 && (transparentOutput || $special.transparentSlides) && !bg}
                     let:ratio
                     {resolution}
@@ -305,7 +322,7 @@
                     <!-- text content -->
                     {#if slide.items}
                         {#each itemsList as item, i}
-                            {#if item && shouldItemBeShown(item, itemsList, { outputId, id: showId, slideIndex: index }, updater, true) && (viewMode !== "lyrics" || item.type === undefined || ["text", "events", "list"].includes(item.type))}
+                            {#if item && shouldItemBeShown(item, itemsList, { outputId, id: showId, slideIndex: index }, conditionsUpdater, true) && (viewMode !== "lyrics" || item.type === undefined || ["text", "events", "list"].includes(item.type))}
                                 <!-- && (!item.clickReveal || output?.clickRevealed) -->
                                 <!-- filter={layoutSlide.filterEnabled?.includes("foreground") ? layoutSlide.filter : ""} -->
                                 <!-- backdropFilter={layoutSlide.filterEnabled?.includes("foreground") ? layoutSlide["backdrop-filter"] : ""} -->
@@ -318,9 +335,11 @@
                                     {ratio}
                                     slideIndex={index}
                                     ref={{
+                                        type: "show",
                                         showId,
                                         slideId: layoutSlide.id,
-                                        id: layoutSlide.id
+                                        id: layoutSlide.id,
+                                        origin: show.origin
                                     }}
                                     style={viewMode !== "lyrics" || noQuickEdit}
                                     smallFontSize={viewMode === "lyrics" && !noQuickEdit}
@@ -394,7 +413,13 @@
                         <!-- <div class="label" title={name || ""} style="border-bottom: 2px solid {color};"> -->
                         <!-- font-size: 0.8em; -->
                         <span style="color: {$fullColors ? getContrast(color || '') : 'var(--text)'};opacity: 0.85;font-size: 0.9em;">{index + 1}</span>
-                        <span class="text" style={name === null ? "opacity: 0;" : ""}>{@html name === null ? "-" : name === "." ? "" : name || "—"}</span>
+                        <span class="text" style={name === null || name === "." ? "opacity: 0;" : ""}>{@html name === null || name === "." ? "-" : name || "—"}</span>
+
+                        <!-- group is locked! -->
+                        {#if slide.locked || show?.slides?.[layoutSlide?.parent || ""]?.locked}
+                            <span class="lock"><Icon id="lock" size={0.7} style="color: var(--text);opacity: 0.3;" white /></span>
+                        {/if}
+
                         <!--HTML SHOW
                         <button class="open-in-browser-btn" title="Open slide in browser" on:click={handleOpenInBrowserClick}>
                             <Icon id="open_in_new" />
@@ -601,6 +626,9 @@
     }
     .notes:hover {
         background-color: rgb(255 255 255 / 0.2);
+    }
+    .notes span {
+        text-align: left;
     }
 
     .label .text {

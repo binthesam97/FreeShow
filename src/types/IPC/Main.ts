@@ -28,6 +28,7 @@ export enum Main {
     VERSION = "VERSION",
     GET_OS = "GET_OS",
     DEVICE_ID = "DEVICE_ID",
+    GET_DEVICE_NAME = "GET_DEVICE_NAME",
     IP = "IP",
     CHECK_RAM_USAGE = "CHECK_RAM_USAGE",
     // STORES
@@ -141,6 +142,8 @@ export enum Main {
     CLOUD_DATA = "CLOUD_DATA",
     CLOUD_CHANGED = "CLOUD_CHANGED",
     CLOUD_SYNC = "CLOUD_SYNC",
+    GET_CONVERSATION_ID = "GET_CONVERSATION_ID",
+    SEND_SOCKET_MESSAGE = "SEND_SOCKET_MESSAGE",
     // Provider-based routing
     PROVIDER_LOAD_SERVICES = "PROVIDER_LOAD_SERVICES",
     PROVIDER_DISCONNECT = "PROVIDER_DISCONNECT",
@@ -183,7 +186,7 @@ export interface MainSendPayloads {
     [Main.OUTPUT]: "true" | "false"
     [Main.DOES_MEDIA_EXIST]: { path: string; creationTime?: number; noCache?: boolean }
     [Main.GET_THUMBNAIL]: { input: string; size: number }
-    [Main.SAVE_IMAGE]: { path?: string; base64?: string; filePath?: string[]; format?: "png" | "jpg" }
+    [Main.SAVE_IMAGE]: { id?: string; path?: string; base64?: string; buffer?: ArrayBuffer; filePath?: string[]; format?: "png" | "jpg" }
     [Main.PDF_TO_IMAGE]: { filePath: string }
     [Main.READ_EXIF]: { id: string }
     [Main.MEDIA_CODEC]: { path: string }
@@ -209,7 +212,7 @@ export interface MainSendPayloads {
     [Main.CLOSE_MIDI]: { id: string }
     [Main.GET_LYRICS]: { song: LyricSearchResult }
     [Main.SEARCH_LYRICS]: { artist: string; title: string }
-    [Main.RESTORE]?: { folder: string }
+    [Main.RESTORE]?: { path: string }
     [Main.RECORDER]: { blob: ArrayBuffer; name: string }
     [Main.SYSTEM_OPEN]: string
 
@@ -229,6 +232,8 @@ export interface MainSendPayloads {
     [Main.CLOUD_DATA]: { id: SyncProviderId; churchId: string; teamId: string }
     [Main.CLOUD_CHANGED]: { id: SyncProviderId; churchId: string; teamId: string }
     [Main.CLOUD_SYNC]: { id: SyncProviderId; churchId: string; teamId: string; method: "merge" | "read_only" | "upload" | "replace" }
+    [Main.GET_CONVERSATION_ID]: { teamId: string }
+    [Main.SEND_SOCKET_MESSAGE]: { churchId: string; teamId: string; displayName: string; content: string }
     // Provider-based routing
     [Main.PROVIDER_LOAD_SERVICES]: { providerId: ContentProviderId; cloudOnly?: boolean }
     [Main.PROVIDER_DISCONNECT]: { providerId: ContentProviderId; scope?: string }
@@ -252,6 +257,7 @@ export interface MainReturnPayloads {
     [Main.VERSION]: string
     [Main.GET_OS]: OS
     [Main.DEVICE_ID]: string
+    [Main.GET_DEVICE_NAME]: string
     [Main.IP]: string[]
     [Main.CHECK_RAM_USAGE]: { total: number; free: number; performanceMode: boolean }
     ///
@@ -289,7 +295,7 @@ export interface MainReturnPayloads {
     [Main.GET_SCREENS]: Promise<{ name: string; id: string }[]>
     [Main.GET_WINDOWS]: Promise<{ name: string; id: string }[]>
     [Main.DOES_MEDIA_EXIST]: Promise<{ path: string; exists: boolean; creationTime?: number }>
-    [Main.GET_THUMBNAIL]: { output: string; input: string; size: number }
+    [Main.GET_THUMBNAIL]: Promise<{ output: string; input: string; size: number }>
     // [Main.PDF_TO_IMAGE]: Promise<string[]>
     [Main.READ_EXIF]: Promise<{ id: string; exif: ExifData }>
     [Main.MEDIA_CODEC]: Promise<{ path: string; codecs: string[]; mimeType: string; mimeCodec: string }>
@@ -316,6 +322,8 @@ export interface MainReturnPayloads {
     [Main.CLOUD_DATA]: Promise<boolean>
     [Main.CLOUD_CHANGED]: Promise<boolean>
     [Main.CLOUD_SYNC]: Promise<{ success?: boolean; error?: string; changedFiles: any[] }>
+    [Main.GET_CONVERSATION_ID]: Promise<string | null>
+    [Main.SEND_SOCKET_MESSAGE]: Promise<boolean>
     // Provider-based routing
     [Main.PROVIDER_DISCONNECT]: { success: boolean }
     // Content Library

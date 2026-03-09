@@ -49,7 +49,7 @@ export class EditboxHelper {
         newLine.text = []
 
         line.text?.forEach((text) => {
-            const value = text.value
+            const value = text.value || ""
             const parts = value.replace("\r", "").split("\n")
             newLine.text.push({ style: text.style, value: parts[0] })
             if (parts.length > 1) {
@@ -92,14 +92,17 @@ export class EditboxHelper {
             if (!secondLines.at(0)?.text.length) secondLines.shift()
 
             function splitLines(text) {
+                const value = text.value || ""
+
                 const segmentStart = currentIndex
-                const segmentEnd = currentIndex + text.value.length
+                const segmentEnd = currentIndex + value.length
                 currentIndex = segmentEnd
 
                 // Entire segment is before split point
                 if (start < 0 || segmentEnd <= start) {
+                    if (!firstLines.length) firstLines.push({ align: line.align, text: [] })
                     firstLines[firstLines.length - 1].text.push(text)
-                    textPos += text.value.length
+                    textPos += value.length
                     return
                 }
 
@@ -107,7 +110,7 @@ export class EditboxHelper {
                 if (segmentStart >= start) {
                     if (!secondLines.length) secondLines.push({ align: line.align, text: [] })
                     secondLines[secondLines.length - 1].text.push(text)
-                    textPos += text.value.length
+                    textPos += value.length
                     return
                 }
 
@@ -116,17 +119,18 @@ export class EditboxHelper {
                 const pos = start - segmentStart
 
                 if (pos > 0) {
+                    if (!firstLines.length) firstLines.push({ align: line.align, text: [] })
                     firstLines[firstLines.length - 1].text.push({
                         style: text.style,
-                        value: text.value.slice(0, pos)
+                        value: value.slice(0, pos)
                     })
                 }
                 secondLines[secondLines.length - 1].text.push({
                     style: text.style,
-                    value: text.value.slice(pos)
+                    value: value.slice(pos)
                 })
 
-                textPos += text.value.length
+                textPos += value.length
             }
         })
 
@@ -152,7 +156,7 @@ export class EditboxHelper {
         return { firstLines, secondLines }
     }
 
-    static getStyleHtml(item: Item, plain: boolean, currentStyle: string) {
+    static getStyleHtml(item: Item, plain: boolean, currentStyle: string, useNormalWrap: boolean = false) {
         currentStyle = ""
         let html = ""
         let firstTextStyleArchive = ""
@@ -165,7 +169,7 @@ export class EditboxHelper {
             currentStyle += align + lineStyleBg + lineStyleRadius // + line.chords?.map((a) => a.key)
             const style = align || lineStyleBg || lineStyleRadius || listStyle ? 'style="' + align + lineStyleBg + lineStyleRadius + listStyle + '"' : ""
 
-            const normalWrap = align.includes("justify") || align.includes("left") || JSON.stringify(line).includes("nowrap")
+            const normalWrap = useNormalWrap || align.includes("justify") || align.includes("left") || JSON.stringify(line).includes("nowrap")
 
             html += `<div class="break ${normalWrap ? "normalWrap" : ""}" ${plain ? "" : style}>`
 
@@ -186,10 +190,10 @@ export class EditboxHelper {
 
                 const textStyle = a.style || listStyle ? 'style="' + this.getCustomTextStyle(a.style) + listStyle + '"' : ""
                 let value = a.value?.replaceAll("\n", "<br>") || "<br>"
-                if (value === " ") value = "&nbsp;"
+                // if (value === " ") value = "&nbsp;"
 
                 // this will "hide" any HTML tags if any in the actual text content (not chords or text editor)
-                html += `<span class="${a.customType && !a.customType.includes("jw") ? "custom" : ""}" ${plain ? "" : textStyle} data-chords='${JSON.stringify(textChords)}'>` + value + "</span>"
+                html += `<span class="${a.customType && !a.customType.includes("jw") ? "custom" : ""}" ${plain ? "" : textStyle} data-sourcedynamickey='${a.sourceDynamicKey || ""}' data-chords='${JSON.stringify(textChords)}'>` + value + "</span>"
             })
             html += "</div>"
         })

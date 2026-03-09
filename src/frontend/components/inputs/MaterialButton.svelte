@@ -2,6 +2,7 @@
     import { createEventDispatcher } from "svelte"
     import { translateText } from "../../utils/language"
     import Icon from "../helpers/Icon.svelte"
+    import { dictionary } from "../../stores"
 
     export let variant: "contained" | "outlined" | "text" = "text"
     export let title = ""
@@ -35,7 +36,9 @@
         const target = e.target
 
         // defocus button to avoid accidental space/enter presses
-        ;(document.activeElement as HTMLElement)?.blur()
+        if (document.activeElement?.tagName === "BUTTON") {
+            ;(document.activeElement as HTMLElement)?.blur()
+        }
 
         dispatch(double ? "dblclick" : "click", { ctrl, shift, alt, doubleClick, target })
     }
@@ -66,6 +69,8 @@
 
     function handleKey(e) {
         if (disabled) return
+        if (e.target?.closest("button") !== button) return
+
         if (e.key === "Enter" || e.key === " ") {
             click(e)
         }
@@ -83,7 +88,7 @@
     class="{variant} {$$props.class || ''}"
     tabindex={disabled ? -1 : 0}
     aria-disabled={disabled}
-    data-title={translateText(title)}
+    data-title={translateText(title, $dictionary)}
     class:isActive
     class:showOutline
     class:white

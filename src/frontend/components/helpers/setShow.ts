@@ -6,6 +6,7 @@ import type { ShowObj } from "../../classes/Show"
 import { fixShowIssues } from "../../converters/importHelpers"
 import { requestMain } from "../../IPC/main"
 import { cachedShowsData, categories, notFound, saved, shows, showsCache, textCache } from "../../stores"
+import { invalidateSearchIndex } from "../../utils/searchFast"
 import { Main } from "./../../../types/IPC/Main"
 import { getFileName } from "./media"
 import { getShowCacheId, updateCachedShow } from "./show"
@@ -91,12 +92,12 @@ export async function setShow(id: string, value: "delete" | Show): Promise<Show>
     return previousValue!
 }
 
-async function convertOldShowValues(show: Show): Promise<Show> {
+export async function convertOldShowValues(show: Show): Promise<Show> {
     // convert Recording to timeline (pre 1.5.7)
     await Promise.all(
         Object.values(show.layouts).map(async (layout) => {
             const rec = layout.recording?.[0]
-            if (!rec || layout.timeline) return
+            if (!rec) return
 
             let actions: TimelineAction[] = []
             // let maxTime: number = 0
@@ -216,7 +217,7 @@ export async function loadShows(s: string[], deleting = false) {
     )
 
     if (savedBeforeLoading) {
-        setTimeout(() => saved.set(true), 100)
+        setTimeout(() => saved.set(true), 200)
     }
 }
 
@@ -234,6 +235,7 @@ export function saveTextCache(id: string, show: Show) {
     updateTimeout = setTimeout(() => {
         textCache.set({ ...get(textCache), ...tempCache })
         tempCache = {}
+        invalidateSearchIndex()
     }, 1000)
 }
 function getTextCacheString(show: Show) {

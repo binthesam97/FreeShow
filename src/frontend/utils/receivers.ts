@@ -3,6 +3,7 @@ import { CLOUD, CONTROLLER, NDI, OUTPUT, OUTPUT_STREAM, REMOTE, STAGE } from "..
 import type { ClientMessage } from "../../types/Socket"
 import { AudioAnalyser } from "../audio/audioAnalyser"
 import { AudioAnalyserMerger } from "../audio/audioAnalyserMerger"
+import { setEqualizerEnabled, updateEqualizerBands } from "../audio/audioEqualizer"
 import { runAction } from "../components/actions/actions"
 import { clone } from "../components/helpers/array"
 import { checkNextAfterMedia } from "../components/helpers/showActions"
@@ -18,6 +19,7 @@ import {
     allOutputs,
     audioChannelsData,
     audioData,
+    categories,
     closeAd,
     colorbars,
     customMessageCredits,
@@ -31,6 +33,7 @@ import {
     equalizerConfig,
     events,
     gain,
+    groups,
     livePrepare,
     media,
     metronome,
@@ -72,7 +75,6 @@ import { closeApp, save } from "./save"
 import { client } from "./sendData"
 import { playFolder, previewShortcuts } from "./shortcuts"
 import { restartOutputs } from "./updateSettings"
-import { setEqualizerEnabled, updateEqualizerBands } from "../audio/audioEqualizer"
 
 export function setupMainReceivers() {
     receiveMainGlobal()
@@ -173,7 +175,7 @@ const receiveOUTPUTasMAIN: any = {
     MAIN_LOG: (msg: any) => console.info(msg),
     MAIN_DATA: (msg: any) => videosData.update((a) => ({ ...a, ...msg })),
     MAIN_TIME: (msg: any) => videosTime.update((a) => ({ ...a, ...msg })),
-    MAIN_VIDEO_ENDED: (msg) => {
+    MAIN_VIDEO_ENDED: async (msg) => {
         if (!msg || clearing.includes(msg.id)) return
         clearing.push(msg.id)
         setTimeout(() => clearing.splice(clearing.indexOf(msg.id), 1), msg.duration || 1000)
@@ -189,7 +191,7 @@ const receiveOUTPUTasMAIN: any = {
         }
 
         // check and execute next after media regardless of loop
-        if (checkNextAfterMedia(videoPath, "media", msg.id) || msg.loop) return
+        if ((await checkNextAfterMedia(videoPath, "media", msg.id)) || msg.loop) return
 
         if (get(special).clearMediaOnFinish === false) return
 
@@ -274,14 +276,15 @@ export const receiveOUTPUTasOUTPUT: any = {
     // SLIDE: (a: any) => outSlide.set(a),
     // OVERLAYS: (a: any) => outOverlays.set(a),
     // OVERLAY: (a: any) => overlays.set(a),
-    // META: (a: any) => displayMetadata.set(a),
     // COLOR: (a: any) => backgroundColor.set(a),
     // SCREEN: (a: any) => screen.set(a),
     SHOWS: (a: any) => showsCache.set(a),
+    CATEGORIES: (a: any) => categories.set(a),
 
     TEMPLATES: (a: any) => templates.set(a),
     OVERLAYS: (a: any) => clone(overlays.set(a)),
     EVENTS: (a: any) => events.set(a),
+    GROUPS: (a: any) => groups.set(a),
 
     DRAW: (a: any) => draw.set(a.data),
     DRAW_TOOL: (a: any) => drawTool.set(a.data),
