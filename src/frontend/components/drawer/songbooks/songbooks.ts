@@ -129,6 +129,70 @@ export function getSongSlides(song: Song, showTransliteration: boolean = false):
     return slides
 }
 
+// Create slides with both original and transliteration stacked vertically
+
+export function getSongSlidesCombined(song: Song): Item[][] {
+    const originalVerses = normalizeLyrics(song.Lyrics?.original)
+    const transliterationVerses = normalizeLyrics(song.Lyrics?.transliteration)
+
+    if (!originalVerses.length) return []
+
+    const slides: Item[][] = []
+    const sortedOriginal = [...originalVerses].sort((a, b) => a.order - b.order)
+    const sortedTransliteration = [...transliterationVerses].sort((a, b) => a.order - b.order)
+
+    // Available height for text content (textbox height)
+    const boxHeight = 1000
+    const lineHeight = 1.5
+
+    for (let i = 0; i < sortedOriginal.length; i++) {
+        const verse = sortedOriginal[i]
+        const translitVerse = sortedTransliteration[i]
+
+        const originalLineCount = verse.content.split("\n").length
+        const translitLineCount = translitVerse ? translitVerse.content.split("\n").length : 0
+        const totalLines = originalLineCount + translitLineCount
+
+        // Calculate font size that fits all lines within the box
+        const calculatedSize = Math.floor(boxHeight / (totalLines * lineHeight))
+        // Clamp between 20px and 80px
+        const fontSize = Math.max(20, Math.min(80, calculatedSize))
+        const fontStyle = `font-size:${fontSize}px;`
+
+        // Original lyrics lines
+        const originalLines: Line[] = verse.content.split("\n").map((line) => ({
+            text: [{ value: line, style: fontStyle }],
+            align: ""
+        }))
+
+        const translitLines: Line[] = translitVerse
+            ? translitVerse.content.split("\n").map((line) => ({
+                  text: [{ value: line, style: fontStyle + "opacity:0.85;font-style:italic;" }],
+                  align: ""
+              }))
+            : []
+
+        const allLines = translitVerse
+            ? [...originalLines, ...translitLines]
+            : [...originalLines]
+
+        const slideItems: Item[] = [
+            {
+                type: "text",
+                lines: allLines,
+                style: "top:40px;left:50px;width:1820px;height:1000px;",
+                align: "",
+                auto: true,
+                textFit: "shrinkToFit"
+            }
+        ]
+
+        slides.push(slideItems)
+    }
+
+    return slides
+}
+
 function getVerseLabel(verse: SongVerse): string {
     const type = verse.type?.toLowerCase() || "verse"
     if (type === "chorus") return "Chorus"
@@ -173,8 +237,10 @@ export function createSongShow() {
     if (!songData) return
 
     const song = songData.song
-    const showTransliteration = songData.showTransliteration || false
-    const slides = getSongSlides(song, showTransliteration)
+
+    // Use combined layout (original + transliteration) if transliteration exists
+    const hasTransliteration = normalizeLyrics(song.Lyrics?.transliteration).length > 0
+    const slides = hasTransliteration ? getSongSlidesCombined(song) : getSongSlides(song)
     if (!slides.length) return
 
     const layoutID = uid()
@@ -189,10 +255,11 @@ export function createSongShow() {
     const slideEntries: any = {}
     const layoutSlides: any[] = []
 
+    const originalVerses = normalizeLyrics(song.Lyrics?.original).sort((a, b) => a.order - b.order)
+
     slides.forEach((items, i) => {
         const slideId = uid()
-        const verse = normalizeLyrics(showTransliteration ? song.Lyrics?.transliteration : song.Lyrics?.original)
-            .sort((a, b) => a.order - b.order)[i]
+        const verse = originalVerses[i]
 
         slideEntries[slideId] = {
             group: verse ? getVerseLabel(verse) : `Slide ${i + 1}`,
