@@ -5,6 +5,8 @@ import { ShowObj } from "../../../classes/Show"
 import { activeProject, drawerTabsData, outLocked, activeSongBookSong } from "../../../stores"
 import { setOutput } from "../../helpers/output"
 import { history } from "../../helpers/history"
+import { requestMain } from "../../../IPC/main"
+import { Main } from "../../../../types/IPC/Main"
 
 // Types
 
@@ -52,13 +54,9 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
     const books: { [id: string]: SongBook } = {}
 
     try {
-        // Fetch the directory listing - in Electron/Vite, public/ files are served at root
-        const indexResponse = await fetch("./songBooks/index.json")
-        let fileNames: string[] = []
+        let fileNames: string[] = await requestMain(Main.READ_SONGBOOKS) || []
 
-        if (indexResponse.ok) {
-            fileNames = await indexResponse.json()
-        } else {
+        if (!fileNames.length) {
             // Fallback: try known files if index doesn't exist
             fileNames = ["Songs of Zion.json", "Christava Sunada Keerthanalu.json"]
         }
@@ -69,7 +67,12 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
                 if (!response.ok) continue
 
                 const data = await response.json()
-                const name = fileName.replace(/\.json$/, "")
+                
+                // Format automatically to Title Case
+                const name = fileName.replace(/\.json$/i, "")
+                    .replace(/[_-]/g, " ")
+                    .replace(/\b\w/g, c => c.toUpperCase())
+
                 const id = name.replace(/\s+/g, "_").toLowerCase()
 
                 books[id] = {

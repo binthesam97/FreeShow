@@ -158,6 +158,7 @@ export const mainResponses: MainResponses = {
     [Main.BUNDLE_MEDIA_FILES]: (data) => bundleMediaFiles(data),
     [Main.MEDIA_FOLDER_COPY]: (data) => addToMediaFolder(data.paths),
     [Main.READ_BIBLES_FOLDER]: () => readBiblesFolder(),
+    [Main.READ_SONGBOOKS]: () => readSongBooksFolder(),
     [Main.FILE_INFO]: (data) => getFileInfo(data),
     [Main.READ_FOLDER]: (data) => readFolderContent(data),
     [Main.READ_FILE]: (data) => ({ content: readFile(data.path) }),
@@ -278,6 +279,17 @@ function readBiblesFolder() {
         const filePath = path.join(bibleFolder, name)
         return { path: filePath, name: name.replace(/\.fsb$/i, "") }
     })
+}
+
+function readSongBooksFolder() {
+    const songBooksPath = path.join(app.getAppPath(), "public", "songBooks")
+    try {
+        const names = readFolder(songBooksPath)
+        return names.filter((name) => name.toLowerCase().endsWith(".json"))
+    } catch (err) {
+        console.error("Failed to read public/songBooks folder:", err)
+        return []
+    }
 }
 
 // SHOW

@@ -131,6 +131,7 @@ export enum Main {
     BUNDLE_MEDIA_FILES = "BUNDLE_MEDIA_FILES",
     MEDIA_FOLDER_COPY = "MEDIA_FOLDER_COPY",
     READ_BIBLES_FOLDER = "READ_BIBLES_FOLDER",
+    READ_SONGBOOKS = "READ_SONGBOOKS",
     FILE_INFO = "FILE_INFO",
     READ_FOLDER = "READ_FOLDER",
     READ_FILE = "READ_FILE",
@@ -313,6 +314,7 @@ export interface MainReturnPayloads {
     [Main.LOCATE_MEDIA_FILE]: Promise<{ path: string; hasChanged: boolean } | null>
     [Main.GET_MEDIA_FOLDER_PATH]: string
     [Main.READ_BIBLES_FOLDER]: { path: string; name: string }[]
+    [Main.READ_SONGBOOKS]: string[]
     [Main.FILE_INFO]: { path: string; stat: Stats; extension: string; folder: boolean } | null
     [Main.READ_FOLDER]: Promise<{ [key: string]: FileFolder }>
     [Main.READ_FILE]: { content: string }
