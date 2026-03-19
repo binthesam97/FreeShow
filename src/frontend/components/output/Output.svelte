@@ -22,6 +22,7 @@
     import Overlays from "./layers/Overlays.svelte"
     import PdfOutput from "./layers/PdfOutput.svelte"
     import SlideContent from "./layers/SlideContent.svelte"
+    import NextVersePreview from "./layers/NextVersePreview.svelte"
     import Window from "./Window.svelte"
 
     export let outputId = ""
@@ -144,11 +145,39 @@
         }
     }
 
+    // next slide preview (for lyric scroll)
+    let nextSlideItems: any[] = []
+    $: updateNextSlideItems(slide, currentLayout)
+    function updateNextSlideItems(slide: OutSlide | null, layout: LayoutRef[]) {
+        if (!slide || !layout?.length) {
+            nextSlideItems = []
+            return
+        }
+
+        // For temp/scripture slides, use the existing nextSlides field
+        if ((slide.id === "temp" || slide.id === "tempText") && slide.nextSlides?.length) {
+            nextSlideItems = clone(slide.nextSlides[0] || [])
+            return
+        }
+
+        // For regular shows, look up the next slide in the layout
+        const nextIndex = (slide.index ?? -1) + 1
+        const nextRef = layout[nextIndex]
+        if (!nextRef?.id) {
+            nextSlideItems = []
+            return
+        }
+
+        const nextSlide = _show(slide.id).slides([nextRef.id]).get()[0]
+        nextSlideItems = clone(nextSlide?.items || [])
+    }
+
     // slide styling
     // currentSlide?.settings?.resolution
     $: resolution = getResolution(null, { currentOutput, currentStyle }, false, outputId, styleIdOverride)
     $: transitions = getOutputTransitions(slideData, currentStyle.transition, $transitionData, mirror && !preview)
     $: slideFilter = getSlideFilter(slideData)
+    $: showNextPreview = transitions.text?.type === "lyric_scroll" && nextSlideItems?.length > 0
 
     // custom template
     // WIP revert to old style when output style is reverted to no style (REFRESH OUTPUT)
@@ -310,6 +339,11 @@
         </span>
     {:else if actualSlide && actualSlide?.type !== "pdf"}
         <SlideContent {outputId} outSlide={actualSlide} isClearing={isSlideClearing} slideData={actualSlideData} currentSlide={actualCurrentSlide} {currentStyle} {animationData} currentLineId={actualCurrentLineId} {lines} {ratio} {mirror} {preview} transition={transitions.text} transitionEnabled={!mirror || preview} {styleIdOverride} />
+
+        <!-- next verse preview (lyric scroll) -->
+        {#if showNextPreview && !isSlideClearing}
+            <NextVersePreview nextItems={nextSlideItems} {ratio} {mirror} />
+        {/if}
 
         <!-- metadata -->
         <Overlay overlay={{ items: metadataItems }} isClearing={isSlideClearing} {outputId} transition={transitions.text} />
