@@ -14,7 +14,6 @@
     export let searchValue: string
 
     let selectedSongIndex: number = -1
-    let showTransliteration: boolean = false
     let lyricsScrollElem: HTMLElement | undefined
 
     // Load songbooks if not loaded
@@ -28,8 +27,8 @@
     $: currentBook = active ? $songBooks[active] : null
     $: songs = currentBook?.songs || []
 
-    // Filter songs by search
-    $: filteredSongs = searchValue
+    // Filter songs by search and sort by song number
+    $: filteredSongs = (searchValue
         ? songs.filter((song: Song) => {
               const q = searchValue.toLowerCase()
               return (
@@ -39,12 +38,17 @@
               )
           })
         : songs
+    ).sort((a: Song, b: Song) => {
+        const numA = typeof a.Song_No === "number" ? a.Song_No : parseInt(a.Song_No) || 0
+        const numB = typeof b.Song_No === "number" ? b.Song_No : parseInt(b.Song_No) || 0
+        return numA - numB
+    })
 
     $: selectedSong = selectedSongIndex >= 0 && selectedSongIndex < filteredSongs.length ? filteredSongs[selectedSongIndex] : null
 
     // Update active song store when selection changes
     $: if (selectedSong) {
-        activeSongBookSong.set({ song: selectedSong, showTransliteration })
+        activeSongBookSong.set({ song: selectedSong, showTransliteration: false })
     }
 
     // Reset selection when switching books
@@ -62,8 +66,8 @@
     $: transliterationVerses = selectedSong ? normalizeLyrics(selectedSong.Lyrics?.transliteration) : []
     $: hasTransliteration = transliterationVerses.length > 0
 
-    $: displayVerses = showTransliteration && hasTransliteration ? transliterationVerses : originalVerses
-    $: sortedVerses = [...displayVerses].sort((a, b) => a.order - b.order)
+    $: sortedOriginalVerses = [...originalVerses].sort((a, b) => a.order - b.order)
+    $: sortedTransliterationVerses = [...transliterationVerses].sort((a, b) => a.order - b.order)
 
     function getVerseLabel(verse: SongVerse): string {
         const type = verse.type?.toLowerCase() || "verse"
@@ -71,13 +75,6 @@
         if (type === "bridge") return "Bridge"
         const num = verse.displayNumber || verse.order
         return `Verse ${num}`
-    }
-
-    function toggleTransliteration() {
-        showTransliteration = !showTransliteration
-        if (selectedSong) {
-            activeSongBookSong.set({ song: selectedSong, showTransliteration })
-        }
     }
 
     function handlePlay() {
@@ -129,29 +126,43 @@
                         {#if selectedSong.Author}
                             <p class="author">{selectedSong.Author}</p>
                         {/if}
-
-                        {#if hasTransliteration}
-                            <div class="transliteration-toggle">
-                                <MaterialButton
-                                    on:click={toggleTransliteration}
-                                    variant={showTransliteration ? "outlined" : undefined}
-                                    small
-                                >
-                                    <Icon id="web" size={0.8} white />
-                                    <T id={showTransliteration ? "songbooks.original" : "songbooks.transliteration"} />
-                                </MaterialButton>
-                            </div>
-                        {/if}
                     </div>
 
-                    <div class="lyrics-body">
-                        {#each sortedVerses as verse}
-                            <div class="verse-block" class:chorus={verse.type === "chorus"}>
-                                <span class="verse-label">{getVerseLabel(verse)}</span>
-                                <pre class="verse-content">{verse.content}</pre>
+                    {#if hasTransliteration}
+                        <div class="lyrics-columns">
+                            <div class="lyrics-column">
+                                <div class="column-header">Original</div>
+                                <div class="lyrics-body">
+                                    {#each sortedOriginalVerses as verse}
+                                        <div class="verse-block" class:chorus={verse.type === "chorus"}>
+                                            <span class="verse-label">{getVerseLabel(verse)}</span>
+                                            <pre class="verse-content">{verse.content}</pre>
+                                        </div>
+                                    {/each}
+                                </div>
                             </div>
-                        {/each}
-                    </div>
+                            <div class="lyrics-column">
+                                <div class="column-header">Transliteration</div>
+                                <div class="lyrics-body">
+                                    {#each sortedTransliterationVerses as verse}
+                                        <div class="verse-block" class:chorus={verse.type === "chorus"}>
+                                            <span class="verse-label">{getVerseLabel(verse)}</span>
+                                            <pre class="verse-content">{verse.content}</pre>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
+                        </div>
+                    {:else}
+                        <div class="lyrics-body">
+                            {#each sortedOriginalVerses as verse}
+                                <div class="verse-block" class:chorus={verse.type === "chorus"}>
+                                    <span class="verse-label">{getVerseLabel(verse)}</span>
+                                    <pre class="verse-content">{verse.content}</pre>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
                 {:else}
                     <Center faded>
                         <T id="songbooks.no_song_selected" />
@@ -263,8 +274,27 @@
         margin: 4px 0 0 0;
     }
 
-    .transliteration-toggle {
-        margin-top: 8px;
+    .lyrics-columns {
+        display: flex;
+        gap: 15px;
+        flex: 1;
+        min-height: 0;
+    }
+
+    .lyrics-column {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .column-header {
+        color: var(--secondary);
+        font-weight: bold;
+        font-size: 0.85em;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 10px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--primary-lighter);
     }
 
     .lyrics-body {

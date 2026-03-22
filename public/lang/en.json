@@ -1539,6 +1539,7 @@
         "scale": "Scale",
         "spin": "Spin",
         "slide": "Slide",
+        "lyric_scroll": "Lyric Scroll",
         "fade_in_offset": "Fade in offset"
     },
     "easings": {

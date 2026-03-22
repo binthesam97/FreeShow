@@ -16,7 +16,8 @@ export const transitionTypes: { id: TransitionType; name: string }[] = [
     { id: "blur", name: "transition.blur" },
     { id: "spin", name: "transition.spin" },
     { id: "scale", name: "transition.scale" },
-    { id: "slide", name: "transition.slide" }
+    { id: "slide", name: "transition.slide" },
+    { id: "lyric_scroll", name: "transition.lyric_scroll" }
 ]
 
 export const transitions: { [key in TransitionType]: any } = {
@@ -52,6 +53,18 @@ export const transitions: { [key in TransitionType]: any } = {
             // css: (t: any) => `transform: translateX(${t}%);`,
             // scale(${t})
             css: (t: any) => `opacity: ${t * o}; transform: rotate(${t * 360}deg);`
+        }
+    },
+    lyric_scroll: (_node: any, _customData: any) => {
+        return {
+            css: (t: number) => {
+                // t goes from 0 to 1 for "in", and 1 to 0 for "out"
+                // For both in and out: content scrolls upward
+                // Out: translate from 0% to -100% (scroll up off screen)
+                // In: translate from 100% to 0% (scroll up from below)
+                const pos = (1 - t) * 100
+                return `transform: translateY(${pos}%);`
+            }
         }
     }
 }
