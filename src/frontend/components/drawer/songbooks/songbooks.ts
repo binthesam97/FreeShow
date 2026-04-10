@@ -1,12 +1,13 @@
 import { get } from "svelte/store"
 import { uid } from "uid"
-import type { Item, Line } from "../../../../types/Show"
+import type { Item } from "../../../../types/Show"
 import { ShowObj } from "../../../classes/Show"
 import { activeProject, drawerTabsData, outLocked, activeSongBookSong } from "../../../stores"
 import { setOutput } from "../../helpers/output"
 import { history } from "../../helpers/history"
 import { requestMain } from "../../../IPC/main"
 import { Main } from "../../../../types/IPC/Main"
+import { fitSongbookSlides } from "./songbookFitter"
 
 // Types
 
@@ -54,10 +55,9 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
     const books: { [id: string]: SongBook } = {}
 
     try {
-        let fileNames: string[] = await requestMain(Main.READ_SONGBOOKS) || []
+        let fileNames: string[] = (await requestMain(Main.READ_SONGBOOKS)) || []
 
         if (!fileNames.length) {
-            // Fallback: try known files if index doesn't exist
             fileNames = ["Songs of Zion.json", "Christava Sunada Keerthanalu.json"]
         }
 
@@ -67,11 +67,11 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
                 if (!response.ok) continue
 
                 const data = await response.json()
-                
-                // Format automatically to Title Case
-                const name = fileName.replace(/\.json$/i, "")
+
+                const name = fileName
+                    .replace(/\.json$/i, "")
                     .replace(/[_-]/g, " ")
-                    .replace(/\b\w/g, c => c.toUpperCase())
+                    .replace(/\b\w/g, (c) => c.toUpperCase())
 
                 const id = name.replace(/\s+/g, "_").toLowerCase()
 
@@ -90,121 +90,7 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
     return books
 }
 
-// Convert song lyrics into slide Items for display
-
-export function getSongSlides(song: Song, showTransliteration: boolean = false): Item[][] {
-    const lyricsSource = showTransliteration ? song.Lyrics?.transliteration : song.Lyrics?.original
-    const verses = normalizeLyrics(lyricsSource)
-
-    if (!verses.length) return []
-
-    const slides: Item[][] = []
-    const sortedVerses = [...verses].sort((a, b) => a.order - b.order)
-
-    for (const verse of sortedVerses) {
-        const lines: Line[] = verse.content.split("\n").map((line) => ({
-            text: [{ value: line, style: "" }],
-            align: ""
-        }))
-
-        const label = getVerseLabel(verse)
-
-        // Add verse label as first line
-        const labelLine: Line = {
-            text: [{ value: label, style: "font-weight:bold;font-size:0.8em;opacity:0.7;" }],
-            align: ""
-        }
-
-        const slideItems: Item[] = [
-            {
-                type: "text",
-                lines: [labelLine, ...lines],
-                style: "top:40px;left:50px;width:1820px;height:1000px;",
-                align: "",
-                auto: true,
-                textFit: "shrinkToFit"
-            }
-        ]
-
-        slides.push(slideItems)
-    }
-
-    return slides
-}
-
-// Create slides with both original and transliteration stacked vertically
-
-export function getSongSlidesCombined(song: Song): Item[][] {
-    const originalVerses = normalizeLyrics(song.Lyrics?.original)
-    const transliterationVerses = normalizeLyrics(song.Lyrics?.transliteration)
-
-    if (!originalVerses.length) return []
-
-    const slides: Item[][] = []
-    const sortedOriginal = [...originalVerses].sort((a, b) => a.order - b.order)
-    const sortedTransliteration = [...transliterationVerses].sort((a, b) => a.order - b.order)
-
-    // Available height for text content (textbox height)
-    const boxHeight = 1000
-    const lineHeight = 1.5
-
-    for (let i = 0; i < sortedOriginal.length; i++) {
-        const verse = sortedOriginal[i]
-        const translitVerse = sortedTransliteration[i]
-
-        const originalLineCount = verse.content.split("\n").length
-        const translitLineCount = translitVerse ? translitVerse.content.split("\n").length : 0
-        const totalLines = originalLineCount + translitLineCount
-
-        // Calculate font size that fits all lines within the box
-        const calculatedSize = Math.floor(boxHeight / (totalLines * lineHeight))
-        // Clamp between 20px and 80px
-        const fontSize = Math.max(20, Math.min(80, calculatedSize))
-        const fontStyle = `font-size:${fontSize}px;`
-
-        // Original lyrics lines
-        const originalLines: Line[] = verse.content.split("\n").map((line) => ({
-            text: [{ value: line, style: fontStyle }],
-            align: ""
-        }))
-
-        const translitLines: Line[] = translitVerse
-            ? translitVerse.content.split("\n").map((line) => ({
-                  text: [{ value: line, style: fontStyle + "opacity:0.85;font-style:italic;" }],
-                  align: ""
-              }))
-            : []
-
-        const allLines = translitVerse
-            ? [...originalLines, ...translitLines]
-            : [...originalLines]
-
-        const slideItems: Item[] = [
-            {
-                type: "text",
-                lines: allLines,
-                style: "top:40px;left:50px;width:1820px;height:1000px;",
-                align: "",
-                auto: true,
-                textFit: "shrinkToFit"
-            }
-        ]
-
-        slides.push(slideItems)
-    }
-
-    return slides
-}
-
-function getVerseLabel(verse: SongVerse): string {
-    const type = verse.type?.toLowerCase() || "verse"
-    if (type === "chorus") return "Chorus"
-    if (type === "bridge") return "Bridge"
-    const num = verse.displayNumber || verse.order
-    return `Verse ${num}`
-}
-
-// Play song - output directly to display
+// Play song - output directly to display (like playScripture)
 
 export function playSong() {
     if (get(outLocked)) return
@@ -212,24 +98,34 @@ export function playSong() {
     const songData = get(activeSongBookSong)
     if (!songData) return
 
-    const showTransliteration = songData.showTransliteration || false
-    const slides = getSongSlides(songData.song, showTransliteration)
-    if (!slides.length) return
+    const song = songData.song
+    const originalVerses = normalizeLyrics(song.Lyrics?.original)
+    const transliterationVerses = normalizeLyrics(song.Lyrics?.transliteration)
+    const hasTransliteration = transliterationVerses.length > 0 && songData.showTransliteration
+    const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration)
+    if (!fitResult.slides.length) return
+
+    const slides: Item[][] = fitResult.slides.map((slide) => slide.items)
+    const slideDynamicValues: { [key: string]: string }[] = fitResult.slides.map((slide) => slide.dynamicValues)
 
     const tempItems: Item[] = slides[0] || []
-
-    // Build previous/next slides for navigation
-    const previousSlides = slides.slice(0, 0).map((s) => s)
-    const nextSlides = slides.slice(1).map((s) => s)
+    const previousSlides = slides.slice(0, 0)
+    const nextSlides = slides.slice(1)
+    const nextSlideDynamicValues = slideDynamicValues.slice(1)
 
     const categoryId = get(drawerTabsData).songbooks?.activeSubTab || ""
+    const translations = hasTransliteration ? 2 : 1
+
     setOutput("slide", {
         id: "temp",
         categoryId,
         tempItems,
         previousSlides,
         nextSlides,
-        settings: {}
+        nextSlideDynamicValues,
+        translations,
+        settings: {},
+        customDynamicValues: slideDynamicValues[0]
     })
 }
 
@@ -241,13 +137,15 @@ export function createSongShow() {
 
     const song = songData.song
 
-    // Use combined layout (original + transliteration) if transliteration exists
-    const hasTransliteration = normalizeLyrics(song.Lyrics?.transliteration).length > 0
-    const slides = hasTransliteration ? getSongSlidesCombined(song) : getSongSlides(song)
-    if (!slides.length) return
+    const originalVerses = normalizeLyrics(song.Lyrics?.original)
+    const transliterationVerses = normalizeLyrics(song.Lyrics?.transliteration)
+    const hasTransliteration = transliterationVerses.length > 0 && songData.showTransliteration
+    const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration)
+    if (!fitResult.slides.length) return
 
     const layoutID = uid()
-    const show = new ShowObj(false, null, layoutID)
+    const show = new ShowObj(false, null, layoutID, Date.now(), false)
+    show.settings.template = null
 
     show.name = `${song.Song_No}. ${song.Title}`
     show.meta = {
@@ -258,18 +156,16 @@ export function createSongShow() {
     const slideEntries: any = {}
     const layoutSlides: any[] = []
 
-    const originalVerses = normalizeLyrics(song.Lyrics?.original).sort((a, b) => a.order - b.order)
-
-    slides.forEach((items, i) => {
+    fitResult.slides.forEach((slide) => {
         const slideId = uid()
-        const verse = originalVerses[i]
 
         slideEntries[slideId] = {
-            group: verse ? getVerseLabel(verse) : `Slide ${i + 1}`,
-            color: verse?.type === "chorus" ? "#FF851B" : null,
+            group: slide.label,
+            color: slide.verseType?.toLowerCase() === "chorus" ? "#FF851B" : null,
             settings: {},
             notes: "",
-            items
+            items: slide.items,
+            customDynamicValues: slide.dynamicValues
         }
         layoutSlides.push({ id: slideId })
     })

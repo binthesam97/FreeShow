@@ -326,8 +326,8 @@ export function isConditionMet(condition: Condition | undefined, itemsText: stri
         condition = (condition as any)?.values?.length ? [[[(condition as any).values]]] : []
     }
 
-    // remove unused scripture dynamic values ({scripture_X} / {scriptureNUM_X})
-    const regex = /\{scripture(?:\d+)?_[^}]+\}/g
+    // remove unused scripture/songbook dynamic values ({scripture_X} / {scriptureNUM_X} / {songbook_X} / {songbookNUM_X})
+    const regex = /\{(?:scripture|songbook)(?:\d+)?_[^}]+\}/g
     if (regex.test(itemsText)) itemsText = itemsText.replace(regex, "").trim()
 
     // outerOr

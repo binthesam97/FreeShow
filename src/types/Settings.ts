@@ -31,6 +31,8 @@ export interface Styles {
     templateScripture_2?: string
     templateScripture_3?: string
     templateScripture_4?: string
+    templateSongbook?: string
+    templateSongbook_2?: string
     metadata?: Metadata
 }
 

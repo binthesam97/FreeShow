@@ -122,6 +122,9 @@
     $: templateOverrideScripture = currentStyle.templateScripture || ""
     $: scriptureTemplateLabel = currentStyle.templateScripture ? $templates[currentStyle.templateScripture || ""]?.name : currentStyle.templateScripture_2 ? $templates[currentStyle.templateScripture_2 || ""]?.name + " (2)" : currentStyle.templateScripture_3 ? $templates[currentStyle.templateScripture_3 || ""]?.name + " (3)" : currentStyle.templateScripture_4 ? $templates[currentStyle.templateScripture_4 || ""]?.name + " (4)" : ""
 
+    $: templateOverrideSongbook = currentStyle.templateSongbook || ""
+    $: songbookTemplateLabel = currentStyle.templateSongbook ? $templates[currentStyle.templateSongbook || ""]?.name : currentStyle.templateSongbook_2 ? $templates[currentStyle.templateSongbook_2 || ""]?.name + " (2)" : ""
+
     function editTemplate(id: string) {
         activeDrawerTab.set("templates")
         activeEdit.set({ type: "template", id, items: [] })
@@ -140,6 +143,19 @@
         }
 
         updateStyle(value, "templateScripture" + type)
+    }
+
+    function updateSongbookTemplate(e) {
+        const type = e.detail?.type || ""
+        const value = e.detail?.value ?? e.detail
+
+        if (!value) {
+            updateStyle("", "templateSongbook")
+            if (currentStyle.templateSongbook_2) updateStyle("", "templateSongbook_2")
+            return
+        }
+
+        updateStyle(value, "templateSongbook" + type)
     }
 
     // METADATA
@@ -215,6 +231,13 @@
     <MaterialPopupButton id="scripture" label="settings.override_scripture_with_template" disabled={!activeLayers.includes("slide")} value={templateOverrideScripture || currentStyle.templateScripture_2 || currentStyle.templateScripture_3 || currentStyle.templateScripture_4} name={scriptureTemplateLabel} popupId="select_template" icon="templates" on:change={updateScriptureTemplate} allowEmpty />
     {#if templateOverrideScripture && $templates[templateOverrideScripture]}
         <MaterialButton title="titlebar.edit" icon="edit" on:click={() => editTemplate(templateOverrideScripture)} />
+    {/if}
+</InputRow>
+
+<InputRow>
+    <MaterialPopupButton id="songbook" label="settings.override_songbook_with_template" disabled={!activeLayers.includes("slide")} value={templateOverrideSongbook || currentStyle.templateSongbook_2} name={songbookTemplateLabel} popupId="select_template" icon="templates" on:change={updateSongbookTemplate} allowEmpty />
+    {#if templateOverrideSongbook && $templates[templateOverrideSongbook]}
+        <MaterialButton title="titlebar.edit" icon="edit" on:click={() => editTemplate(templateOverrideSongbook)} />
     {/if}
 </InputRow>
 

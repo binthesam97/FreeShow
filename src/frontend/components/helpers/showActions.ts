@@ -278,7 +278,11 @@ export function nextSlide(e: any, start = false, end = false, loop = false, bypa
         return
     }
 
-    if (!slide || slide.id === "temp") return
+    if (!slide) return
+    if (slide.id === "temp") {
+        navigateTempSlide(slide, false, outputId)
+        return
+    }
 
     const newSlideOut = { ...slide, line: 0, revealCount: 0, itemClickReveal: itemsRevealed }
     if (!hasLinesEnded || !allLinesRevealed || !itemsRevealed) {
@@ -489,6 +493,12 @@ export function previousSlide(e: any, customOutputId?: string) {
     }
     // if (slide?.layout) currentLayoutId = slide.layout
 
+    // Temp slides (songbook)
+    if (slide?.id === "temp") {
+        navigateTempSlide(slide, true, outputId)
+        return
+    }
+
     // PPT
     if (slide?.type === "ppt") {
         sendMain(Main.PRESENTATION_CONTROL, { action: e?.key === "PageUp" ? "first" : "previous" })
@@ -631,6 +641,55 @@ export function previousSlide(e: any, customOutputId?: string) {
 
         updateOut(slide ? slide.id : "active", index!, layout, !e?.altKey, customOutputId)
     })
+}
+
+function navigateTempSlide(slide: OutSlide, previous: boolean, outputId: string) {
+    if (!slide) return
+
+    const currentItems = slide.tempItems || []
+    const nextSlides = slide.nextSlides || []
+    const previousSlides = slide.previousSlides || []
+    const currentDynamic = slide.customDynamicValues || {}
+    const nextDynamicValues: any[] = (slide as any).nextSlideDynamicValues || []
+    const previousDynamicValues: any[] = (slide as any).previousSlideDynamicValues || []
+
+    if (previous) {
+        if (!previousSlides.length) return
+        const newCurrent = previousSlides[previousSlides.length - 1]
+        const newCurrentDynamic = previousDynamicValues[previousDynamicValues.length - 1] || {}
+        const newPrevious = previousSlides.slice(0, -1)
+        const newPreviousDynamic = previousDynamicValues.slice(0, -1)
+        const newNext = [currentItems, ...nextSlides]
+        const newNextDynamic = [currentDynamic, ...nextDynamicValues]
+
+        setOutput("slide", {
+            ...slide,
+            tempItems: newCurrent,
+            previousSlides: newPrevious,
+            nextSlides: newNext,
+            customDynamicValues: newCurrentDynamic,
+            previousSlideDynamicValues: newPreviousDynamic,
+            nextSlideDynamicValues: newNextDynamic
+        }, false, outputId)
+    } else {
+        if (!nextSlides.length) return
+        const newCurrent = nextSlides[0]
+        const newCurrentDynamic = nextDynamicValues[0] || {}
+        const newPrevious = [...previousSlides, currentItems]
+        const newPreviousDynamic = [...previousDynamicValues, currentDynamic]
+        const newNext = nextSlides.slice(1)
+        const newNextDynamic = nextDynamicValues.slice(1)
+
+        setOutput("slide", {
+            ...slide,
+            tempItems: newCurrent,
+            previousSlides: newPrevious,
+            nextSlides: newNext,
+            customDynamicValues: newCurrentDynamic,
+            previousSlideDynamicValues: newPreviousDynamic,
+            nextSlideDynamicValues: newNextDynamic
+        }, false, outputId)
+    }
 }
 
 // skip slides that are bound to specific output not customId

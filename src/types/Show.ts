@@ -514,7 +514,7 @@ export interface TemplateStyleOverride {
     templateId?: string
 }
 export interface TemplateSettings {
-    mode?: "default" | "scripture" | "item" | "text"
+    mode?: "default" | "scripture" | "songbook" | "item" | "text"
     resolution?: Resolution
     backgroundColor?: string
     backgroundPath?: string
@@ -566,9 +566,12 @@ export interface OutSlide {
     pages?: number // PDF
     screen?: { id: string; name?: string } // PPT
 
-    translations?: number // scripture translations count (for style template)
+    translations?: number // scripture/songbook translations count (for style template)
     attributionString?: string // scripture custom attributionString
-    customDynamicValues?: { [key: string]: string | [string, string][] } // used for scripture slides
+    customDynamicValues?: { [key: string]: string | [string, string][] } // used for scripture/songbook slides
+    nextSlideDynamicValues?: { [key: string]: string }[]
+    previousSlideDynamicValues?: { [key: string]: string }[]
+    categoryId?: string
 }
 
 export interface OutTransition {

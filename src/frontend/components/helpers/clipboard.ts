@@ -930,6 +930,7 @@ const deleteActions = {
         Object.values(get(styles)).forEach((a) => {
             if (a.template) styleTemplates.push(a.template)
             if (a.templateScripture) styleTemplates.push(a.templateScripture)
+            if (a.templateSongbook) styleTemplates.push(a.templateSongbook)
         })
         if (ids.some((id) => styleTemplates.includes(id))) {
             if (!(await confirmCustom(translateText("This template is in use by Styles.<br>popup.delete_show_confirmation?")))) return

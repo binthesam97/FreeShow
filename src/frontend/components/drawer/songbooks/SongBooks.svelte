@@ -27,14 +27,19 @@
     $: currentBook = active ? $songBooks[active] : null
     $: songs = currentBook?.songs || []
 
-    // Filter songs by search and sort by song number
+    function stripPunctuation(str: string): string {
+        return str.replace(/[^\p{L}\p{N}\s]/gu, "").toLowerCase()
+    }
+
+    // Filter songs by search (case-insensitive, punctuation-agnostic) and sort by song number
     $: filteredSongs = (searchValue
         ? songs.filter((song: Song) => {
-              const q = searchValue.toLowerCase()
+              const q = stripPunctuation(searchValue)
               return (
-                  song.Title?.toLowerCase().includes(q) ||
-                  song.Song_No?.toString().includes(q) ||
-                  song.Author?.toLowerCase().includes(q)
+                  stripPunctuation(song.Title || "").includes(q) ||
+                  song.Song_No?.toString().includes(searchValue.trim()) ||
+                  stripPunctuation(song.Author || "").includes(q) ||
+                  stripPunctuation(song.Transliterated_Title || "").includes(q)
               )
           })
         : songs
@@ -48,7 +53,7 @@
 
     // Update active song store when selection changes
     $: if (selectedSong) {
-        activeSongBookSong.set({ song: selectedSong, showTransliteration: false })
+        activeSongBookSong.set({ song: selectedSong, showTransliteration: hasTransliteration })
     }
 
     // Reset selection when switching books

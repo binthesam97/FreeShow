@@ -840,7 +840,7 @@ export function mergeWithTemplate(slideItems: Item[], templateItems: Item[], add
     const sorted = sortItemsByType(templateItems)
     const sortedTemplateItems = clone(sorted)
 
-    const hasScriptureDynamicValue = Object.keys(customDynamicValues).length && templateItems?.some((item) => item?.lines?.some((line) => line?.text?.some((text) => text.value?.includes("{scripture"))))
+    const hasScriptureDynamicValue = Object.keys(customDynamicValues).length && templateItems?.some((item) => item?.lines?.some((line) => line?.text?.some((text) => text.value?.includes("{scripture") || text.value?.includes("{songbook"))))
 
     // reduce template textboxes to slide items
     const slideTextboxes = hasScriptureDynamicValue ? 0 : slideItems.reduce((count, a) => (count += (a?.type || "text") === "text" ? 1 : 0), 0)
@@ -1308,11 +1308,20 @@ export function getOutputTransitions(slideData: SlideData | null, styleTransitio
 export function getStyleTemplate(outSlide: OutSlide | null, currentStyle: Styles | undefined, slideDynamicValues?: { [key: string]: any }) {
     if (!currentStyle) return {} as Template
 
-    // scripture
     const reference = _show(outSlide?.id).get("reference")
-    // also check per-slide customDynamicValues so slides in non-scripture shows are detected correctly
     const hasScriptureDynamicValues = !!slideDynamicValues && Object.keys(slideDynamicValues).some((k) => k.startsWith("scripture"))
-    const isScripture = outSlide?.id === "temp" || reference?.type === "scripture" || hasScriptureDynamicValues
+    const hasSongbookDynamicValues = !!slideDynamicValues && Object.keys(slideDynamicValues).some((k) => k.startsWith("songbook"))
+
+    const isSongbook = hasSongbookDynamicValues || (outSlide?.id === "temp" && outSlide?.customDynamicValues && Object.keys(outSlide.customDynamicValues).some((k) => k.startsWith("songbook")))
+    const isScripture = !isSongbook && (outSlide?.id === "temp" || reference?.type === "scripture" || hasScriptureDynamicValues)
+
+    if (isSongbook) {
+        const translations: number = outSlide?.translations || 1
+        const translationKey = translations > 1 ? `_${translations}` : ""
+        const templateId = currentStyle[`templateSongbook${translationKey}` as keyof Styles] as string || currentStyle.templateSongbook || "songbook" + (translationKey ? translationKey : "")
+        const template = get(templates)[templateId || ""] || {}
+        return template
+    }
 
     const translations: number = outSlide?.id === "temp" ? outSlide.translations || 1 : reference?.data?.translations || reference?.data?.version?.split("+")?.length || 1
     const translationKey = translations > 1 ? `_${translations}` : ""

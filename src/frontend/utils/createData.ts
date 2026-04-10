@@ -307,6 +307,7 @@ export function setExampleTemplates() {
 
     templateCategories.update((a) => {
         a.scripture = { default: true, name: "category.scripture", icon: "scripture" }
+        a.songbook = { default: true, name: "category.songbook", icon: "songbooks" }
         return a
     })
 
@@ -766,7 +767,7 @@ function getDefaultTemplates() {
         ]
     }
 
-    return { ...a, ...getDefaultScriptureTemplates() }
+    return { ...a, ...getDefaultScriptureTemplates(), ...getDefaultSongbookTemplates() }
 }
 
 function getDefaultScriptureTemplates() {
@@ -1099,6 +1100,142 @@ function getDefaultScriptureTemplates() {
     return a
 }
 
+function getDefaultSongbookTemplates() {
+    const a: Record<string, Template> = {}
+
+    // Songbook: single language (original only)
+    a.songbook = {
+        isDefault: true,
+        name: "Songbook",
+        color: "#4A90D9",
+        category: "songbook",
+        settings: { mode: "songbook" },
+        items: [
+            {
+                style: "top: 30px;left: 30px;width: 1860px;height: 920px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 30px;",
+                align: "",
+                lines: [
+                    {
+                        align: "text-align: center;",
+                        text: [{ value: "{songbook_text}", style: "font-size: 70px;" }]
+                    }
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
+            },
+            {
+                style: "top: 960px;left: 30px;width: 1860px;height: 90px;",
+                align: "",
+                lines: [
+                    { align: "", text: [{ value: "{songbook_label}", style: "font-size: 40px;color: rgb(255 255 255 / 0.7);" }] }
+                ]
+            }
+        ]
+    }
+
+    // Songbook: transliteration top/bottom layout (original top, transliteration bottom)
+    a.songbook_2 = {
+        isDefault: true,
+        name: "Songbook Top/Bottom",
+        color: "#4A90D9",
+        category: "songbook",
+        settings: { mode: "songbook" },
+        items: [
+            {
+                style: "top: 20px;left: 30px;width: 1860px;height: 440px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
+                align: "",
+                lines: [
+                    {
+                        align: "text-align: center;",
+                        text: [{ value: "{songbook1_text}", style: "font-size: 60px;" }]
+                    }
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
+            },
+            {
+                style: "top: 480px;left: 30px;width: 1860px;height: 440px;background-color: rgb(0 0 0 / 0.3);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #999999;",
+                align: "",
+                lines: [
+                    {
+                        align: "text-align: center;",
+                        text: [{ value: "{songbook2_text}", style: "font-size: 60px;opacity: 0.85;font-style: italic;" }]
+                    }
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
+            },
+            {
+                style: "top: 935px;left: 30px;width: 1860px;height: 90px;",
+                align: "",
+                lines: [
+                    { align: "", text: [{ value: "{songbook_label}", style: "font-size: 40px;color: rgb(255 255 255 / 0.7);" }] }
+                ]
+            }
+        ]
+    }
+
+    // Songbook: transliteration left/right layout (original left, transliteration right)
+    a.songbook_2_side = {
+        isDefault: true,
+        name: "Songbook Side by Side",
+        color: "#4A90D9",
+        category: "songbook",
+        settings: { mode: "songbook" },
+        items: [
+            {
+                style: "top: 20px;left: 20px;width: 920px;height: 900px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
+                align: "",
+                lines: [
+                    {
+                        align: "text-align: center;",
+                        text: [{ value: "{songbook1_text}", style: "font-size: 55px;" }]
+                    }
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
+            },
+            {
+                style: "top: 20px;left: 960px;width: 920px;height: 900px;background-color: rgb(0 0 0 / 0.3);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #999999;",
+                align: "",
+                lines: [
+                    {
+                        align: "text-align: center;",
+                        text: [{ value: "{songbook2_text}", style: "font-size: 55px;opacity: 0.85;font-style: italic;" }]
+                    }
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
+            },
+            {
+                style: "top: 935px;left: 30px;width: 1860px;height: 90px;",
+                align: "",
+                lines: [
+                    { align: "", text: [{ value: "{songbook_label}", style: "font-size: 40px;color: rgb(255 255 255 / 0.7);" }] }
+                ]
+            }
+        ]
+    }
+
+    return a
+}
+
+export function setDefaultSongbookTemplates() {
+    const templatesList = getDefaultSongbookTemplates()
+
+    deletedDefaults.update((a) => {
+        a.templates = (get(deletedDefaults).templates || []).filter((id) => !Object.keys(templatesList).includes(id))
+        return a
+    })
+
+    templateCategories.update((a) => {
+        a.songbook = { default: true, name: "category.songbook", icon: "songbooks" }
+        return a
+    })
+
+    templates.set({ ...get(templates), ...templatesList })
+}
+
 export function createDefaultShow() {
     setShow("default", {
         name: translateText("example.welcome"),
@@ -1183,7 +1320,7 @@ export function getDefaultElements() {
 }
 
 // "message" is removed
-const templateIds = ["metadata", "message", "header", "text", "big", "default", "small", "bigBold", "defaultBold", "smallBold", "blur_box", "faded", "box", "trendy", "trendy_curved", "fade", "lowerThird", "lowerThirdWhite", "lowerThirdBlue", "lowerThirdColor", "lowerThirdPastel", "scripture", "scripture_2", "scripture_3", "scripture_4", "scriptureLT", "scriptureLT_2", "blueHeader", "blueMain", "bullets"]
+const templateIds = ["metadata", "message", "header", "text", "big", "default", "small", "bigBold", "defaultBold", "smallBold", "blur_box", "faded", "box", "trendy", "trendy_curved", "fade", "lowerThird", "lowerThirdWhite", "lowerThirdBlue", "lowerThirdColor", "lowerThirdPastel", "scripture", "scripture_2", "scripture_3", "scripture_4", "scriptureLT", "scriptureLT_2", "blueHeader", "blueMain", "bullets", "songbook", "songbook_2", "songbook_2_side"]
 function getDeletedTemplates() {
     if (get(deletedDefaults).templates) return
 
