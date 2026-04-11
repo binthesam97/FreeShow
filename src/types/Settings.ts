@@ -57,6 +57,7 @@ export interface Cropping {
     right: number
     bottom: number
     left: number
+    type?: "clip" | "ppt"
 }
 
 export interface Dictionary {

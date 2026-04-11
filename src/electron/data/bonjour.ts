@@ -1,4 +1,4 @@
-import Bonjour from "bonjour-service"
+import Bonjour, { type Service } from "bonjour-service"
 import crypto from "crypto"
 import os from "os"
 
@@ -11,6 +11,7 @@ const bonjour = new Bonjour({}, (err: any) => {
 const ips = getLocalIPs()
 
 const instanceID = crypto.randomBytes(3).toString("hex")
+const publishedServices: Partial<Record<string, Service>> = {}
 
 // broadcast port over LAN
 export function publishPort(name: string, port: number) {
@@ -24,26 +25,48 @@ export function publishPort(name: string, port: number) {
     const uniqueName = `freeshow-${name}-${instanceID}`
     const customData = { ip: ips[0], ips }
 
-    try {
-        bonjour.publish({
-            name: uniqueName,
-            type: "freeshow",
-            protocol: "udp",
-            port,
-            txt: customData
-        })
-    } catch (err) {
-        console.warn(`Bonjour: Failed to publish ${name} on port ${port}:`, err.message)
+    const publish = () => {
+        try {
+            publishedServices[name] = bonjour.publish({
+                name: uniqueName,
+                type: "freeshow",
+                protocol: "udp",
+                port,
+                txt: customData
+            })
+        } catch (err) {
+            console.warn(`Bonjour: Failed to publish ${name} on port ${port}:`, err instanceof Error ? err.message : String(err))
+        }
     }
+
+    const previousService = publishedServices[name]
+    if (previousService?.stop) {
+        try {
+            previousService.stop(() => {
+                delete publishedServices[name]
+                publish()
+            })
+            return
+        } catch (err) {
+            console.warn(`Bonjour: Failed to stop previous ${name} service:`, err instanceof Error ? err.message : String(err))
+        }
+    }
+
+    publish()
 }
 
 export function unpublishPorts() {
     if (!bonjour) return
 
     try {
+        Object.keys(publishedServices).forEach((key) => {
+            publishedServices[key]?.stop?.()
+            delete publishedServices[key]
+        })
+
         bonjour.unpublishAll()
     } catch (err) {
-        console.warn("Bonjour: Failed to unpublish ports:", err.message)
+        console.warn("Bonjour: Failed to unpublish ports:", err instanceof Error ? err.message : String(err))
     }
 }
 

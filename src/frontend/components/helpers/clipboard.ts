@@ -141,7 +141,7 @@ export function paste(clip: Clipboard | null = null, extraData: any = {}, custom
         return
     }
 
-    pasteActions[clip.id](clip.data, extraData)
+    pasteActions[clip.id](clip.data, extraData, isDuplicating)
 
     if (isDuplicating) setStatus("duplicated", 2)
     else setStatus("pasted", 2)
@@ -168,6 +168,9 @@ export function cut(clip: Clipboard | null = null) {
 }
 
 export function deleteAction(clip: Clipboard | { id: null; data: Clipboard; index: any }, type = "delete") {
+    // selected timeline actions
+    if (document.querySelector(".timeline-track .action-marker.selected")) return
+
     console.info("DELETE", clip.id, clip.data)
     if (!clip?.id) return false
     if (!deleteActions[clip.id]) return false
@@ -570,7 +573,7 @@ const pasteActions = {
         })
         history({ id: "UPDATE", newData: { data: items, key: "slides", keys: [ref.id], subkey: "items", index: -1 }, oldData: { id: get(activeShow)!.id }, location: { page: "edit", id: "show_key" } })
     },
-    slide: (data: any, { index }: any = {}) => {
+    slide: (data: any, { index }: any = {}, isDuplicating: boolean = false) => {
         if (!data) return
 
         // clone slides
@@ -603,7 +606,7 @@ const pasteActions = {
         data.slides.forEach((slide, i) => {
             // dont add child if it is already copied
             if (slide.group === null && addedChildren.includes(slide.id)) return
-            if (slide.group === null) slide.group = ""
+            if (!isDuplicating && slide.group === null) slide.group = ""
 
             slide.id = uid()
             const slideIndex = newSlides.length
@@ -673,7 +676,7 @@ const pasteActions = {
 
         history({ id: "SLIDES", newData: { data: newSlides, layouts, index: index !== undefined ? index + 1 : undefined } })
     },
-    group: (data: any) => pasteActions.slide(data),
+    group: (data: any, extraData: any = {}, isDuplicating: boolean = false) => pasteActions.slide(data, extraData, isDuplicating),
     overlay: (data: any) => {
         data?.forEach((slide) => {
             const newSlide = clone(slide)
@@ -1409,7 +1412,7 @@ function historyDelete(id, data, { updater } = { updater: "" }) {
             return a
 
             function getDeletedArray(key: string) {
-                let deletedIds = [...(a[key] || []), ...data.map((a) => a.id || a)]
+                let deletedIds = data.map((a) => a.id || a)
 
                 // only defaults
                 deletedIds = deletedIds.filter((id) => {
@@ -1420,7 +1423,7 @@ function historyDelete(id, data, { updater } = { updater: "" }) {
                 })
 
                 // remove any duplicates
-                deletedIds = [...new Set(deletedIds)]
+                deletedIds = [...(a[key] || []), ...new Set(deletedIds)]
 
                 return deletedIds
             }

@@ -19,6 +19,7 @@
     import MaterialZoom from "../inputs/MaterialZoom.svelte"
     import SelectElem from "../system/SelectElem.svelte"
     import Reference from "./Reference.svelte"
+    import { translateText } from "../../utils/language"
 
     $: showId = $activeShow?.id || ""
     $: currentShow = $showsCache[showId] || {}
@@ -164,7 +165,7 @@
             <MaterialButton
                 title="show.locked"
                 on:click={() => {
-                    alertMessage.set(currentShow?.locked ? "show.locked" : "profile.locked")
+                    alertMessage.set(`${translateText(currentShow?.locked ? "show.locked" : "profile.locked")}<br><br>Unlock it by clicking the three dots in the top right corner.`)
                     activePopup.set("alert")
                 }}
             >

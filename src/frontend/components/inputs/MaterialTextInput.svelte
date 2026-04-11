@@ -79,10 +79,10 @@
 <div class="textfield {center ? 'centered' : ''} {disabled ? 'disabled' : ''}" data-title={translateText(title)} style={$$props.style || null}>
     <div class="background" />
 
-    {#if type === "text" || showText}
-        <input bind:value type="text" {id} {placeholder} {disabled} {autofocus} use:select use:blurOnEnter class="input edit" on:input={input} on:change={change} on:keydown />
-    {:else if type === "password"}
+    {#if type === "password" && !showText}
         <input bind:value type="password" {id} {placeholder} {disabled} {autofocus} use:select use:blurOnEnter class="input edit" on:input={input} on:change={change} on:keydown />
+    {:else}
+        <input bind:value type="text" {id} {placeholder} {disabled} {autofocus} use:select use:blurOnEnter class="input edit" on:input={input} on:change={change} on:keydown />
     {/if}
 
     <label for={id}>{@html translateText(label, $dictionary)}</label>
@@ -110,7 +110,7 @@
         </div>
     {/if}
 
-    {#if type === "password"}
+    {#if type === "password" && !pasteBtn}
         <div class="remove">
             <MaterialButton
                 on:click={(e) => {
@@ -124,7 +124,7 @@
                 <Icon id={showText ? "eye" : "hide"} white />
             </MaterialButton>
         </div>
-    {:else if pasteBtn}
+    {:else if pasteBtn && !disabled}
         <div class="remove">
             <MaterialButton
                 on:click={(e) => {

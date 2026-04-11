@@ -35,6 +35,7 @@ export function _show(id = "active") {
 
                 const double = key.split(".")
                 if (double.length > 1) {
+                    if (!a[id][double[0]]?.[double[1]]) return a
                     prev = a[id][double[0]][double[1]]
                     a[id][double[0]][double[1]] = value
                 } else {
@@ -42,7 +43,7 @@ export function _show(id = "active") {
                     a[id][key] = value
                 }
 
-                a[id].timestamps.modified = new Date().getTime()
+                if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                 return a
             })
             allShows.update((a) => {
@@ -55,7 +56,7 @@ export function _show(id = "active") {
                 if (double.length > 1 && a[id][double[0]]?.[double[1]]) a[id][double[0]][double[1]] = value
                 else if (a[id][key]) a[id][key] = value
 
-                if (a[id]) a[id].timestamps.modified = new Date().getTime()
+                if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                 return a
             })
             return prev
@@ -69,7 +70,7 @@ export function _show(id = "active") {
                 prev = a[id][key]
                 delete a[id][key]
 
-                a[id].timestamps.modified = new Date().getTime()
+                if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                 return a
             })
             return prev
@@ -109,7 +110,7 @@ export function _show(id = "active") {
                         else a[id].slides[slideId][key] = value
                     })
 
-                    a[id].timestamps.modified = new Date().getTime()
+                    if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                     return a
                 })
                 return prev
@@ -127,7 +128,7 @@ export function _show(id = "active") {
                         a[id].slides[slideId] = slides![i] || slides![0]
                     })
 
-                    a[id].timestamps.modified = new Date().getTime()
+                    if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                     return a
                 })
                 return slideIds[0]
@@ -147,7 +148,7 @@ export function _show(id = "active") {
                         delete a[id].slides[slideId]
                     })
 
-                    a[id].timestamps.modified = new Date().getTime()
+                    if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                     return a
                 })
                 return slides
@@ -181,6 +182,7 @@ export function _show(id = "active") {
                 set: ({ key, values }: any) => {
                     const prev: any = { values: [] }
                     if (key) prev.key = key
+                    if (!values) return prev
                     showsCache.update((a) => {
                         if (!a[id]) return a
                         if (!slideIds.length) slideIds = Object.keys(a[id].layouts)
@@ -210,7 +212,7 @@ export function _show(id = "active") {
                             })
                         })
 
-                        a[id].timestamps.modified = new Date().getTime()
+                        if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                         return a
                     })
                     return prev
@@ -246,7 +248,7 @@ export function _show(id = "active") {
                             })
                         })
 
-                        a[id].timestamps.modified = new Date().getTime()
+                        if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                         return a
                     })
                     return prev
@@ -308,7 +310,7 @@ export function _show(id = "active") {
                                 })
                             })
 
-                            a[id].timestamps.modified = new Date().getTime()
+                            if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                             return a
                         })
                         return prev
@@ -327,7 +329,7 @@ export function _show(id = "active") {
                                 })
                             })
 
-                            a[id].timestamps.modified = new Date().getTime()
+                            if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                             return a
                         })
                     },
@@ -351,7 +353,7 @@ export function _show(id = "active") {
                                 })
                             })
 
-                            a[id].timestamps.modified = new Date().getTime()
+                            if (a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                             return a
                         })
                         return prev
@@ -391,6 +393,7 @@ export function _show(id = "active") {
                                 console.error("MISSING SLIDE")
                                 // missing slides can cause index problems, this will delete the layout id
                                 showsCache.update((cache) => {
+                                    if (!cache[id]) return cache
                                     cache[id].layouts[layoutId].slides.splice(index, 1)
                                     return cache
                                 })
@@ -461,7 +464,7 @@ export function _show(id = "active") {
                         a[id].layouts[layoutId][key] = value
                     })
 
-                    a[id].timestamps.modified = new Date().getTime()
+                    if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                     return a
                 })
                 return prev
@@ -473,7 +476,7 @@ export function _show(id = "active") {
 
                     a[id].layouts[layoutId] = layout || { name: "", notes: "", slides: [] }
 
-                    a[id].timestamps.modified = new Date().getTime()
+                    if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                     return a
                 })
                 return layoutId
@@ -486,7 +489,7 @@ export function _show(id = "active") {
                     prev.push(a[id].layouts[layoutId])
                     delete a[id].layouts[layoutId]
 
-                    a[id].timestamps.modified = new Date().getTime()
+                    if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                     return a
                 })
                 return prev
@@ -531,7 +534,7 @@ export function _show(id = "active") {
                             })
                         })
 
-                        a[id].timestamps.modified = new Date().getTime()
+                        if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                         return a
                     })
                     return prev
@@ -578,7 +581,7 @@ export function _show(id = "active") {
                             }
                         })
 
-                        a[id].timestamps.modified = new Date().getTime()
+                        if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                         return a
                     })
                 },
@@ -609,7 +612,7 @@ export function _show(id = "active") {
                                 })
                         })
 
-                        a[id].timestamps.modified = new Date().getTime()
+                        if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                         return a
                     })
                     return prev
@@ -637,7 +640,7 @@ export function _show(id = "active") {
                                 })
                             })
 
-                            a[id].timestamps.modified = new Date().getTime()
+                            if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                             return a
                         })
                         return prev
@@ -671,7 +674,7 @@ export function _show(id = "active") {
                         else if (a[id].media?.[mediaId]) a[id].media[mediaId][key] = value
                     })
 
-                    a[id].timestamps.modified = new Date().getTime()
+                    if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                     return a
                 })
                 // return prev
@@ -684,7 +687,7 @@ export function _show(id = "active") {
 
                     a[id].media[bgid] = object
 
-                    a[id].timestamps.modified = new Date().getTime()
+                    if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                     return a
                 })
                 return bgid
@@ -702,7 +705,7 @@ export function _show(id = "active") {
                         delete a[id].media[mediaId]
                     })
 
-                    a[id].timestamps.modified = new Date().getTime()
+                    if (!a[id]?.timestamps) a[id].timestamps.modified = new Date().getTime()
                     return a
                 })
                 return media

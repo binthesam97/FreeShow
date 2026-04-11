@@ -2,7 +2,7 @@
     import { onMount } from "svelte"
     import type { MediaStyle } from "../../../../types/Main"
     import type { ItemType } from "../../../../types/Show"
-    import { activeEdit, activePage, activePopup, activeShow, alertMessage, focusMode, groups, labelsDisabled, media, outputs, overlays, refreshEditSlide, showsCache, slideNotesActive, special, styles, templates, textEditActive } from "../../../stores"
+    import { activeEdit, activePage, activePopup, activeShow, alertMessage, focusMode, groups, labelsDisabled, media, outputs, overlays, refreshEditSlide, resized, showsCache, slideNotesActive, special, styles, templates, textEditActive } from "../../../stores"
     import { transposeText } from "../../../utils/chordTranspose"
     import { DEFAULT_WIDTH, triggerFunction } from "../../../utils/common"
     import { translateText } from "../../../utils/language"
@@ -35,6 +35,7 @@
     import { getUsedChords } from "../scripts/chords"
     import { addItem } from "../scripts/itemHelpers"
     import { getSlideText, setCaretAtEnd } from "../scripts/textStyle"
+    import Timeline from "../../timeline/Timeline.svelte"
 
     $: currentShowId = $activeShow?.id || $activeEdit.showId || ""
     $: currentShow = $showsCache[currentShowId]
@@ -269,7 +270,7 @@
             if (Slide?.items.length === 1 && !$activeEdit.items.length) {
                 activeEdit.update((a) => ({ ...(a || {}), items: [0] }))
                 const elem = document.querySelector(".editItem")?.querySelector(".edit")
-                if (elem) {
+                if (elem && !$special.slideTimelineActive) {
                     elem.addEventListener("focus", () => setCaretAtEnd(elem))
                     ;(elem as HTMLElement).focus()
                 }
@@ -438,7 +439,7 @@
         </div>
     {/if}
 
-    {#if !$focusMode && !isLocked && !$slideNotesActive}
+    {#if !$focusMode && !isLocked && !$slideNotesActive && !$special.slideTimelineActive}
         <!-- && Slide?.items?.length -->
         {#if !chordsMode && !widthOrHeight.includes("height")}
             <FloatingInputs bottom={notesVisible ? bottomHeight : 10} side="center">
@@ -518,6 +519,16 @@
                 </MaterialButton>
             </FloatingInputs>
         {/if}
+    {/if}
+
+    {#if $special.slideTimelineActive}
+        <MaterialZoom hidden columns={zoom} min={0.2} max={4} defaultValue={1} addValue={0.1} on:change={updateZoom} />
+
+        <Resizeable id="slide_timeline" side="bottom" maxWidth={DEFAULT_WIDTH} minWidth={40}>
+            {#key currentShowId + "-" + $activeEdit.slide}
+                <Timeline type="slide" isClosed={$resized.slide_timeline <= 40} />
+            {/key}
+        </Resizeable>
     {/if}
 </div>
 

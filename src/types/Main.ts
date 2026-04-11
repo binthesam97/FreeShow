@@ -291,6 +291,7 @@ export interface Profile {
     autoOpenLastUsed?: boolean // admin only
     image: string
     access: { [key: string]: { [key: string]: AccessType } }
+    action?: string // action that triggers each time this profile is selected
 }
 export type AccessType = "none" | "read" | "write"
 
@@ -327,6 +328,7 @@ export type Popups =
     | "manage_dynamic_values"
     | "player"
     | "template_style_overrides"
+    | "regex_manager"
     | "rename"
     | "color"
     | "color_gradient"

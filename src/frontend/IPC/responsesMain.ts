@@ -1,4 +1,5 @@
 import { get } from "svelte/store"
+import type { ContentProviderId } from "../../electron/contentProviders/base/types"
 import type { ToMainSendPayloads } from "../../types/IPC/ToMain"
 import { ToMain } from "../../types/IPC/ToMain"
 import type { Project } from "../../types/Projects"
@@ -59,6 +60,7 @@ import {
     mediaDownloads,
     outputs,
     overlays,
+    pdfImports,
     popupData,
     presentationData,
     projects,
@@ -84,10 +86,10 @@ import { setupCloudSync } from "../utils/cloudSync"
 import { newToast } from "../utils/common"
 import { confirmCustom } from "../utils/popup"
 import { initializeClosing, saveComplete } from "../utils/save"
+import { invalidateSearchIndex } from "../utils/searchFast"
 import { updateSettings, updateSyncedSettings, updateThemeValues } from "../utils/updateSettings"
 import type { MainReturnPayloads } from "./../../types/IPC/Main"
 import { Main } from "./../../types/IPC/Main"
-import { invalidateSearchIndex } from "../utils/searchFast"
 import { sendMain } from "./main"
 
 type MainHandler<ID extends Main | ToMain> = (data: ID extends keyof ToMainSendPayloads ? ToMainSendPayloads[ID] : ID extends keyof MainReturnPayloads ? Awaited<MainReturnPayloads[ID]> : undefined) => void
@@ -221,6 +223,8 @@ export const mainResponses: MainResponses = {
     [ToMain.MEDIA_DOWNLOAD_PROGRESS]: (data) => {
         mediaDownloads.update((downloads) => {
             const newDownloads = new Map(downloads)
+            const total = Math.max(1, data.total || 0)
+            const progress = data.status === "complete" ? total : Math.min(data.progress || 0, total)
             if (data.status === "complete" || data.status === "error") {
                 // Remove completed/errored downloads after a short delay
                 setTimeout(() => {
@@ -231,8 +235,35 @@ export const mainResponses: MainResponses = {
                     })
                 }, 2000)
             }
-            newDownloads.set(data.url, { progress: data.progress, total: data.total, status: data.status })
+            newDownloads.set(data.url, { progress, total, status: data.status })
             return newDownloads
+        })
+    },
+    [ToMain.PDF_IMPORT_PROGRESS]: (data) => {
+        pdfImports.update((imports) => {
+            const updated = new Map(imports)
+            updated.set(data.filePath, {
+                name: data.name,
+                progress: data.progress,
+                total: data.total,
+                status: data.status,
+                message: data.message
+            })
+
+            if (data.status === "complete" || data.status === "error") {
+                setTimeout(
+                    () => {
+                        pdfImports.update((current) => {
+                            const cleaned = new Map(current)
+                            cleaned.delete(data.filePath)
+                            return cleaned
+                        })
+                    },
+                    data.status === "error" ? 7000 : 3000
+                )
+            }
+
+            return updated
         })
     },
     [ToMain.AUDIO_METADATA]: (data) => {
@@ -293,6 +324,7 @@ export const mainResponses: MainResponses = {
 
         if (data.isFirstConnection) newToast("main.finished")
 
+        if (data.providerId !== "churchApps") return
         setTimeout(() => {
             setupCloudSync(!data.isFirstConnection)
         }, 1000)
@@ -320,15 +352,22 @@ export const mainResponses: MainResponses = {
             if (linkedShow) {
                 replaceIds[id] = linkedShow.id
                 if (providerLocalAlways) continue
-                Object.values<Slide>(show.slides).forEach((slide) => {
-                    if (slide.globalGroup || !slide.group) return
-
-                    const globalGroup = getGlobalGroup(slide.group)
-                    if (globalGroup) slide.globalGroup = globalGroup
-                })
 
                 const origin = data.providerId === "planningcenter" ? "pco" : data.providerId
-                tempShows.push({ id: linkedShow.id, show: { ...show, origin, name: checkName(show.name, linkedShow.id), quickAccess: { ...(linkedShow.quickAccess || {}), [linkKey]: id } } })
+                showsCache.update((a) => {
+                    if (a[linkedShow.id]?.slides) {
+                        Object.values<Slide>(a[linkedShow.id].slides).forEach((slide) => {
+                            if (slide.globalGroup || !slide.group) return
+                            const globalGroup = getGlobalGroup(slide.group)
+                            if (globalGroup) slide.globalGroup = globalGroup
+                        })
+                    }
+
+                    if (!a[linkedShow.id].quickAccess) a[linkedShow.id].quickAccess = {}
+                    if (linkKey) a[linkedShow.id].quickAccess[linkKey] = id
+                    a[linkedShow.id].origin = origin
+                    return a
+                })
                 continue
             }
 
@@ -368,6 +407,18 @@ export const mainResponses: MainResponses = {
         }
         setTempShows(tempShows)
 
+        function createProviderProject(providerId: ContentProviderId, projectBase: Project) {
+            const templateId = get(contentProviderData)[providerId]?.projectTemplate || ""
+            if (!templateId) return projectBase
+
+            const templateItems = get(projectTemplates)[templateId]?.shows || []
+
+            // project template first, then append the synced items
+            projectBase.shows = clone([...templateItems, ...(projectBase.shows || [])])
+
+            return projectBase
+        }
+
         data.projects.forEach((currentProject) => {
             // CREATE PROJECT FOLDER
             const folderId = currentProject.folderId
@@ -376,13 +427,14 @@ export const mainResponses: MainResponses = {
             }
 
             // CREATE PROJECT
-            const project: Project = {
+            const projectBase: Project = {
                 name: currentProject.name,
                 created: currentProject.created,
                 used: Date.now(), // show on top in last used list
                 parent: folderId || "/",
                 shows: currentProject.items || []
             }
+            const project = createProviderProject(data.providerId, projectBase)
 
             // REPLACE IDS
             project.shows = project.shows.map((a) => ({ ...a, id: replaceIds[a.id] || a.id }))

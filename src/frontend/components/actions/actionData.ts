@@ -5,6 +5,7 @@ export const actionData = {
     next_project_item: { name: "actions.next_project_item", icon: "project", incompatible: ["previous_project_item", "index_select_project_item"] },
     previous_project_item: { name: "actions.previous_project_item", icon: "project", incompatible: ["next_project_item", "index_select_project_item"] },
     index_select_project_item: { name: "actions.index_select_project_item", icon: "project", input: "index", incompatible: ["next_project_item", "previous_project_item"] },
+    name_start_project_item: { name: "actions.name_start_project_item", icon: "project", input: "strval" },
     mark_active_as_played: { name: "actions.mark_played", icon: "check", input: "toggle" },
 
     // SHOWS
@@ -12,6 +13,7 @@ export const actionData = {
     start_show: { slideId: "startShow", common: true, name: "preview._start", icon: "showIcon", input: "start_show" }, // any play actions are incompatible with clear actions...
     set_template: { name: "actions.set_template_active", icon: "templates", input: "id" },
     set_next_slide_timer: { name: "preview.nextTimer", icon: "timer", input: "numval" },
+    change_slide_timeline_speed: { name: "actions.change_slide_timeline_speed", icon: "timeline", input: "percentage" },
     transpose_show_up: { name: "edit.transpose_up", icon: "up" },
     transpose_show_down: { name: "edit.transpose_down", icon: "down" },
 

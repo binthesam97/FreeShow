@@ -6,9 +6,9 @@ import type { ExifData } from "exif"
 import { ExifImage } from "exif"
 import fs, { type Stats } from "fs"
 import path, { join, parse } from "path"
-import { fileURLToPath } from "url"
 import { uid } from "uid"
 import upath from "upath"
+import { fileURLToPath } from "url"
 import { OUTPUT } from "../../types/Channels"
 import { Main } from "../../types/IPC/Main"
 import { ToMain } from "../../types/IPC/ToMain"
@@ -17,7 +17,7 @@ import type { Project } from "../../types/Projects"
 import type { Item, Show, TrimmedShows } from "../../types/Show"
 import { imageExtensions, mimeTypes, videoExtensions } from "../data/media"
 import { _store, appDataPath, config, getStore, setStore, setStoreValue } from "../data/store"
-import { createThumbnail, filePathHashCode } from "../data/thumbnails"
+import { createThumbnail, doesMediaExist, filePathHashCode } from "../data/thumbnails"
 import { sendMain, sendToMain } from "../IPC/main"
 import { OutputHelper } from "../output/OutputHelper"
 import { mainWindow, setAutoProfile, toApp } from "./../index"
@@ -174,7 +174,7 @@ export function deleteFile(filePath: string) {
         fs.unlinkSync(filePath)
         return true
     } catch (err) {
-        actionComplete(err, "Could not delete file")
+        actionComplete(err as Error, "Could not delete file")
         return false
     }
 }
@@ -835,14 +835,14 @@ function normalizeLocalPath(filePath: string) {
 const NESTED_SEARCH = 8 // folder levels deep
 export async function locateMediaFile({ filePath, folders }: { filePath: string; folders: string[] }) {
     const normalizedOriginalPath = normalizeLocalPath(filePath)
-    if (await doesPathExistAsync(normalizedOriginalPath)) return { path: normalizedOriginalPath, hasChanged: false }
+    if ((await doesMediaExist({ path: normalizedOriginalPath })).exists) return { path: normalizedOriginalPath, hasChanged: false }
 
     // Media Sync Folder
     const mediaFolder = getMediaSyncFolderPath()
     const folderId = getFileParentFolderId(normalizedOriginalPath)
     const fileName = upath.basename(normalizedOriginalPath)
     const mediaFilePath = path.join(mediaFolder, folderId, fileName)
-    if (await doesPathExistAsync(mediaFilePath)) return { path: mediaFilePath, hasChanged: true }
+    if ((await doesMediaExist({ path: mediaFilePath })).exists) return { path: mediaFilePath, hasChanged: true }
     const searchFolders = [mediaFolder, ...folders].map(normalizeLocalPath).filter((folderPath) => folderPath)
 
     // lookup already replaced paths from cache
@@ -851,7 +851,7 @@ export async function locateMediaFile({ filePath, folders }: { filePath: string;
     const cacheId = `${folderId}_${fileName}`
     const cachedPath = syncCache.replacedPaths[cacheId]
     // TEMP disable in case the wrong file is cached
-    if (false && cachedPath && (await doesPathExistAsync(cachedPath))) {
+    if (false && cachedPath && (await doesMediaExist({ path: cachedPath })).exists) {
         return { path: cachedPath, hasChanged: false }
     }
 
@@ -961,7 +961,13 @@ async function asyncPool<T>(poolLimit: number, array: T[], iteratorFn: (item: T)
 export async function detectNewFiles() {
     if (!getStore("SETTINGS").initialized) return
 
-    const downloadsFolder = app.getPath("downloads")
+    let downloadsFolder: string
+    try {
+        downloadsFolder = app.getPath("downloads")
+    } catch {
+        return
+    }
+
     const MAX_TIME = 16 * 60 * 60 * 1000 // 16 hours
     const ONE_MINUTE = 60 * 1000
     const WRITE_WAIT_MS = 2000
@@ -1215,6 +1221,77 @@ export function loadShows(returnShows = false, reCacheNames: string[] = []) {
         // cache text content
         const txt = getTextCacheString(show[1])
         if (txt) textCache[id] = txt
+    }
+
+    // send updated text cache
+    if (Object.keys(textCache).length) {
+        const cache = getStore("CACHE")
+        cache.text = { ...cache.text, ...textCache }
+        sendMain(Main.CACHE, cache)
+    }
+
+    if (returnShows) return newCachedShows
+
+    // save this (for cloud sync)
+    setStore(_store.SHOWS, newCachedShows)
+
+    return newCachedShows
+}
+
+export async function loadShowsAsync(returnShows = false, reCacheNames: string[] = []) {
+    const showsPath = getDataFolderPath("shows")
+
+    specialCaseFixer()
+
+    // list all shows in folder
+    const filesInFolder = readFolder(showsPath)
+        .filter((name) => name.toLowerCase().endsWith(".show"))
+        .map((name) => name.slice(0, -5)) // remove .show extension
+        .filter((trimmedName) => trimmedName) // remove files with no name
+
+    const cachedShows = getStore("SHOWS") || {}
+    const newCachedShows: TrimmedShows = {}
+    const textCache: { [key: string]: string } = {}
+
+    // create a map for quick lookup of cached shows by name
+    const cachedShowNames = new Map<string, string>()
+    for (const [id, show] of Object.entries(cachedShows)) {
+        if (show?.name && !reCacheNames.includes(show.name)) cachedShowNames.set(show.name, id)
+    }
+
+    const BATCH_SIZE = 20
+    for (let i = 0; i < filesInFolder.length; i += BATCH_SIZE) {
+        const batch = filesInFolder.slice(i, i + BATCH_SIZE)
+
+        await Promise.all(
+            batch.map(async (name) => {
+                const matchingShowId = cachedShowNames.get(name)
+                if (matchingShowId && !newCachedShows[matchingShowId]) {
+                    newCachedShows[matchingShowId] = cachedShows[matchingShowId]
+                    return
+                }
+
+                const showPath: string = path.join(showsPath, `${name}.show`)
+                const jsonData = (await readFileAsync(showPath)) || "{}"
+                const show = parseShow(jsonData)
+
+                if (!show || !show[1]) return
+
+                let id = show[0]
+                // some old duplicated shows might have the same id
+                if (newCachedShows[id]) id = uid()
+
+                const trimmedShow = trimShow({ ...show[1], name })
+                if (trimmedShow) newCachedShows[id] = trimmedShow
+
+                // cache text content
+                const txt = getTextCacheString(show[1])
+                if (txt) textCache[id] = txt
+            })
+        )
+
+        // Yield between batches so other IPC requests can be handled.
+        await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
     // send updated text cache
