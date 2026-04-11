@@ -117,10 +117,17 @@ npx electron-builder --win --config config/building/electron-builder.yaml
 
 Output: `dist/FreeShow-<version>-<arch>.exe`
 
-> **Note:** The config includes Azure code signing (`azureSignOptions`). Signing is skipped
-> automatically when the Azure credentials are not configured. To enable signing, set up
+> **Note:** Code signing is handled by `scripts/windows/sign.js`. It skips automatically
+> when the Azure credentials are absent, so local builds always work without any extra steps.
+> To enable signing for release builds, set up
 > [Azure Trusted Signing](https://learn.microsoft.com/en-us/azure/trusted-signing/) and
-> ensure the Azure CLI is authenticated.
+> export these three variables before building:
+>
+> ```bash
+> export AZURE_TENANT_ID="your-tenant-id"
+> export AZURE_CLIENT_ID="your-client-id"
+> export AZURE_CLIENT_SECRET="your-client-secret"
+> ```
 
 #### Platform-specific setup (Windows only)
 

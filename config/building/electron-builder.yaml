@@ -26,11 +26,7 @@ win:
     icon: build/public/icon.png
     asarUnpack:
         - "**/node_modules/macadam/**/*.node"
-    azureSignOptions:
-        publisherName: Live Church Solutions
-        endpoint: https://wus2.codesigning.azure.net/
-        certificateProfileName: FreeShow
-        codeSigningAccountName: FreeShow
+    sign: scripts/windows/sign.js
 
 # linux
 
