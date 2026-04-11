@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte"
-    import { activeSongBookSong, outLocked, songBooks } from "../../../stores"
+    import { activeSongBookSong, outLocked, songBooks, templates } from "../../../stores"
+    import { setDefaultSongbookTemplates } from "../../../utils/createData"
     import { loadSongBooks, normalizeLyrics, playSong, createSongShow } from "./songbooks"
     import type { Song, SongVerse } from "./songbooks"
     import Icon from "../../helpers/Icon.svelte"
@@ -18,6 +19,14 @@
 
     // Load songbooks if not loaded
     onMount(async () => {
+        // Ensure default songbook templates exist - they may be absent for existing users
+        // who had their data saved before the songbook templates were added to the codebase.
+        // getDeletedTemplates() at startup incorrectly marks them as "deleted" since they
+        // were missing at that time. setDefaultSongbookTemplates() clears that and adds them.
+        if (!$templates["songbook"] || !$templates["songbook_2"]) {
+            setDefaultSongbookTemplates()
+        }
+
         if (!Object.keys($songBooks).length) {
             const books = await loadSongBooks()
             songBooks.set(books)
