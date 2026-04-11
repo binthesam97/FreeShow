@@ -4,6 +4,7 @@ import { app, desktopCapturer, screen, shell, systemPreferences } from "electron
 import os from "os"
 import path from "path"
 import { getMainWindow, isProd, mainWindow, maximizeMain, setGlobalMenu } from ".."
+import { sendMain } from "./main"
 import type { MainResponses } from "../../types/IPC/Main"
 import { Main } from "../../types/IPC/Main"
 import type { ErrorLog, LyricSearchResult, OS } from "../../types/Main"
@@ -12,6 +13,7 @@ import { canSync, getSyncTeams, hasDataChanged, hasTeamData, markAsNewSync, sync
 import { ContentProviderRegistry } from "../contentProviders"
 import { ChurchAppsChat } from "../contentProviders/churchApps/ChurchAppsChat"
 import { deleteBackup, getBackups, restoreFiles } from "../data/backup"
+import { listBundledLocalBibleFiles, syncBundledBibles } from "../data/bundledLocalBibles"
 import { getLocalIPs } from "../data/bonjour"
 import { checkIfMediaDownloaded, downloadLessonsMedia, downloadMedia } from "../data/downloadMedia"
 import { importShow } from "../data/import"
@@ -47,7 +49,21 @@ export const mainResponses: MainResponses = {
     [Main.CHECK_RAM_USAGE]: () => checkRamUsage(),
     // STORES
     [Main.SETTINGS]: () => getStore("SETTINGS"),
-    [Main.SYNCED_SETTINGS]: () => getStore("SYNCED_SETTINGS"),
+    [Main.SYNCED_SETTINGS]: () => {
+        const settings = getStore("SYNCED_SETTINGS")
+        // Defer bundled Bible sync so the response reaches the renderer first.
+        // syncBundledBibles parses any new XML files, saves .fsb, and pushes
+        // updated SYNCED_SETTINGS back to the renderer — no second launch needed.
+        setImmediate(() => {
+            const updatedScriptures = syncBundledBibles(settings.scriptures || {})
+            if (updatedScriptures) {
+                _store.SYNCED_SETTINGS?.set("scriptures", updatedScriptures)
+                sendMain(Main.SYNCED_SETTINGS, { ...getStore("SYNCED_SETTINGS"), scriptures: updatedScriptures })
+                console.info("[FreeShow] Bundled Bibles added to scriptures:", Object.keys(updatedScriptures).filter((k) => k.startsWith("bundled_")))
+            }
+        })
+        return settings
+    },
     [Main.STAGE]: () => getStore("STAGE"),
     [Main.PROJECTS]: () => getStore("PROJECTS"),
     [Main.OVERLAYS]: () => getStore("OVERLAYS"),
@@ -275,10 +291,14 @@ export function loadScripture(msg: { id: string; name: string }) {
 function readBiblesFolder() {
     const bibleFolder: string = getDataFolderPath("scriptures")
     const names = readFolder(bibleFolder)
-    return names.map((name) => {
+    const fromUser = names.map((name) => {
         const filePath = path.join(bibleFolder, name)
         return { path: filePath, name: name.replace(/\.fsb$/i, "") }
     })
+    const bundled = listBundledLocalBibleFiles()
+    const userNames = new Set(fromUser.map((a) => a.name.toLowerCase()))
+    const fromBundled = bundled.filter((b) => !userNames.has(b.name.toLowerCase()))
+    return [...fromBundled, ...fromUser]
 }
 
 function readSongBooksFolder() {

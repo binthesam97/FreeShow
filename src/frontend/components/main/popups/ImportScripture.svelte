@@ -107,6 +107,7 @@
         // remove already existing
         localBibles = localBibles.filter((a) => !existingBibles.includes(a.name))
     }
+    /** Same BIBLE import as startup `importBundledLocalBiblesByDefault()` (public/localBible). */
     function importBible(path: string) {
         sendMain(Main.IMPORT_FILES, { id: "BIBLE", paths: [path] })
     }

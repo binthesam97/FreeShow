@@ -86,6 +86,10 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
         if (groupId) customActionActivation("group_start", groupId)
     }
 
+    if (type === "slide" && data?.id === "temp") {
+        console.log("[setOutput] Setting temp slide output, tempItems count:", data?.tempItems?.length, "customDynamicValues keys:", Object.keys(data?.customDynamicValues || {}))
+    }
+
     outputs.update((a) => {
         const bindings = data?.bindings || (data?.layout ? ref[data.index]?.data?.bindings || [] : [])
         const allOutputIds = bindings.length ? bindings : getActiveOutputs(a, true, false, true)
@@ -1421,6 +1425,7 @@ export function getStyleTemplate(outSlide: OutSlide | null, currentStyle: Styles
         const translationKey = translations > 1 ? `_${translations}` : ""
         const templateId = currentStyle[`templateSongbook${translationKey}` as keyof Styles] as string || currentStyle.templateSongbook || "songbook" + (translationKey ? translationKey : "")
         const template = get(templates)[templateId || ""] || {}
+        console.log("[getStyleTemplate] isSongbook=true, templateId:", templateId, "template found:", !!get(templates)[templateId], "items count:", template?.items?.length ?? 0)
         return template
     }
 
