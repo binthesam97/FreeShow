@@ -117,7 +117,10 @@ export function playSong() {
     console.log("[playSong] transliterationVerses count:", transliterationVerses.length)
     console.log("[playSong] hasTransliteration:", hasTransliteration)
 
-    const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration)
+    const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration, {
+        songBookName: song.Song_Book || "",
+        songNumber: song.Song_No
+    })
     console.log("[playSong] fitResult.slides count:", fitResult.slides.length)
     console.log("[playSong] fitResult.context.templateId:", fitResult.context.templateId)
     console.log("[playSong] fitResult.context.lyricBoxes count:", fitResult.context.lyricBoxes.length)
@@ -169,7 +172,10 @@ export function createSongShow() {
     const originalVerses = normalizeLyrics(song.Lyrics?.original)
     const transliterationVerses = normalizeLyrics(song.Lyrics?.transliteration)
     const hasTransliteration = transliterationVerses.length > 0 && songData.showTransliteration
-    const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration)
+    const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration, {
+        songBookName: song.Song_Book || "",
+        songNumber: song.Song_No
+    })
     if (!fitResult.slides.length) return
 
     const layoutID = uid()

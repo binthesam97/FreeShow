@@ -9,10 +9,18 @@ import { getStyles } from "../../helpers/style"
 import type { SongVerse } from "./songbooks"
 
 const SONGBOOK_MAX_ROWS = 4
+const SONGBOOK_SIDE_BY_SIDE_MAX_ROWS = 8
 const SONGBOOK_KEYS = ["songbook_text", "songbook1_text", "songbook2_text"] as const
 const LABEL_KEY = "songbook_label"
 
+type SongbookLayoutMode = "single" | "stacked" | "side-by-side"
+
 type SongbookDynamicKey = (typeof SONGBOOK_KEYS)[number] | typeof LABEL_KEY
+
+export interface SongbookFooterData {
+    songBookName?: string
+    songNumber?: string | number
+}
 
 export interface SongbookFitContext {
     templateId: string
@@ -21,8 +29,10 @@ export interface SongbookFitContext {
     currentStyle: Styles
     resolution: Resolution
     hasTransliteration: boolean
+    layoutMode: SongbookLayoutMode
     lyricBoxes: SongbookTextBox[]
     labelItem: Item | null
+    footerData: SongbookFooterData
 }
 
 export interface SongbookFitSlide {
@@ -67,8 +77,8 @@ interface MeasurementResult {
 
 let measureRoot: HTMLElement | null = null
 
-export function fitSongbookSlides(verses: SongVerse[], transliterationVerses: SongVerse[], withTransliteration: boolean): SongbookFitResult {
-    const context = resolveSongbookFitContext(withTransliteration)
+export function fitSongbookSlides(verses: SongVerse[], transliterationVerses: SongVerse[], withTransliteration: boolean, footerData: SongbookFooterData = {}): SongbookFitResult {
+    const context = resolveSongbookFitContext(withTransliteration, footerData)
     const sortedOriginal = [...verses].sort((a, b) => a.order - b.order)
     const sortedTransliteration = [...transliterationVerses].sort((a, b) => a.order - b.order)
 
@@ -83,7 +93,7 @@ export function fitSongbookSlides(verses: SongVerse[], transliterationVerses: So
 
         fittedChunks.forEach((chunk, chunkIndex) => {
             const label = totalChunks > 1 ? `${baseLabel} (${chunkIndex + 1}/${totalChunks})` : baseLabel
-            const dynamicValues = createDynamicValues(chunk.pairs, label)
+            const dynamicValues = createDynamicValues(chunk.pairs, label, context.footerData)
 
             slides.push({
                 label,
@@ -99,7 +109,7 @@ export function fitSongbookSlides(verses: SongVerse[], transliterationVerses: So
     return { context, slides }
 }
 
-function resolveSongbookFitContext(hasTransliteration: boolean): SongbookFitContext {
+function resolveSongbookFitContext(hasTransliteration: boolean, footerData: SongbookFooterData): SongbookFitContext {
     const outputsState = get(outputs)
     const stylesState = get(styles)
     const activeOutput = getFirstActiveOutput(outputsState)
@@ -133,10 +143,13 @@ function resolveSongbookFitContext(hasTransliteration: boolean): SongbookFitCont
         console.log("[songbookFitter] fallback lyricBoxes count:", parsed.lyricBoxes.length)
     }
 
-    const { lyricBoxes, labelItem } = parsed
+    const layoutMode = getSongbookLayoutMode(parsed.lyricBoxes)
+    const lyricBoxes = applyLayoutConstraints(parsed.lyricBoxes, layoutMode)
+    const { labelItem } = parsed
 
     console.log("[songbookFitter] final lyricBoxes count:", lyricBoxes.length)
     console.log("[songbookFitter] lyricBox keys:", lyricBoxes.map((b) => b.key))
+    console.log("[songbookFitter] layoutMode:", layoutMode)
 
     return {
         templateId,
@@ -145,8 +158,10 @@ function resolveSongbookFitContext(hasTransliteration: boolean): SongbookFitCont
         currentStyle,
         resolution,
         hasTransliteration,
+        layoutMode,
         lyricBoxes,
-        labelItem
+        labelItem,
+        footerData
     }
 }
 
@@ -184,8 +199,53 @@ function parseTemplateItems(template: Template) {
     return { lyricBoxes, labelItem }
 }
 
+function getSongbookLayoutMode(lyricBoxes: SongbookTextBox[]): SongbookLayoutMode {
+    if (lyricBoxes.length <= 1) return "single"
+
+    const [firstBox, secondBox] = lyricBoxes
+    const firstPos = getItemPosition(firstBox.templateItem)
+    const secondPos = getItemPosition(secondBox.templateItem)
+
+    const leftDelta = Math.abs(firstPos.left - secondPos.left)
+    const topDelta = Math.abs(firstPos.top - secondPos.top)
+
+    return leftDelta > topDelta ? "side-by-side" : "stacked"
+}
+
+function applyLayoutConstraints(lyricBoxes: SongbookTextBox[], layoutMode: SongbookLayoutMode) {
+    return lyricBoxes.map((box) => {
+        if (layoutMode === "single") {
+            return {
+                ...box,
+                maxRows: Number.POSITIVE_INFINITY,
+                fontFloor: Math.max(14, box.baseFontSize * 0.22)
+            }
+        }
+
+        if (layoutMode === "side-by-side") {
+            return {
+                ...box,
+                maxRows: SONGBOOK_SIDE_BY_SIDE_MAX_ROWS
+            }
+        }
+
+        return {
+            ...box,
+            maxRows: SONGBOOK_MAX_ROWS
+        }
+    })
+}
+
+function getItemPosition(item: Item) {
+    const itemStyle = getStyles(item.style || "", true)
+    return {
+        top: Number(itemStyle.top || 0),
+        left: Number(itemStyle.left || 0)
+    }
+}
+
 function fitPairsRecursive(pairs: SongLinePair[], context: SongbookFitContext): FittedChunk[] {
-    const dynamicValues = createDynamicValues(pairs, "")
+    const dynamicValues = createDynamicValues(pairs, "", context.footerData)
     const measurement = measureChunk(context, dynamicValues)
     const fitsSafely = measurement.every((entry) => entry.fitsBox && entry.withinRowCap && entry.withinFloor)
 
@@ -246,6 +306,8 @@ function buildDisplayItems(context: SongbookFitContext, chunk: FittedChunk, dyna
         const labelItem = clone(context.labelItem)
         const lineTemplate = clone(labelItem.lines[0])
         const textTemplate = clone(lineTemplate.text?.[0] || { value: "", style: "" })
+        labelItem.auto = true
+        labelItem.textFit = labelItem.textFit && labelItem.textFit !== "none" ? labelItem.textFit : "shrinkToFit"
         labelItem.lines = [
             {
                 align: lineTemplate.align || "",
@@ -431,16 +493,28 @@ function splitBalancedText(value: string) {
     return [trimmed]
 }
 
-function createDynamicValues(pairs: SongLinePair[], label: string) {
+function createDynamicValues(pairs: SongLinePair[], label: string, footerData: SongbookFooterData = {}) {
     const original = pairs.map((pair) => pair.original).join("\n")
     const transliteration = pairs.map((pair) => pair.transliteration).join("\n")
+    const footerLabel = buildFooterLabel(label, footerData)
 
     return {
         songbook_text: original,
         songbook1_text: original,
         songbook2_text: transliteration,
-        songbook_label: label
+        songbook_label: footerLabel
     }
+}
+
+function buildFooterLabel(label: string, footerData: SongbookFooterData) {
+    const bookName = footerData.songBookName?.trim() || ""
+    const songNumber = `${footerData.songNumber ?? ""}`.trim()
+    const footerParts = [bookName, songNumber].filter(Boolean)
+
+    if (!footerParts.length) return label
+    if (!label) return footerParts.join(" ")
+
+    return `${label} • ${footerParts.join(" ")}`
 }
 
 function toFontSizeMap(context: SongbookFitContext, measurements: MeasurementResult[]) {
