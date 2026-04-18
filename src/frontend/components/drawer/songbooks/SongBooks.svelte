@@ -2,8 +2,8 @@
     import { onMount } from "svelte"
     import { activeSongBookSong, outLocked, songBooks, templates } from "../../../stores"
     import { setDefaultSongbookTemplates } from "../../../utils/createData"
-    import { loadSongBooks, normalizeLyrics, playSong, createSongShow } from "./songbooks"
-    import type { Song, SongVerse } from "./songbooks"
+    import { createSongSearchEntry, createSongShow, loadSongBooks, normalizeLyrics, playSong, searchSongbookSongs, sortSongsByNumber } from "./songbooks"
+    import type { SongSearchEntry, SongVerse } from "./songbooks"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
@@ -36,27 +36,8 @@
     $: currentBook = active ? $songBooks[active] : null
     $: songs = currentBook?.songs || []
 
-    function stripPunctuation(str: string): string {
-        return str.replace(/[^\p{L}\p{N}\s]/gu, "").toLowerCase()
-    }
-
-    // Filter songs by search (case-insensitive, punctuation-agnostic) and sort by song number
-    $: filteredSongs = (searchValue
-        ? songs.filter((song: Song) => {
-              const q = stripPunctuation(searchValue)
-              return (
-                  stripPunctuation(song.Title || "").includes(q) ||
-                  song.Song_No?.toString().includes(searchValue.trim()) ||
-                  stripPunctuation(song.Author || "").includes(q) ||
-                  stripPunctuation(song.Transliterated_Title || "").includes(q)
-              )
-          })
-        : songs
-    ).sort((a: Song, b: Song) => {
-        const numA = typeof a.Song_No === "number" ? a.Song_No : parseInt(a.Song_No) || 0
-        const numB = typeof b.Song_No === "number" ? b.Song_No : parseInt(b.Song_No) || 0
-        return numA - numB
-    })
+    $: searchableSongs = songs.map((song): SongSearchEntry => createSongSearchEntry(song))
+    $: filteredSongs = searchValue ? searchSongbookSongs(searchableSongs, searchValue) : [...songs].sort(sortSongsByNumber)
 
     $: selectedSong = selectedSongIndex >= 0 && selectedSongIndex < filteredSongs.length ? filteredSongs[selectedSongIndex] : null
 
