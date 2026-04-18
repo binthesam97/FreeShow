@@ -74,13 +74,17 @@ export function createSongSearchEntry(song: Song): SongSearchEntry {
     const author = normalizeSearchText(song.Author || "")
     const songBook = normalizeSearchText(song.Song_Book || "")
     const songNumber = normalizeSearchText(`${song.Song_No ?? ""}`)
+    const originalLyrics = normalizeSearchText(normalizeLyrics(song.Lyrics?.original).map((verse) => verse.content || "").join(" "))
+    const transliteratedLyrics = normalizeSearchText(normalizeLyrics(song.Lyrics?.transliteration).map((verse) => verse.content || "").join(" "))
 
     const fields: SongSearchField[] = [
         createSearchField(songNumber, 1.18),
         createSearchField(title, 1),
         createSearchField(transliteratedTitle, 0.88),
         createSearchField(author, 0.52),
-        createSearchField(songBook, 0.42)
+        createSearchField(songBook, 0.42),
+        createSearchField(originalLyrics, 0.38),
+        createSearchField(transliteratedLyrics, 0.38)
     ].filter((field) => field.value.length)
 
     return {
