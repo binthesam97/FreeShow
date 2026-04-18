@@ -225,6 +225,10 @@ function buildDisplayItems(context: SongbookFitContext, chunk: FittedChunk, dyna
         const lineTemplate = clone(box.lineTemplate)
         const textTemplate = clone(lineTemplate.text?.[0] || { value: "", style: "" })
 
+        if (context.hasTransliteration) {
+            item.style = removeBorderStyles(item.style || "")
+        }
+
         item.lines = lineValues.map((lineValue) => ({
             align: lineTemplate.align || "",
             text: [{ ...textTemplate, value: lineValue }]
@@ -464,6 +468,24 @@ function getSongbookPlaceholderKey(item: Item): SongbookDynamicKey | null {
 
 function shouldUseNormalWrap(lineTemplate: NonNullable<Item["lines"]>[number]) {
     return !!(lineTemplate.align?.includes("justify") || lineTemplate.align?.includes("left") || JSON.stringify(lineTemplate).includes("nowrap"))
+}
+
+function removeBorderStyles(style: string) {
+    if (!style) return style
+
+    return style
+        .split(";")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .filter((part) => {
+            const [property] = part.split(":")
+            const key = property?.trim().toLowerCase() || ""
+            if (key === "border") return false
+            if (key.startsWith("border-") && !key.startsWith("border-radius")) return false
+            return true
+        })
+        .join(";")
+        .concat(";")
 }
 
 function getVerseLabel(verse: SongVerse): string {

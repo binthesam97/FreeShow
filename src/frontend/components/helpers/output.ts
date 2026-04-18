@@ -1142,11 +1142,26 @@ export function mergeWithTemplate(slideItems: Item[], templateItems: Item[], add
 // WIP duplicate of getScriptureSlidesNew section in scripture.ts
 function replaceScriptureValues(items: Item[], templateItems: Item[], customDynamicValues: { [key: string]: string | [string, string][] } = {}) {
     if (Object.keys(customDynamicValues).length) {
+        const scriptureTextItemIndexes: { [key: string]: number[] } = {}
+
         // extra styles
         let verseNumberSize = 50 // get(scriptureSettings).numberSize || 50 // %
         let verseNumberStyle = `color: ${get(scriptureSettings).numberColor || "#919191"};text-shadow: none;`
         let verseNumberStyles: string[] = []
         let baseStyle = ""
+
+        items.forEach((item, itemIndex) => {
+            item.lines?.forEach((line) => {
+                line.text?.forEach((textObj) => {
+                    const matches = textObj.value?.match(/\{scripture\d*_text\}/g) || []
+                    matches.forEach((match) => {
+                        const key = match.slice(1, -1)
+                        if (!scriptureTextItemIndexes[key]) scriptureTextItemIndexes[key] = []
+                        if (!scriptureTextItemIndexes[key].includes(itemIndex)) scriptureTextItemIndexes[key].push(itemIndex)
+                    })
+                })
+            })
+        })
 
         // find any text object with {scripture_number} and get the style
         templateItems.forEach((item) => {
@@ -1227,6 +1242,25 @@ function replaceScriptureValues(items: Item[], templateItems: Item[], customDyna
         items.forEach((item) => {
             item.lines?.forEach((line) => {
                 line.text = line.text?.filter((text) => text.value) || []
+            })
+        })
+
+        Object.keys(scriptureTextItemIndexes).forEach((key) => {
+            const value = customDynamicValues[key]
+            const hasContent = Array.isArray(value) ? value.length > 0 : typeof value === "string" ? value.trim().length > 0 : false
+            if (!hasContent) return
+
+            scriptureTextItemIndexes[key].forEach((itemIndex) => {
+                const item = items[itemIndex]
+                if (!item) return
+
+                // Scripture text boxes should always shrink to fit, even if the template
+                // did not explicitly enable autosizing. This is especially important for
+                // multi-translation collections where content length varies a lot.
+                item.auto = true
+                if (!item.textFit || item.textFit === "none") item.textFit = "shrinkToFit"
+                delete item.autoFontSize
+                delete item.previewAutoFontSize
             })
         })
     }

@@ -328,7 +328,7 @@ export function setDefaultScriptureTemplates() {
         return a
     })
 
-    templates.set({ ...get(templates), ...templatesList })
+    templates.set(patchTemplatesWithScriptureTextFit({ ...get(templates), ...templatesList }))
 }
 
 function createDefaultTemplates() {
@@ -342,8 +342,37 @@ function createDefaultTemplates() {
             a[id] = defaultTemplates[id]
         })
 
-        return a
+        return patchTemplatesWithScriptureTextFit(a)
     })
+}
+
+function patchTemplatesWithScriptureTextFit(templatesMap: Record<string, Template>) {
+    Object.keys(templatesMap).forEach((id) => {
+        templatesMap[id] = patchScriptureTextFit(templatesMap[id])
+    })
+    return templatesMap
+}
+
+function patchScriptureTextFit(template: Template) {
+    if (!template?.items?.length) return template
+
+    const hasScriptureDynamicValue = template.items.some((item) =>
+        item.lines?.some((line) => line.text?.some((text) => /\{scripture\d*_text\}/.test(text.value || "")))
+    )
+    if (!hasScriptureDynamicValue) return template
+
+    template.items = template.items.map((item) => {
+        const containsScriptureText = item.lines?.some((line) => line.text?.some((text) => /\{scripture\d*_text\}/.test(text.value || "")))
+        if (!containsScriptureText) return item
+
+        return {
+            ...item,
+            auto: true,
+            textFit: item.textFit && item.textFit !== "none" ? item.textFit : "shrinkToFit"
+        }
+    })
+
+    return template
 }
 
 function getDefaultTemplates() {
@@ -818,7 +847,6 @@ function getDefaultScriptureTemplates() {
         },
         items: [
             {
-                // textFit: "shrinkToFit",
                 style: "top: 30px;left: 30px;width: 1860px;height: 865px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;",
                 align: "",
                 lines: [
@@ -829,7 +857,9 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture_text}", style: "font-size: 80px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
                 style: "top: 900px;left: 30px;width: 1860px;height: 150px;",
@@ -849,7 +879,6 @@ function getDefaultScriptureTemplates() {
         settings: { mode: "scripture" },
         items: [
             {
-                // textFit: "shrinkToFit",
                 style: "top: 40px;left: 30px;width: 1860px;height: 400px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
                 align: "",
                 lines: [
@@ -860,10 +889,11 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture1_text}", style: "font-size: 70px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
-                // textFit: "shrinkToFit",
                 style: "top: 475px;left: 30px;width: 1860px;height: 400px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
                 align: "",
                 lines: [
@@ -874,7 +904,9 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture2_text}", style: "font-size: 70px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
                 style: "top: 900px;left: 30px;width: 1860px;height: 150px;",
@@ -894,7 +926,6 @@ function getDefaultScriptureTemplates() {
         settings: { mode: "scripture" },
         items: [
             {
-                // textFit: "shrinkToFit",
                 style: "top: 40px;left: 30px;width: 1860px;height: 250px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
                 align: "",
                 lines: [
@@ -905,10 +936,11 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture1_text}", style: "font-size: 60px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
-                // textFit: "shrinkToFit",
                 style: "top: 320px;left: 30px;width: 1860px;height: 250px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
                 align: "",
                 lines: [
@@ -919,10 +951,11 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture2_text}", style: "font-size: 60px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
-                // textFit: "shrinkToFit",
                 style: "top: 600px;left: 30px;width: 1860px;height: 250px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
                 align: "",
                 lines: [
@@ -933,7 +966,9 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture3_text}", style: "font-size: 60px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
                 style: "top: 900px;left: 30px;width: 1860px;height: 150px;",
@@ -953,7 +988,6 @@ function getDefaultScriptureTemplates() {
         settings: { mode: "scripture" },
         items: [
             {
-                // textFit: "shrinkToFit",
                 style: "top: 40px;left: 30px;width: 1860px;height: 200px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
                 align: "",
                 lines: [
@@ -964,10 +998,11 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture1_text}", style: "font-size: 60px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
-                // textFit: "shrinkToFit",
                 style: "top: 250px;left: 30px;width: 1860px;height: 200px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
                 align: "",
                 lines: [
@@ -978,10 +1013,11 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture2_text}", style: "font-size: 60px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
-                // textFit: "shrinkToFit",
                 style: "top: 460px;left: 30px;width: 1860px;height: 200px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
                 align: "",
                 lines: [
@@ -992,10 +1028,11 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture3_text}", style: "font-size: 60px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
-                // textFit: "shrinkToFit",
                 style: "top: 670px;left: 30px;width: 1860px;height: 200px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
                 align: "",
                 lines: [
@@ -1006,7 +1043,9 @@ function getDefaultScriptureTemplates() {
                             { value: "{scripture4_text}", style: "font-size: 60px;" }
                         ]
                     }
-                ]
+                ],
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
                 style: "top: 900px;left: 30px;width: 1860px;height: 150px;",
@@ -1037,7 +1076,8 @@ function getDefaultScriptureTemplates() {
                         ]
                     }
                 ],
-                auto: true
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
                 style: "left:1442px;top:960px;width:448px;height:88px;background-color:#ff851b;padding:3px;border-radius:10px;",
@@ -1069,7 +1109,8 @@ function getDefaultScriptureTemplates() {
                         ]
                     }
                 ],
-                auto: true
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
                 style: "left:30px;top:885px;width:1860px;height:120px;border-radius:20px;padding:25px;background-color:#DDDDDD;",
@@ -1083,7 +1124,8 @@ function getDefaultScriptureTemplates() {
                         ]
                     }
                 ],
-                auto: true
+                auto: true,
+                textFit: "shrinkToFit"
             },
             {
                 style: "left:1442px;top:960px;width:448px;height:88px;background-color:#ff851b;padding:3px;border-radius:10px;",
@@ -1142,7 +1184,7 @@ function getDefaultSongbookTemplates() {
         settings: { mode: "songbook" },
         items: [
             {
-                style: "top: 20px;left: 30px;width: 1860px;height: 440px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
+                style: "top: 20px;left: 30px;width: 1860px;height: 440px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;",
                 align: "",
                 lines: [
                     {
@@ -1154,7 +1196,7 @@ function getDefaultSongbookTemplates() {
                 textFit: "shrinkToFit"
             },
             {
-                style: "top: 480px;left: 30px;width: 1860px;height: 440px;background-color: rgb(0 0 0 / 0.3);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #999999;",
+                style: "top: 480px;left: 30px;width: 1860px;height: 440px;background-color: rgb(0 0 0 / 0.3);border-radius: 20px;padding: 25px;",
                 align: "",
                 lines: [
                     {
@@ -1184,7 +1226,7 @@ function getDefaultSongbookTemplates() {
         settings: { mode: "songbook" },
         items: [
             {
-                style: "top: 20px;left: 20px;width: 920px;height: 900px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #cccccc;",
+                style: "top: 20px;left: 20px;width: 920px;height: 900px;background-color: rgb(0 0 0 / 0.4);border-radius: 20px;padding: 25px;",
                 align: "",
                 lines: [
                     {
@@ -1196,7 +1238,7 @@ function getDefaultSongbookTemplates() {
                 textFit: "shrinkToFit"
             },
             {
-                style: "top: 20px;left: 960px;width: 920px;height: 900px;background-color: rgb(0 0 0 / 0.3);border-radius: 20px;padding: 25px;border-width: 1px;border-color: #999999;",
+                style: "top: 20px;left: 960px;width: 920px;height: 900px;background-color: rgb(0 0 0 / 0.3);border-radius: 20px;padding: 25px;",
                 align: "",
                 lines: [
                     {

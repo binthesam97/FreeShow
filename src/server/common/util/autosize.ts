@@ -88,7 +88,23 @@ export default function autosize(elem: HTMLElement, { type, textQuery, defaultFo
     }
 
     function textIsBiggerThanBox() {
-        return boxElem!.scrollWidth > boxWidth || boxElem!.scrollHeight > boxHeight
+        if (boxElem!.scrollWidth > boxWidth || boxElem!.scrollHeight > boxHeight) return true
+
+        const boxRect = boxElem!.getBoundingClientRect()
+        let contentRight = boxRect.left
+        let contentBottom = boxRect.top
+
+        for (let textElem of Array.from(textChildren)) {
+            const rects = Array.from(textElem.getClientRects())
+            if (!rects.length) continue
+
+            rects.forEach((rect) => {
+                contentRight = Math.max(contentRight, rect.right)
+                contentBottom = Math.max(contentBottom, rect.bottom)
+            })
+        }
+
+        return contentRight - boxRect.left > boxWidth + 1 || contentBottom - boxRect.top > boxHeight + 1
     }
 
     function addStyleToElemText(fontSize: number) {
