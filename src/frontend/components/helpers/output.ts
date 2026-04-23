@@ -1242,8 +1242,12 @@ function replaceScriptureValues(items: Item[], templateItems: Item[], customDyna
         items.forEach((item) => {
             item.lines?.forEach((line) => {
                 line.text = line.text?.filter((text) => text.value) || []
-            })
+            }) 
         })
+
+        // Detect non-English scripture for line spacing adjustments
+        const scriptureName = (customDynamicValues.scripture1_name || customDynamicValues.scripture_name || "") as string
+        const isNonEnglishScripture = scriptureName && !scriptureName.toLowerCase().includes("english") && !scriptureName.toLowerCase().startsWith("en")
 
         Object.keys(scriptureTextItemIndexes).forEach((key) => {
             const value = customDynamicValues[key]
@@ -1261,6 +1265,20 @@ function replaceScriptureValues(items: Item[], templateItems: Item[], customDyna
                 if (!item.textFit || item.textFit === "none") item.textFit = "shrinkToFit"
                 delete item.autoFontSize
                 delete item.previewAutoFontSize
+
+                // Apply line-height and margin for non-English scriptures
+                if (isNonEnglishScripture) {
+                    item.style = (item.style || "") + "; margin: -8px !important;"
+
+                    item.lines?.forEach((line) => {
+                        line.align = (line.align || "") + "; line-height: 1.4 !important;"
+                        line.text?.forEach((text) => {
+                            if (!text.customType?.includes("disableTemplate")) {
+                                text.style = (text.style || "") + "; line-height: 1.4;"
+                            }
+                        })
+                    })
+                }
             })
         })
     }

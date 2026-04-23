@@ -859,6 +859,18 @@ export async function getScriptureSlidesNew(data: any, onlyOne = false, disableR
                         if (keyIndex === -1) return
 
                         const keyTextObj = line.text[keyIndex]
+                        
+                        const bibleData = splittedSlidesContent[contentIndex][bibleIndex]
+                        console.log(bibleData)
+                        const bibleName = bibleData?.version || bibleData?.metadata?.title || bibleData?.metadata?.language || bibleData?.id || ""
+                        
+                        if (bibleName && !bibleName.toLowerCase().includes("english") && !bibleName.toLowerCase().startsWith("en")) {
+                            if (bibleIndex === 0) {
+                                item.style = (item.style || "") + "; margin: -8px !important;"
+                                line.align = (line.align || "") + "; line-height: 1.4 !important;"
+                            }
+                        }
+
                         const parts = keyTextObj.value.split(itemKey)
                         let newLineText: any[] = []
 

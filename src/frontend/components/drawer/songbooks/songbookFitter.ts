@@ -289,6 +289,11 @@ function buildDisplayItems(context: SongbookFitContext, chunk: FittedChunk, dyna
             item.style = removeBorderStyles(item.style || "")
         }
 
+        if (box.key === "songbook_text" || box.key === "songbook1_text") {
+            item.style = (item.style || "") + "; margin: -8px !important;"
+            lineTemplate.align = (lineTemplate.align || "") + "; line-height: 1.4 !important;"
+        }
+
         item.lines = lineValues.map((lineValue) => ({
             align: lineTemplate.align || "",
             text: [{ ...textTemplate, value: lineValue }]

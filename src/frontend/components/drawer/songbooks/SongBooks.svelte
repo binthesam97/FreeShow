@@ -103,7 +103,7 @@
                             on:dblclick={handlePlay}
                         >
                             <span class="song-number">{song.Song_No}</span>
-                            <span class="song-title">{song.Title}</span>
+                            <span class="song-title">{song.Language && song.Language.toLowerCase() !== 'english' && song.Transliterated_Title ? song.Transliterated_Title : song.Title}</span>
                         </button>
                     {/each}
                 {:else}
@@ -117,7 +117,7 @@
             <div class="lyrics-panel" bind:this={lyricsScrollElem}>
                 {#if selectedSong}
                     <div class="lyrics-header">
-                        <h3>{selectedSong.Song_No}. {selectedSong.Title}</h3>
+                        <h3>{selectedSong.Song_No}. {selectedSong.Language && selectedSong.Language.toLowerCase() !== 'english' && selectedSong.Transliterated_Title ? selectedSong.Transliterated_Title : selectedSong.Title}</h3>
                         {#if selectedSong.Author}
                             <p class="author">{selectedSong.Author}</p>
                         {/if}
