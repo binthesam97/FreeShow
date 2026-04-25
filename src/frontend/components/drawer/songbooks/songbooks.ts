@@ -38,6 +38,8 @@ export interface Song {
 export interface SongBook {
     name: string
     songs: Song[]
+    language?: string
+    [key: string]: any
 }
 
 interface SongSearchField {
@@ -64,7 +66,7 @@ export function normalizeLyrics(lyrics: SongVerse[] | { verses: SongVerse[] } | 
 
 export function sortSongsByNumber(a: Song, b: Song) {
     const numA = getSongSortNumber(a)
-    const numB = getSongSortNumber(b)
+    const numB = getSongSortNumber(b) 
     return numA - numB
 }
 
@@ -317,6 +319,7 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
                 const id = name.replace(/\s+/g, "_").toLowerCase()
 
                 books[id] = {
+                    ...data,
                     name,
                     songs: data.songs || []
                 }
@@ -449,4 +452,5 @@ export function createSongShow() {
     show.layouts = { [layoutID]: { name: "Default", notes: "", slides: layoutSlides } }
 
     history({ id: "UPDATE", newData: { data: show, remember: { project: get(activeProject) } }, location: { page: "show", id: "show" } })
+    return show.id
 }

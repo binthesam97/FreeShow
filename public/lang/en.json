@@ -1475,7 +1475,9 @@
         "all_books": "All Song Books",
         "no_book_selected": "Select a song book",
         "no_song_selected": "Select a song to view lyrics",
-        "play_song": "Display lyrics"
+        "play_song": "Display lyrics",
+        "show_original": "Show original titles",
+        "show_transliterated": "Show transliterated titles"
     },
     "scripture": {
         "collections": "Collections",

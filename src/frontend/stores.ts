@@ -297,6 +297,7 @@ export const scriptureSettings: Writable<any> = writable({
 // SONGBOOKS
 export const songBooks: Writable<{ [key: string]: { name: string; songs: any[] } }> = writable({})
 export const activeSongBookSong: Writable<{ song: any; showTransliteration: boolean } | null> = writable(null)
+export const songbookShowTransliterated: Writable<boolean> = writable(false)
 
 // DRAWER
 export const drawerTabsData: Writable<DrawerTabs> = writable({}) // {default}

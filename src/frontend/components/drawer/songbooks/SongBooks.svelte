@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte"
-    import { activeSongBookSong, outLocked, songBooks, templates } from "../../../stores"
+    import { activeSongBookSong, outLocked, songBooks, templates, songbookShowTransliterated } from "../../../stores"
     import { setDefaultSongbookTemplates } from "../../../utils/createData"
     import { createSongSearchEntry, createSongShow, loadSongBooks, normalizeLyrics, playSong, searchSongbookSongs, sortSongsByNumber } from "./songbooks"
     import type { SongSearchEntry, SongVerse } from "./songbooks"
@@ -37,7 +37,7 @@
     $: songs = currentBook?.songs || []
 
     $: searchableSongs = songs.map((song): SongSearchEntry => createSongSearchEntry(song))
-    $: filteredSongs = searchValue ? searchSongbookSongs(searchableSongs, searchValue) : [...songs].sort(sortSongsByNumber)
+    $: filteredSongs = (searchValue || $songbookShowTransliterated) ? (searchValue ? searchSongbookSongs(searchableSongs, searchValue) : [...songs].sort(sortSongsByNumber)) : (searchValue ? searchSongbookSongs(searchableSongs, searchValue) : [...songs].sort(sortSongsByNumber))
 
     $: selectedSong = selectedSongIndex >= 0 && selectedSongIndex < filteredSongs.length ? filteredSongs[selectedSongIndex] : null
 
@@ -72,6 +72,26 @@
         return `Verse ${num}`
     }
 
+    function getDisplayTitle(song: any) {
+        if ($songbookShowTransliterated && song.Transliterated_Title) {
+            return song.Transliterated_Title
+        }
+        return song.Title || ""
+    }
+
+    $: hasTransliteratedAny = songs.some(s => s.Transliterated_Title)
+    $: bookLanguages = (() => {
+        const rawLang = currentBook?.language || currentBook?.Language
+        if (!rawLang) return "Original"
+        
+        let langs: string[] = Array.isArray(rawLang) 
+            ? rawLang.map(l => String(l)) 
+            : String(rawLang).split(/[,/]/)
+            
+        langs = langs.map(l => l.trim()).filter(l => l && l.toLowerCase() !== 'english')
+        return langs.length ? langs.join(", ") : "Original"
+    })()
+
     function handlePlay() {
         playSong()
     }
@@ -103,7 +123,7 @@
                             on:dblclick={handlePlay}
                         >
                             <span class="song-number">{song.Song_No}</span>
-                            <span class="song-title">{song.Language && song.Language.toLowerCase() !== 'english' && song.Transliterated_Title ? song.Transliterated_Title : song.Title}</span>
+                            <span class="song-title">{getDisplayTitle(song)}</span>
                         </button>
                     {/each}
                 {:else}
@@ -117,7 +137,7 @@
             <div class="lyrics-panel" bind:this={lyricsScrollElem}>
                 {#if selectedSong}
                     <div class="lyrics-header">
-                        <h3>{selectedSong.Song_No}. {selectedSong.Language && selectedSong.Language.toLowerCase() !== 'english' && selectedSong.Transliterated_Title ? selectedSong.Transliterated_Title : selectedSong.Title}</h3>
+                        <h3>{selectedSong.Song_No}. {getDisplayTitle(selectedSong)}</h3>
                         {#if selectedSong.Author}
                             <p class="author">{selectedSong.Author}</p>
                         {/if}
@@ -167,6 +187,15 @@
         </div>
     {/if}
 </div>
+
+{#if active && hasTransliteratedAny}
+    <FloatingInputs side="left">
+        <MaterialButton on:click={() => songbookShowTransliterated.set(!$songbookShowTransliterated)} title={$songbookShowTransliterated ? "songbooks.show_original" : "songbooks.show_transliterated"}>
+            <Icon id="refresh" white size={0.9} />
+            <span class="language-toggle-label">{$songbookShowTransliterated ? "Transliterated" : bookLanguages}</span>
+        </MaterialButton>
+    </FloatingInputs>
+{/if}
 
 {#if selectedSong}
     <FloatingInputs>
@@ -333,5 +362,13 @@
         height: 20px;
         background-color: var(--primary-lighter);
         margin: 0 4px;
+    }
+
+    .language-toggle-label {
+        font-size: 0.8em;
+        font-weight: bold;
+        text-transform: capitalize;
+        padding-left: 6px;
+        white-space: nowrap;
     }
 </style>

@@ -59,7 +59,8 @@ import {
     triggers,
     variables,
     variableTags,
-    volume
+    volume,
+    songBooks
 } from "../stores"
 import { hasNewerUpdate } from "./common"
 import { driveConnect } from "./drive"
@@ -182,6 +183,9 @@ export function storeSubscriber() {
     })
     scriptures.subscribe((data) => {
         send(REMOTE, ["SCRIPTURE"], data)
+    })
+    songBooks.subscribe((data) => {
+        send(REMOTE, ["SONGBOOKS"], data)
     })
     activeScripture.subscribe(async (data) => {
         // Debounce and filter ACTIVE_SCRIPTURE to avoid sending partial states (book-only/chapter-only)
