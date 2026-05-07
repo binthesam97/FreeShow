@@ -72,6 +72,7 @@ import {
     showsCache,
     spellcheck,
     stageShows,
+    statusIndicator,
     templates,
     textCache,
     theme,
@@ -271,6 +272,17 @@ export const mainResponses: MainResponses = {
             a[data.filePath] = { metadata: data.metadata }
             return a
         })
+    },
+    [ToMain.R2_ASSET_SYNC]: (data) => {
+        if (data.status === "syncing") {
+            statusIndicator.set("syncing")
+            return
+        }
+        if (data.status === "ready") {
+            statusIndicator.set("synced")
+            return
+        }
+        statusIndicator.set("error")
     },
 
     // Companion dynamic value variables

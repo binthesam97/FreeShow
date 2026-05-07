@@ -300,16 +300,12 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
     try {
         let fileNames: string[] = (await requestMain(Main.READ_SONGBOOKS)) || []
 
-        if (!fileNames.length) {
-            fileNames = ["Songs of Zion.json", "Christava Sunada Keerthanalu.json"]
-        }
-
-        for (const fileName of fileNames) {
+        for (const filePath of fileNames) {
             try {
-                const response = await fetch(`./songBooks/${encodeURIComponent(fileName)}`)
-                if (!response.ok) continue
-
-                const data = await response.json()
+                const fileContent = (await requestMain(Main.READ_FILE, { path: filePath }))?.content
+                if (!fileContent) continue
+                const data = JSON.parse(fileContent)
+                const fileName = filePath.split(/[/\\]/).pop() || filePath
 
                 const name = fileName
                     .replace(/\.json$/i, "")
@@ -324,7 +320,7 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
                     songs: data.songs || []
                 }
             } catch (err) {
-                console.error(`Failed to load songbook: ${fileName}`, err)
+                console.error(`Failed to load songbook: ${filePath}`, err)
             }
         }
     } catch (err) {

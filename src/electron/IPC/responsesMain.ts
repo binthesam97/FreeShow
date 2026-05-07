@@ -13,10 +13,11 @@ import { canSync, getSyncTeams, hasDataChanged, hasTeamData, markAsNewSync, sync
 import { ContentProviderRegistry } from "../contentProviders"
 import { ChurchAppsChat } from "../contentProviders/churchApps/ChurchAppsChat"
 import { deleteBackup, getBackups, restoreFiles } from "../data/backup"
-import { listBundledLocalBibleFiles, syncBundledBibles } from "../data/bundledLocalBibles"
+import { listBundledLocalBibleFiles, syncBundledBiblesFromR2 } from "../data/bundledLocalBibles"
 import { getLocalIPs } from "../data/bonjour"
 import { checkIfMediaDownloaded, downloadLessonsMedia, downloadMedia } from "../data/downloadMedia"
 import { importShow } from "../data/import"
+import { ensureR2AssetsSynced, getR2SongBooksCacheDir } from "../data/r2Assets"
 import { save } from "../data/save"
 import { _store, appDataPath, config, createStores, getStore, getStoreValue, setStoreValue } from "../data/store"
 import { captureSlide, doesMediaExist, getThumbnail, getThumbnailFolderPath, pdfToImage, saveImage } from "../data/thumbnails"
@@ -55,12 +56,12 @@ export const mainResponses: MainResponses = {
         // syncBundledBibles parses any new XML files, saves .fsb, and pushes
         // updated SYNCED_SETTINGS back to the renderer — no second launch needed.
         setImmediate(() => {
-            const updatedScriptures = syncBundledBibles(settings.scriptures || {})
-            if (updatedScriptures) {
+            syncBundledBiblesFromR2(settings.scriptures || {}).then((updatedScriptures) => {
+                if (!updatedScriptures) return
                 _store.SYNCED_SETTINGS?.set("scriptures", updatedScriptures)
                 sendMain(Main.SYNCED_SETTINGS, { ...getStore("SYNCED_SETTINGS"), scriptures: updatedScriptures })
                 console.info("[FreeShow] Bundled Bibles added to scriptures:", Object.keys(updatedScriptures).filter((k) => k.startsWith("bundled_")))
-            }
+            })
         })
         return settings
     },
@@ -173,8 +174,8 @@ export const mainResponses: MainResponses = {
     [Main.GET_SIMILAR]: (data) => getSimularPaths(data),
     [Main.BUNDLE_MEDIA_FILES]: (data) => bundleMediaFiles(data),
     [Main.MEDIA_FOLDER_COPY]: (data) => addToMediaFolder(data.paths),
-    [Main.READ_BIBLES_FOLDER]: () => readBiblesFolder(),
-    [Main.READ_SONGBOOKS]: () => readSongBooksFolder(),
+    [Main.READ_BIBLES_FOLDER]: async () => await readBiblesFolder(),
+    [Main.READ_SONGBOOKS]: async () => await readSongBooksFolder(),
     [Main.FILE_INFO]: (data) => getFileInfo(data),
     [Main.READ_FOLDER]: (data) => readFolderContent(data),
     [Main.READ_FILE]: (data) => ({ content: readFile(data.path) }),
@@ -288,7 +289,8 @@ export function loadScripture(msg: { id: string; name: string }) {
     return bible
 }
 
-function readBiblesFolder() {
+async function readBiblesFolder() {
+    await ensureR2AssetsSynced()
     const bibleFolder: string = getDataFolderPath("scriptures")
     const names = readFolder(bibleFolder)
     const fromUser = names.map((name) => {
@@ -301,13 +303,14 @@ function readBiblesFolder() {
     return [...fromBundled, ...fromUser]
 }
 
-function readSongBooksFolder() {
-    const songBooksPath = path.join(app.getAppPath(), "public", "songBooks")
+async function readSongBooksFolder() {
+    await ensureR2AssetsSynced()
+    const songBooksPath = getR2SongBooksCacheDir()
     try {
         const names = readFolder(songBooksPath)
-        return names.filter((name) => name.toLowerCase().endsWith(".json"))
+        return names.filter((name) => name.toLowerCase().endsWith(".json")).map((name) => path.join(songBooksPath, name))
     } catch (err) {
-        console.error("Failed to read public/songBooks folder:", err)
+        console.error("Failed to read cached songBooks folder:", err)
         return []
     }
 }

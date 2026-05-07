@@ -10,6 +10,11 @@
 /dist/
 
 *.env
+.env
+scripts/generate-r2-manifest.mjs
+public/localBible/*
+!public/localBible/README.md
+public/songBooks/*.json
 
 .DS_Store
 

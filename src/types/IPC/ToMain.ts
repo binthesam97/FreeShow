@@ -22,6 +22,7 @@ export enum ToMain {
     PROVIDER_PROJECTS = "PROVIDER_PROJECTS",
     WEBSOCKET = "WEBSOCKET",
     AUDIO_METADATA = "AUDIO_METADATA",
+    R2_ASSET_SYNC = "R2_ASSET_SYNC",
     GET_DYNAMIC_VALUES = "GET_DYNAMIC_VALUES",
     // Main
     IMPORT2 = "IMPORT2",
@@ -54,6 +55,7 @@ export interface ToMainSendPayloads {
     [ToMain.PROVIDER_PROJECTS]: { providerId: ContentProviderId; categoryName: string; shows: any; projects: any }
     [ToMain.WEBSOCKET]: "connected"
     [ToMain.AUDIO_METADATA]: { filePath: string; metadata: ICommonTagsResult }
+    [ToMain.R2_ASSET_SYNC]: { status: "syncing" | "ready" | "failed"; message?: string; downloaded?: number; total?: number }
     [ToMain.GET_DYNAMIC_VALUES]: string[]
     ///
     [ToMain.IMPORT2]: { channel: string; data: ({ content: Buffer | string | object; name?: string; extension?: string } | string)[]; custom?: any }

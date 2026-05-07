@@ -313,8 +313,8 @@ export interface MainReturnPayloads {
     [Main.MEDIA_FOLDER_COPY]: Promise<boolean>
     [Main.LOCATE_MEDIA_FILE]: Promise<{ path: string; hasChanged: boolean } | null>
     [Main.GET_MEDIA_FOLDER_PATH]: string
-    [Main.READ_BIBLES_FOLDER]: { path: string; name: string }[]
-    [Main.READ_SONGBOOKS]: string[]
+    [Main.READ_BIBLES_FOLDER]: Promise<{ path: string; name: string }[]>
+    [Main.READ_SONGBOOKS]: Promise<string[]>
     [Main.FILE_INFO]: { path: string; stat: Stats; extension: string; folder: boolean } | null
     [Main.READ_FOLDER]: Promise<{ [key: string]: FileFolder }>
     [Main.READ_FILE]: { content: string }

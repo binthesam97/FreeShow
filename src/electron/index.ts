@@ -10,6 +10,7 @@ import { receiveAudio } from "./audio/receiveAudio"
 import { cloudConnect } from "./cloud/cloud"
 import { startExport } from "./data/export"
 import { registerProtectedProtocol } from "./data/protected"
+import { ensureR2AssetsSynced } from "./data/r2Assets"
 import { config, setupStores } from "./data/store"
 import { receiveMain, sendMain } from "./IPC/main"
 import { autoErrorReport } from "./IPC/responsesMain"
@@ -108,6 +109,7 @@ async function startApp() {
     setTimeout(createLoading)
 
     await setupStores()
+    ensureR2AssetsSynced()
 
     registerProtectedProtocol()
 

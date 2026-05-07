@@ -7,6 +7,7 @@ import { app } from "electron"
 import { XMLParser } from "fast-xml-parser"
 import path from "path"
 import { detectFileType } from "./bibleDetecter"
+import { ensureR2AssetsSynced, getR2BiblesCacheDir } from "./r2Assets"
 import { doesPathExist, getDataFolderPath, getExtension, readFile, readFolder, writeFile } from "../utils/files"
 
 const SUPPORTED_EXTENSIONS = new Set(["xml", "xmm", "json", "fsb"])
@@ -15,6 +16,7 @@ const SUPPORTED_EXTENSIONS = new Set(["xml", "xmm", "json", "fsb"])
 
 export function bundledLocalBibleDir(): string | null {
     const candidates = [
+        getR2BiblesCacheDir(),
         path.join(app.getAppPath(), "public", "localBible"),
         path.join(process.resourcesPath, "app.asar.unpacked", "public", "localBible"),
         path.join(process.resourcesPath, "public", "localBible"),
@@ -181,4 +183,9 @@ export function listBundledLocalBibleFiles(): { path: string; name: string }[] {
     return readFolder(dir)
         .filter((n) => SUPPORTED_EXTENSIONS.has(getExtension(n)))
         .map((n) => ({ path: path.join(dir, n), name: n.replace(/\.[^.]+$/, "") }))
+}
+
+export async function syncBundledBiblesFromR2(existingScriptures: Record<string, any>): Promise<Record<string, any> | null> {
+    await ensureR2AssetsSynced()
+    return syncBundledBibles(existingScriptures)
 }
