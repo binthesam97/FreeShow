@@ -1506,6 +1506,12 @@ export function setTemplateStyle(outSlide: OutSlide | null, currentStyle: Styles
     const templateItems = template.items || []
     const mode = template?.settings?.mode
 
+    if (isRenderedSongbookTempSlide(outSlide, customDynamicValues)) {
+        const newItems = clone(slideItems || [])
+        newItems.push(...getSlideItemsFromTemplate(template.settings || {}))
+        return newItems.filter(checkSpecificOutput)
+    }
+
     // console.log("[DEBUG - setTemplateStyle]", {
     //     outSlideId: outSlide?.id,
     //     templateId: currentStyle?.template,
@@ -1531,6 +1537,11 @@ export function setTemplateStyle(outSlide: OutSlide | null, currentStyle: Styles
         if (outSlide === null) return true // always show in slides preview
         return !item.bindings?.length || item.bindings.includes(outputId)
     }
+}
+
+function isRenderedSongbookTempSlide(outSlide: OutSlide | null, customDynamicValues?: { [key: string]: any }) {
+    if (outSlide?.id !== "temp") return false
+    return Object.keys(customDynamicValues || {}).some((key) => key.startsWith("songbook"))
 }
 
 // , currentSlide: Slide | null = null

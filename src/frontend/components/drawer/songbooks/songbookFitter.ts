@@ -123,33 +123,16 @@ function resolveSongbookFitContext(hasTransliteration: boolean, footerData: Song
     let template = clone(get(templates)[templateId]) || { name: "", color: null, category: "songbook", items: [] }
     const resolution = activeOutput ? getOutputResolution(activeOutput.id, outputsState, true, styleId) : { ...DEFAULT_BOUNDS }
 
-    console.log("[songbookFitter] styleId:", styleId)
-    console.log("[songbookFitter] currentStyle.templateSongbook:", currentStyle.templateSongbook)
-    console.log("[songbookFitter] selectedTemplateId:", selectedTemplateId)
-    console.log("[songbookFitter] templateId (resolved):", templateId)
-    console.log("[songbookFitter] template found:", !!get(templates)[templateId])
-    console.log("[songbookFitter] template.items count:", template?.items?.length ?? 0)
-    console.log("[songbookFitter] available template keys:", Object.keys(get(templates)))
-    console.log("[songbookFitter] resolution:", resolution)
-
     let parsed = parseTemplateItems(template)
     if (!parsed.lyricBoxes.length) {
-        console.log("[songbookFitter] No lyric boxes found in template, falling back to default songbook template")
         templateId = hasTransliteration ? "songbook_2" : "songbook"
         template = clone(get(templates)[templateId]) || template
         parsed = parseTemplateItems(template)
-        console.log("[songbookFitter] fallback templateId:", templateId)
-        console.log("[songbookFitter] fallback template.items count:", template?.items?.length ?? 0)
-        console.log("[songbookFitter] fallback lyricBoxes count:", parsed.lyricBoxes.length)
     }
 
     const layoutMode = getSongbookLayoutMode(parsed.lyricBoxes)
     const lyricBoxes = applyLayoutConstraints(parsed.lyricBoxes, layoutMode)
     const { labelItem } = parsed
-
-    console.log("[songbookFitter] final lyricBoxes count:", lyricBoxes.length)
-    console.log("[songbookFitter] lyricBox keys:", lyricBoxes.map((b) => b.key))
-    console.log("[songbookFitter] layoutMode:", layoutMode)
 
     return {
         templateId,

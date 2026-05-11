@@ -290,8 +290,8 @@ export async function playScripture() {
     const templateId = getScriptureTemplateId()
     const _template = new TemplateHelper(templateId)
 
-    const outputIsScripture = getFirstActiveOutput()?.out?.slide?.id === "temp"
-    if (!outputIsScripture) {
+    const alreadyShowingScripture = outputIsScripture()
+    if (!alreadyShowingScripture) {
         // trigger action activation
         customActionActivation("scripture_start")
         // trigger template action(s)
@@ -356,7 +356,10 @@ export async function playScripture() {
 
 export function outputIsScripture(_updater: any = null) {
     const output = getFirstActiveOutput()
-    return output?.out?.slide?.id === "temp"
+    const slide = output?.out?.slide
+    if (slide?.id !== "temp") return false
+
+    return !Object.keys(slide.customDynamicValues || {}).some((key) => key.startsWith("songbook"))
 }
 
 export function getMergedAttribution(biblesContent: BibleContent[], customAttributions: string[] = []) {

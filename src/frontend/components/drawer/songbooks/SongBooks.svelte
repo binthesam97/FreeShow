@@ -1,8 +1,10 @@
 <script lang="ts">
-    import { onMount } from "svelte"
-    import { activeSongBookSong, outLocked, songBooks, templates, songbookShowTransliterated } from "../../../stores"
+    import { onMount, tick } from "svelte"
+    import { activeSongBookSong, outLocked, outputs, songBooks, templates, songbookShowTransliterated } from "../../../stores"
     import { setDefaultSongbookTemplates } from "../../../utils/createData"
-    import { createSongSearchEntry, createSongShow, loadSongBooks, normalizeLyrics, playSong, searchSongbookSongs, sortSongsByNumber } from "./songbooks"
+    import { getFirstActiveOutput } from "../../helpers/output"
+    import { nextSlide, previousSlide } from "../../helpers/showActions"
+    import { createSongSearchEntry, createSongShow, loadSongBooks, normalizeLyrics, outputIsSongbook, playSong, searchSongbookSongs, sortSongsByNumber } from "./songbooks"
     import type { SongSearchEntry, SongVerse } from "./songbooks"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
@@ -40,6 +42,10 @@
     $: filteredSongs = (searchValue || $songbookShowTransliterated) ? (searchValue ? searchSongbookSongs(searchableSongs, searchValue) : [...songs].sort(sortSongsByNumber)) : (searchValue ? searchSongbookSongs(searchableSongs, searchValue) : [...songs].sort(sortSongsByNumber))
 
     $: selectedSong = selectedSongIndex >= 0 && selectedSongIndex < filteredSongs.length ? filteredSongs[selectedSongIndex] : null
+    $: isActiveInOutput = outputIsSongbook($outputs)
+    $: activeOutputSlide = isActiveInOutput ? getFirstActiveOutput($outputs)?.out?.slide || null : null
+    $: canGoPrevious = !!activeOutputSlide?.previousSlides?.length
+    $: canGoNext = !!activeOutputSlide?.nextSlides?.length
 
     // Update active song store when selection changes
     $: if (selectedSong) {
@@ -52,9 +58,13 @@
         activeSongBookSong.set(null)
     }
 
-    function selectSong(index: number) {
+    async function selectSong(index: number) {
         selectedSongIndex = index
         if (lyricsScrollElem) lyricsScrollElem.scrollTop = 0
+        if (isActiveInOutput) {
+            await tick()
+            playSong()
+        }
     }
 
     $: originalVerses = selectedSong ? normalizeLyrics(selectedSong.Lyrics?.original) : []
@@ -81,7 +91,7 @@
 
     $: hasTransliteratedAny = songs.some(s => s.Transliterated_Title)
     $: bookLanguages = (() => {
-        const rawLang = currentBook?.language || currentBook?.Language
+        const rawLang = (currentBook as any)?.language || (currentBook as any)?.Language
         if (!rawLang) return "Original"
         
         let langs: string[] = Array.isArray(rawLang) 
@@ -198,9 +208,18 @@
 {/if}
 
 {#if selectedSong}
-    <FloatingInputs>
-        <MaterialButton disabled={$outLocked} title="songbooks.play_song" on:click={handlePlay}>
-            <Icon size={1.3} id="play" white />
+    <FloatingInputs arrow let:open>
+        {#if open || isActiveInOutput}
+            <MaterialButton disabled={!canGoPrevious} title="preview._previous_slide [Arrow Left]" on:click={previousSlide}>
+                <Icon size={1.3} id="previous" white={!isActiveInOutput} />
+            </MaterialButton>
+            <MaterialButton disabled={!canGoNext} title="preview._next_slide [Arrow Right]" on:click={nextSlide}>
+                <Icon size={1.3} id="next" white={!isActiveInOutput} />
+            </MaterialButton>
+        {/if}
+
+        <MaterialButton disabled={$outLocked} title={isActiveInOutput ? "preview._update [Ctrl+R]" : "menu._title_display"} on:click={handlePlay}>
+            <Icon size={isActiveInOutput ? 1.1 : 1.3} id={isActiveInOutput ? "refresh" : "play"} white={!isActiveInOutput} />
         </MaterialButton>
 
         <div class="divider" />

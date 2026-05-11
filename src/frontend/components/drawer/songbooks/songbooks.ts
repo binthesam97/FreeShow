@@ -3,7 +3,7 @@ import { uid } from "uid"
 import type { Item } from "../../../../types/Show"
 import { ShowObj } from "../../../classes/Show"
 import { activeProject, drawerTabsData, outLocked, activeSongBookSong } from "../../../stores"
-import { setOutput } from "../../helpers/output"
+import { getFirstActiveOutput, setOutput } from "../../helpers/output"
 import { history } from "../../helpers/history"
 import { requestMain } from "../../../IPC/main"
 import { Main } from "../../../../types/IPC/Main"
@@ -333,60 +333,35 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
 // Play song - output directly to display (like playScripture)
 
 export function playSong() {
-    if (get(outLocked)) {
-        console.log("[playSong] Blocked: output is locked")
-        return
-    }
+    if (get(outLocked)) return
 
     const songData = get(activeSongBookSong)
-    if (!songData) {
-        console.log("[playSong] Blocked: no active song selected")
-        return
-    }
+    if (!songData) return
 
     const song = songData.song
-    console.log("[playSong] Song:", song.Song_No, song.Title)
-    console.log("[playSong] Raw Lyrics.original:", song.Lyrics?.original)
-    console.log("[playSong] Raw Lyrics.transliteration:", song.Lyrics?.transliteration)
 
     const originalVerses = normalizeLyrics(song.Lyrics?.original)
     const transliterationVerses = normalizeLyrics(song.Lyrics?.transliteration)
     const hasTransliteration = transliterationVerses.length > 0 && songData.showTransliteration
 
-    console.log("[playSong] originalVerses count:", originalVerses.length)
-    console.log("[playSong] transliterationVerses count:", transliterationVerses.length)
-    console.log("[playSong] hasTransliteration:", hasTransliteration)
-
     const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration, {
         songBookName: song.Song_Book || "",
         songNumber: song.Song_No
     })
-    console.log("[playSong] fitResult.slides count:", fitResult.slides.length)
-    console.log("[playSong] fitResult.context.templateId:", fitResult.context.templateId)
-    console.log("[playSong] fitResult.context.lyricBoxes count:", fitResult.context.lyricBoxes.length)
 
-    if (!fitResult.slides.length) {
-        console.log("[playSong] Blocked: no slides generated from fitSongbookSlides")
-        return
-    }
+    if (!fitResult.slides.length) return
 
     const slides: Item[][] = fitResult.slides.map((slide) => slide.items)
     const slideDynamicValues: { [key: string]: string }[] = fitResult.slides.map((slide) => slide.dynamicValues)
 
     const tempItems: Item[] = slides[0] || []
-    const previousSlides = slides.slice(0, 0)
+    const previousSlides: Item[][] = []
     const nextSlides = slides.slice(1)
+    const previousSlideDynamicValues: { [key: string]: string }[] = []
     const nextSlideDynamicValues = slideDynamicValues.slice(1)
 
     const categoryId = get(drawerTabsData).songbooks?.activeSubTab || ""
     const translations = hasTransliteration ? 2 : 1
-
-    console.log("[playSong] tempItems count:", tempItems.length)
-    console.log("[playSong] tempItems:", JSON.stringify(tempItems, null, 2))
-    console.log("[playSong] customDynamicValues (slide 0):", slideDynamicValues[0])
-    console.log("[playSong] translations:", translations)
-    console.log("[playSong] categoryId:", categoryId)
-    console.log("[playSong] Calling setOutput with slide id=temp")
 
     setOutput("slide", {
         id: "temp",
@@ -394,11 +369,20 @@ export function playSong() {
         tempItems,
         previousSlides,
         nextSlides,
+        previousSlideDynamicValues,
         nextSlideDynamicValues,
         translations,
         settings: {},
         customDynamicValues: slideDynamicValues[0]
     })
+}
+
+export function outputIsSongbook(_updater: any = null) {
+    const output = getFirstActiveOutput()
+    const slide = output?.out?.slide
+    if (slide?.id !== "temp") return false
+
+    return Object.keys(slide.customDynamicValues || {}).some((key) => key.startsWith("songbook"))
 }
 
 // Create a FreeShow Show from song lyrics
