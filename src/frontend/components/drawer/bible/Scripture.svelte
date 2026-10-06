@@ -814,8 +814,14 @@
     /// MOVE SELECTION ///
 
     let chapterLengths: { [key: number]: number } = {}
-    $: if ($activeTriggerFunction === "scripture_next") _moveSelection(false)
-    $: if ($activeTriggerFunction === "scripture_previous") _moveSelection(true)
+    $: if ($activeTriggerFunction === "scripture_next") {
+        _moveSelection(false)
+        activeTriggerFunction.set("")
+    }
+    $: if ($activeTriggerFunction === "scripture_previous") {
+        _moveSelection(true)
+        activeTriggerFunction.set("")
+    }
     async function _moveSelection(moveLeft: boolean) {
         if (!activeReference.book) return
 
@@ -855,17 +861,37 @@
         // get length from previous chapter when moving left from verse 1
         const normalizedVerses = (verses || []).map((v) => getVerseIdParts(v.number).id)
         const firstVerse = normalizedVerses[0]
+        
+        let maxChapters = chapters?.length || 0;
+
         if (moveLeft && firstVerse === 1) {
-            // get verses count from previous chapter
-            const chapterNumber = activeReference.chapters[0]
-            const prevChapterIndex = (chapters || []).findIndex((c) => c.number?.toString() === chapterNumber?.toString()) - 1
-            const prevChapter = chapters?.[prevChapterIndex]
-            versesCount = prevChapter ? prevChapter.verses.length || chapterLengths[Number(chapterNumber) - 1] : 0
+            const chapterNumber = Number(activeReference.chapters[0])
+            
+            if (chapterNumber === 1 && Number(activeReference.book) > 1) {
+                // Moving left from the first chapter of a book - fetch previous book's data
+                const prevBookId = Number(activeReference.book) - 1;
+                const prevBookData = await currentBibleData?.bibleData?.getBook(prevBookId);
+                
+                if (prevBookData) {
+                    maxChapters = prevBookData.data?.chapters?.length || 1;
+                    const prevChapterData = await prevBookData.getChapter(maxChapters);
+                    versesCount = prevChapterData?.data?.verses?.length || 1;
+                }
+            } else {
+                // Moving left within the same book - fetch previous chapter's data
+                const prevChapterIndex = (chapters || []).findIndex((c) => c.number?.toString() === chapterNumber?.toString()) - 1
+                const prevChapterNumber = chapters?.[prevChapterIndex]?.number
+                
+                if (prevChapterNumber) {
+                    const prevChapterData = await currentBibleData?.bookData?.getChapter(Number(prevChapterNumber));
+                    versesCount = prevChapterData?.data?.verses?.length || chapterLengths[Number(chapterNumber) - 1] || 0;
+                }
+            }
         }
 
         const lengths = {
             book: books?.length || 0,
-            chapters: chapters?.length || 0,
+            chapters: maxChapters,
             verses: versesCount
         }
 

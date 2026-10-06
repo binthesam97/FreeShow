@@ -26,6 +26,8 @@ import { checkName } from "../../helpers/show"
 
 const SCRIPTURE_API_URL = "https://api.churchapps.org/content/bibles"
 
+const parsedBibleCache: Record<string, any> = {}
+
 export async function getApiBiblesList() {
     try {
         return await ApiBiblesList("*", SCRIPTURE_API_URL)
@@ -36,6 +38,8 @@ export async function getApiBiblesList() {
 }
 
 export async function loadJsonBible(id: string) {
+    if (parsedBibleCache[id]) return parsedBibleCache[id]
+
     const scriptureData = get(scriptures)[id]
     const isApi = !!scriptureData?.api
 
@@ -43,10 +47,14 @@ export async function loadJsonBible(id: string) {
         const key = getKey("bibleapi")
         const apiId = scriptureData?.id || id
         try {
-            return await JsonBibleApi(key, apiId, SCRIPTURE_API_URL)
+            const apiResult = await JsonBibleApi(key, apiId, SCRIPTURE_API_URL)
+            parsedBibleCache[id] = apiResult
+            return apiResult
         } catch (err) {
             console.error("Error loading API Bible:", err)
-            return await JsonBibleApi(key, apiId)
+            const apiResult = await JsonBibleApi(key, apiId)
+            parsedBibleCache[id] = apiResult
+            return apiResult
         }
     }
 
@@ -64,7 +72,9 @@ export async function loadJsonBible(id: string) {
     // load custom book names for local bibles (as many xml names are missing or in English)
     localBible.books = localBible.books.map((a) => ({ ...a, name: (a as any).customName || a.name }))
 
-    return await JsonBible(localBible)
+    const parsed = await JsonBible(localBible)
+    parsedBibleCache[id] = parsed
+    return parsed
 }
 
 async function getLocalBible(id: string) {
@@ -100,7 +110,7 @@ async function getLocalBible(id: string) {
 
 // GET CONTENT
 
-export async function getActiveScripturesContent(selectedVerses: (number | string)[][] | null = null) {
+export async function getActiveScripturesContent(selectedVerses: (number | string)[][] | null = null, selectedChaptersOverride: number[] | null = null) {
     const tabId = get(drawerTabsData).scripture?.activeSubTab || ""
     const selectedScriptureData = get(scriptures)[tabId]
     if (!selectedScriptureData) return null
@@ -134,7 +144,7 @@ export async function getActiveScripturesContent(selectedVerses: (number | strin
 
                 const bookName = Book.name
                 const bookAbbr = Book.getAbbreviation()
-                const selectedChapters = active?.chapters.map((c) => Number(c)) || []
+                const selectedChapters = selectedChaptersOverride || active?.chapters.map((c) => Number(c)) || []
                 const Chapters = await Promise.all(selectedChapters.map((c) => Book.getChapter(c)))
 
                 const metadata = BibleData.data.metadata || {}
@@ -148,7 +158,7 @@ export async function getActiveScripturesContent(selectedVerses: (number | strin
 
                 // add the three prior and next verse numbers to selected for the stage display next slide
                 const selected = clone(selectedVerses)
-                const includeCount = 3
+                const includeCount = 1
                 selected[0].unshift(...Array.from({ length: includeCount }, (_, i) => Math.max(1, getVerseId(selected[0][0]) - (i + 1))).reverse())
                 selected[0].push(...Array.from({ length: includeCount }, (_, i) => getVerseId(selected[0][selected[0].length - 1]) + (i + 1)))
                 // remove selected not in range of min to max verse number
@@ -305,7 +315,32 @@ export async function playScripture() {
 
     const tempItems: Item[] = slides[0] || []
     const categoryId = get(drawerTabsData).scripture?.activeSubTab || ""
-    setOutput("slide", { id: "temp", categoryId, tempItems, previousSlides: await getPreviousSlides(), nextSlides: await getNextSlides(), attributionString, translations: biblesContent.length, settings, customDynamicValues: slideDynamicValues[0] })
+
+    const prevData = await getPreviousSlides()
+    const nextData = await getNextSlides()
+
+    // Add scripture looping metadata
+    const lowestIndex = getVerseId(selectedVerses[0].sort((a, b) => getVerseId(a) - getVerseId(b))[0])
+    const highestIndex = getVerseId(selectedVerses[0].sort((a, b) => getVerseId(b) - getVerseId(a))[0])
+
+    setOutput("slide", { 
+        id: "temp", 
+        categoryId, 
+        tempItems, 
+        previousSlides: prevData.slides, 
+        previousSlideDynamicValues: prevData.previousSlideDynamicValues,
+        nextSlides: nextData.slides, 
+        nextSlideDynamicValues: nextData.nextSlideDynamicValues,
+        attributionString, 
+        translations: biblesContent.length, 
+        settings, 
+        customDynamicValues: slideDynamicValues[0],
+
+        isScripture: true,
+        scriptureHighestVerse: highestIndex + includeCount,
+        scriptureLowestVerse: lowestIndex - includeCount,
+        scriptureSelectedChapters: selectedChapters
+    })
 
     // track
     const reference = `${biblesContent[0].book} ${fullReferenceRange || biblesContent[0].chapters[0]}`.trim()
@@ -334,23 +369,33 @@ export async function playScripture() {
         const lowestIndex = getVerseId(selectedVerses[0].sort((a, b) => getVerseId(a) - getVerseId(b))[0])
 
         const slides: any[] = []
-        for (let i = 1; i <= includeCount; i++) {
+        const previousSlideDynamicValues: any[] = []
+        for (let i = includeCount; i >= 1; i--) {
             const verseIndex = lowestIndex - i
-            slides.push((await getScriptureSlidesNew({ biblesContent: biblesContent!, selectedChapters, selectedVerses: [[verseIndex]] }, true, true)).slides[0])
+            const res = await getScriptureSlidesNew({ biblesContent: biblesContent!, selectedChapters, selectedVerses: [[verseIndex]] }, true, true)
+            if (res.slides[0]) {
+                slides.push(res.slides[0])
+                previousSlideDynamicValues.push(res.slideDynamicValues[0] || {})
+            }
         }
 
-        return slides
+        return { slides, previousSlideDynamicValues }
     }
     async function getNextSlides() {
         const highestIndex = getVerseId(selectedVerses[0].sort((a, b) => getVerseId(b) - getVerseId(a))[0])
 
         const slides: any[] = []
+        const nextSlideDynamicValues: any[] = []
         for (let i = 1; i <= includeCount; i++) {
             const verseIndex = highestIndex + i
-            slides.push((await getScriptureSlidesNew({ biblesContent: biblesContent!, selectedChapters, selectedVerses: [[verseIndex]] }, true, true)).slides[0])
+            const res = await getScriptureSlidesNew({ biblesContent: biblesContent!, selectedChapters, selectedVerses: [[verseIndex]] }, true, true)
+            if (res.slides[0]) {
+                slides.push(res.slides[0])
+                nextSlideDynamicValues.push(res.slideDynamicValues[0] || {})
+            }
         }
 
-        return slides
+        return { slides, nextSlideDynamicValues }
     }
 }
 
@@ -360,6 +405,47 @@ export function outputIsScripture(_updater: any = null) {
     if (slide?.id !== "temp") return false
 
     return !Object.keys(slide.customDynamicValues || {}).some((key) => key.startsWith("songbook"))
+}
+
+export async function handleScriptureInfiniteScroll(slide: any, outputId: string) {
+    if (!slide || !slide.isScripture) return
+
+    let modified = false;
+    let highest = slide.scriptureHighestVerse
+    while (slide.nextSlides.length < 3) {
+        highest++
+        const biblesContent = await getActiveScripturesContent([[highest]], slide.scriptureSelectedChapters)
+        if (!biblesContent?.length || !biblesContent[0]) break;
+        
+        const res = await getScriptureSlidesNew({ biblesContent, selectedChapters: slide.scriptureSelectedChapters, selectedVerses: [[highest]] }, true, true)
+        if (res.slides[0]) {
+            slide.nextSlides.push(res.slides[0])
+            slide.nextSlideDynamicValues.push(res.slideDynamicValues[0] || {})
+            modified = true;
+        }
+    }
+    
+    let lowest = slide.scriptureLowestVerse
+    while (slide.previousSlides.length < 3) {
+        lowest--
+        if (lowest < 1) break;
+        const biblesContent = await getActiveScripturesContent([[lowest]], slide.scriptureSelectedChapters)
+        if (!biblesContent?.length || !biblesContent[0]) break;
+        
+        const res = await getScriptureSlidesNew({ biblesContent, selectedChapters: slide.scriptureSelectedChapters, selectedVerses: [[lowest]] }, true, true)
+        if (res.slides[0]) {
+            slide.previousSlides.unshift(res.slides[0])
+            slide.previousSlideDynamicValues.unshift(res.slideDynamicValues[0] || {})
+            modified = true;
+        }
+    }
+
+    if (modified) {
+        slide.scriptureHighestVerse = highest
+        slide.scriptureLowestVerse = lowest
+        // Delay by 0 ms to ensure Svelte store recognizes a new reference copy
+        setTimeout(() => setOutput("slide", slide, false, outputId), 1)
+    }
 }
 
 export function getMergedAttribution(biblesContent: BibleContent[], customAttributions: string[] = []) {
@@ -868,10 +954,8 @@ export async function getScriptureSlidesNew(data: any, onlyOne = false, disableR
                         const bibleName = bibleData?.version || bibleData?.metadata?.title || bibleData?.metadata?.language || bibleData?.id || ""
                         
                         if (bibleName && !bibleName.toLowerCase().includes("english") && !bibleName.toLowerCase().startsWith("en")) {
-                            if (bibleIndex === 0) {
-                                item.style = (item.style || "") + "; margin: -8px !important;"
-                                line.align = (line.align || "") + "; line-height: 1.4 !important;"
-                            }
+                            item.style = (item.style || "") + "; margin: -8px !important;"
+                            line.align = (line.align || "") + "; line-height: 1.4 !important;"
                         }
 
                         const parts = keyTextObj.value.split(itemKey)

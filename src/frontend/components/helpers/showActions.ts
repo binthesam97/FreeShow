@@ -21,7 +21,7 @@ import { getCurrentTimerValue, getTimeUntilClock, playPauseGlobal } from "../dra
 import { getDynamicValue } from "../edit/scripts/itemHelpers"
 import { getTextLines } from "../edit/scripts/textStyle"
 import { clearBackground, clearOverlays, clearTimers } from "../output/clear"
-import { actions, activeEdit, activeFocus, activePage, activeProject, activeShow, allOutputs, audioData, customMetadata, dictionary, dynamicValueData, focusMode, media, outLocked, outputDisplay, outputs, outputSlideCache, overlays, playingAudio, playingMetronome, projects, shows, showsCache, slideTimers, special, stageShows, styles, templates, timers, triggers, variables, videosData, videosTime } from "./../../stores"
+import { actions, activeEdit, activeFocus, activePage, activeProject, activeShow, allOutputs, audioData, customMetadata, dictionary, dynamicValueData, focusMode, media, outLocked, outputDisplay, outputs, outputSlideCache, overlays, playingAudio, playingMetronome, projects, shows, showsCache, slideTimers, special, stageShows, styles, templates, timers, triggers, variables, videosData, videosTime, activeTriggerFunction, drawerTabsData } from "./../../stores"
 import { clone, keysToID, sortByName } from "./array"
 import { downloadOnlineMedia, getExtension, getFileName, getMedia, getMediaStyle, getMediaType, removeExtension } from "./media"
 import { defaultLayers, getActiveOutputs, getAllNormalOutputs, getFirstActiveOutput, getFirstOutput, getWindowOutputId, isOutCleared, refreshOut, setOutput } from "./output"
@@ -31,6 +31,7 @@ import { getCustomMetadata, getGroupName, getLayoutRef } from "./show"
 import { _show } from "./shows"
 import { addZero, getMonthName, getWeekday, joinTime, joinTimeBig, secondsToTime } from "./time"
 import { stopTimers } from "./timerTick"
+import { handleScriptureInfiniteScroll } from "../drawer/bible/scripture"
 
 const getProjectIndex = {
     next: (index: number | null, items: ProjectShowRef[]) => {
@@ -280,7 +281,12 @@ export function nextSlide(e: any, start = false, end = false, loop = false, bypa
 
     if (!slide) return
     if (slide.id === "temp") {
-        navigateTempSlide(slide, false, outputId)
+        const isScripture = get(drawerTabsData)?.scripture?.activeSubTab === slide.categoryId || slide.categoryId === "bible"
+        if (isScripture) {
+            activeTriggerFunction.set("scripture_next")
+        } else {
+            navigateTempSlide(slide, false, outputId)
+        }
         return
     }
 
@@ -495,7 +501,12 @@ export function previousSlide(e: any, customOutputId?: string) {
 
     // Temp slides (songbook)
     if (slide?.id === "temp") {
-        navigateTempSlide(slide, true, outputId)
+        const isScripture = get(drawerTabsData)?.scripture?.activeSubTab === slide.categoryId || slide.categoryId === "bible"
+        if (isScripture) {
+            activeTriggerFunction.set("scripture_previous")
+        } else {
+            navigateTempSlide(slide, true, outputId)
+        }
         return
     }
 
@@ -690,6 +701,15 @@ function navigateTempSlide(slide: OutSlide, previous: boolean, outputId: string)
             nextSlideDynamicValues: newNextDynamic
         }, false, outputId)
     }
+
+    if ((slide as any).isScripture) {
+        setTimeout(() => {
+            const currentOut = get(outputs)[outputId]
+            if (currentOut?.out?.slide) {
+                handleScriptureInfiniteScroll(currentOut.out.slide, outputId)
+            }
+        }, 10)
+    }
 }
 
 // skip slides that are bound to specific output not customId
@@ -782,14 +802,22 @@ function randomNumber(end: number) {
 }
 
 export function updateOut(showId: string, index: number, layout: LayoutRef[], extra = true, specificOutputId = "", actionTimeout = 10) {
+    console.log("[updateOut] START. showId:", showId, "index:", index, "extra:", extra, "layout length:", layout?.length)
     if (get(activePage) !== "edit") activeEdit.set({ slide: index, items: [] })
 
     _show(showId).set({ key: "timestamps.used", value: new Date().getTime() })
-    if (!layout) return
+    if (!layout) {
+        console.log("[updateOut] Aborted: layout is missing")
+        return
+    }
     const data = layout[index]?.data
+    console.log("[updateOut] data from layout[index]:", data)
 
     // holding "alt" key will disable all extra features
-    if (!extra || !data) return
+    if (!extra || !data) {
+         console.log("[updateOut] Aborted: !extra || !data. extra =", extra, "data =", data)
+         return
+    }
 
     // trigger start show action first
     const startShowId = data.actions?.startShow?.id || data.actions?.slideActions?.find((a) => a.actionValues?.start_show)?.actionValues?.start_show?.id
@@ -802,6 +830,7 @@ export function updateOut(showId: string, index: number, layout: LayoutRef[], ex
 
     // get output slide
     const outputIds = specificOutputId ? [specificOutputId] : bindings.length ? bindings : getActiveOutputs(get(outputs), true, false, true)
+    console.log("[updateOut] Proceeding. outputIds evaluated to:", outputIds)
 
     // WIP custom next slide timer duration (has to be changed on slide click & in preview as well)
     // let outputWithLine = outputIds.find((id: string) => get(outputs)[id].out?.slide?.line !== undefined)
@@ -817,11 +846,13 @@ export function updateOut(showId: string, index: number, layout: LayoutRef[], ex
     const outputAtLine = outputIds.find((id: string) => get(outputs)[id]?.out?.slide?.line)
     // actions will only trigger on index 0 if multiple lines
     if (outputAtLine) {
+        console.log("[updateOut] Restarting timers and aborting - outputAtLine is true")
         // restart any next slide timers
         outputIds.map(nextSlideTimers)
         return
     }
 
+    console.log("[updateOut] Firing 'activateActions' across outputs:", outputIds)
     outputIds.map(activateActions)
 
     async function activateActions(outputId: string) {

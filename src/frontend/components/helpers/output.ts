@@ -1245,14 +1245,16 @@ function replaceScriptureValues(items: Item[], templateItems: Item[], customDyna
             }) 
         })
 
-        // Detect non-English scripture for line spacing adjustments
-        const scriptureName = (customDynamicValues.scripture1_name || customDynamicValues.scripture_name || "") as string
-        const isNonEnglishScripture = scriptureName && !scriptureName.toLowerCase().includes("english") && !scriptureName.toLowerCase().startsWith("en")
-
         Object.keys(scriptureTextItemIndexes).forEach((key) => {
             const value = customDynamicValues[key]
             const hasContent = Array.isArray(value) ? value.length > 0 : typeof value === "string" ? value.trim().length > 0 : false
             if (!hasContent) return
+
+            // Compute isNonEnglishScripture for this specific text box key (e.g. "scripture2_text" uses "scripture2_name")
+            const suffix = key.match(/\d+/)?.[0] || ""
+            const scriptureNameKey = suffix ? `scripture${suffix}_name` : "scripture_name"
+            const scriptureName = (customDynamicValues[scriptureNameKey] || customDynamicValues.scripture1_name || customDynamicValues.scripture_name || "") as string
+            const isNonEnglishScripture = scriptureName && !scriptureName.toLowerCase().includes("english") && !scriptureName.toLowerCase().startsWith("en")
 
             scriptureTextItemIndexes[key].forEach((itemIndex) => {
                 const item = items[itemIndex]
