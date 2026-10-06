@@ -1,7 +1,11 @@
 import { get } from "svelte/store"
 import { activePopup, alertUpdates, isDev, popupData, special } from "./../stores"
 
+// Update checks are disabled in this build (custom fork, versions never match upstream releases)
+const UPDATE_CHECKS_DISABLED = true
+
 export function checkForUpdates(currentVersion: string) {
+    if (UPDATE_CHECKS_DISABLED) return
     if (get(isDev) || get(alertUpdates) === false) return
     const includeBeta = currentVersion.includes("-beta") || get(special).betaVersionAlert
 

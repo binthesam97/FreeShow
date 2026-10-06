@@ -4,8 +4,11 @@ import { isProd } from ".."
 
 // let notification: Notification | null
 
+// Auto-updates are disabled in this build (custom fork)
+const AUTO_UPDATES_DISABLED = true
+
 export default async function checkForUpdates() {
-    if (!isProd) return
+    if (AUTO_UPDATES_DISABLED || !isProd) return
 
     try {
         await autoUpdater.checkForUpdatesAndNotify()

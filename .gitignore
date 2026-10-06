@@ -28,3 +28,103 @@ test-results/
 *.iws
 .serena
 package-lock.json
+/.vscode
+public/localBible/21st Century KJV.xml
+public/localBible/A Conservative Version.xml
+public/localBible/American King James Version (1999).xml
+public/localBible/American Standard Version (1901).xml
+public/localBible/AMP_2001.xml
+public/localBible/Amplified Bible (1965).xml
+public/localBible/Apostles' Bible Complete (2004).xml
+public/localBible/Bengali Bible.xml
+public/localBible/Bible in Basic English (1964).xml
+public/localBible/Bishop's Bible.xml
+public/localBible/Brenton's English Septuagint.xml
+public/localBible/Complementary English Version (1995).xml
+public/localBible/Coverdale Bible (1535).xml
+public/localBible/Easy to Read Revised Version (2005).xml
+public/localBible/English Jubilee 2000 Bible (2000).xml
+public/localBible/English Lo Parishuddha Grandham.xml
+public/localBible/English Standard Version (2001).xml
+public/localBible/esv.xml
+public/localBible/Geneva Bible (1599).xml
+public/localBible/Hebrew Names Version.xml
+public/localBible/Hindi Bible.xml
+public/localBible/Holman Christian Standard Bible (2004).xml
+public/localBible/Holy Bible Revised Version (1885).xml
+public/localBible/Kannada Bible.xml
+public/localBible/King James Version (1769).xml
+public/localBible/Literal Translation of Holy Bible (2000).xml
+public/localBible/Malayalam Bible.xml
+public/localBible/Modern King James Version (1962).xml
+public/localBible/MSG.xml
+public/localBible/NASB.xml
+public/localBible/New American Bible.xml
+public/localBible/New American Standard Bible (1995).xml
+public/localBible/New Century Version (1991).xml
+public/localBible/New English Translation (2005).xml
+public/localBible/New International Reader's Version (1998).xml
+public/localBible/New International Version (1984) (US).xml
+public/localBible/New International Version (UK).xml
+public/localBible/New King James Version (1982).xml
+public/localBible/New Life Version (1969).xml
+public/localBible/New Living Translation (1996).xml
+public/localBible/New Revised Standard Version (1989).xml
+public/localBible/NIRV.xml
+public/localBible/NKJV.xml
+public/localBible/NLT.xml
+public/localBible/README.md
+public/localBible/Restored Name KJV.xml
+public/localBible/Revised Standard Version (1952).xml
+public/localBible/Revised Version (1881-1885).xml
+public/localBible/Revised Webster Update (1995).xml
+public/localBible/Rotherhams Emphasized Bible (1902).xml
+public/localBible/Tamil Bible.xml
+public/localBible/Telugu Bible (BSI).xml
+public/localBible/Telugu Bible (WBTC).xml
+public/localBible/The Complete Jewish Bible (1998).xml
+public/localBible/The Darby Bible (1890).xml
+public/localBible/The Douay-Rheims American Bible (1899).xml
+public/localBible/The Holy Bible, New International Version®.xml
+public/localBible/The Message Bible (2002).xml
+public/localBible/The New Jerusalem Bible.xml
+public/localBible/The Webster Bible (1833).xml
+public/localBible/Third Millennium Bible (1998).xml
+public/localBible/Today's English Version (Good News Bible) (1992).xml
+public/localBible/Today's New International Version (2005).xml
+public/localBible/Tyndale Bible (1534).xml
+public/localBible/Tyndale-Rogers-Coverdale-Cranmer Bible (1537).xml
+public/localBible/Updated Bible (2006).xml
+public/localBible/Voice In Wilderness (2006).xml
+public/localBible/World English Bible.xml
+public/localBible/Wycliffe Bible (1395).xml
+public/localBible/Young's Literal Translation (1898).xml
+public/songBooks/aao_stuthi_kare.json
+public/songBooks/Aathmeeya_Geethangal.json
+public/songBooks/Aatmik_Geetmala.json
+public/songBooks/athmeeya_geethangal.json
+public/songBooks/believers_hymn_book.json
+public/songBooks/Canticles.json
+public/songBooks/Celebrational Hymns.json
+public/songBooks/Christava Sunada Keerthanalu.json
+public/songBooks/Christava_Sunada_Keerthanalu.json
+public/songBooks/geethangalum_keerthanaigalum.json
+public/songBooks/golden_bells.json
+public/songBooks/masih_geet_sangrah.json
+public/songBooks/Remembrance_and_Worship.json
+public/songBooks/Songs of Zion.json
+public/songBooks/Songs_of_Zion.json
+public/songBooks/Sunday_School_Borivali.json
+public/songBooks/Vandana_Geet_English.json
+public/songBooks/Vandana_Geet_Hindi.json
+/public/localBible
+/public/songBooks
+dist.zip
+vite.config.mjs.timestamp-1776881196999-5bb687e2e6535.mjs
+config/building/vite.config.servers.mjs.timestamp-1776908007181-4a09d622a98ee.mjs
+config/building/vite.config.servers.mjs.timestamp-1777056299263-b9695a716ff75.mjs
+config/building/vite.config.servers.mjs.timestamp-1777056299344-6f32cc7f4cbcd.mjs
+config/building/vite.config.servers.mjs.timestamp-1777092095321-0e0d60a18f8cc.mjs
+config/building/vite.config.servers.mjs.timestamp-1777717868360-ad87f3e1edc6b.mjs
+config/building/vite.config.servers.mjs.timestamp-1777718916555-67e13af7e21f6.mjs
+config/building/vite.config.servers.mjs.timestamp-1784425281016-dcb2cfbaed089.mjs

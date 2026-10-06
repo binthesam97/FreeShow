@@ -31,7 +31,7 @@ export const defaultSettings: { [key in SaveListSettings]: any } = {
     sorted: {},
     openedFolders: ["default"],
     activeProject: null,
-    alertUpdates: true,
+    alertUpdates: false,
     autoOutput: false,
     autosave: "15min",
     timeFormat: "24",
