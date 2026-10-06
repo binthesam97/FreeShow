@@ -4,7 +4,7 @@
     import { setDefaultSongbookTemplates } from "../../../utils/createData"
     import { getFirstActiveOutput } from "../../helpers/output"
     import { nextSlide, previousSlide } from "../../helpers/showActions"
-    import { createSongSearchEntry, createSongShow, loadSongBooks, normalizeLyrics, outputIsSongbook, playSong, searchSongbookSongs, sortSongsByNumber } from "./songbooks"
+    import { createSongSearchEntry, createSongShow, loadSongBooks, normalizeLyrics, playSong, searchSongbookSongs, sortSongsByNumber } from "./songbooks"
     import type { SongSearchEntry, SongVerse } from "./songbooks"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
@@ -38,12 +38,17 @@
     $: currentBook = active ? $songBooks[active] : null
     $: songs = currentBook?.songs || []
 
-    $: searchableSongs = songs.map((song): SongSearchEntry => createSongSearchEntry(song))
+    let searchableSongsCache = new Map<any, SongSearchEntry[]>()
+    $: if (searchValue && currentBook && !searchableSongsCache.has(currentBook)) {
+        searchableSongsCache.set(currentBook, songs.map((song): SongSearchEntry => createSongSearchEntry(song)))
+    }
+    $: searchableSongs = (searchValue && currentBook) ? (searchableSongsCache.get(currentBook) || []) : []
+
     $: filteredSongs = (searchValue || $songbookShowTransliterated) ? (searchValue ? searchSongbookSongs(searchableSongs, searchValue) : [...songs].sort(sortSongsByNumber)) : (searchValue ? searchSongbookSongs(searchableSongs, searchValue) : [...songs].sort(sortSongsByNumber))
 
     $: selectedSong = selectedSongIndex >= 0 && selectedSongIndex < filteredSongs.length ? filteredSongs[selectedSongIndex] : null
-    $: isActiveInOutput = outputIsSongbook($outputs)
-    $: activeOutputSlide = isActiveInOutput ? getFirstActiveOutput($outputs)?.out?.slide || null : null
+    $: activeOutputSlide = getFirstActiveOutput($outputs)?.out?.slide || null
+    $: isActiveInOutput = activeOutputSlide?.id === "temp" && Object.keys(activeOutputSlide.customDynamicValues || {}).some((key) => key.startsWith("songbook"))
     $: canGoPrevious = !!activeOutputSlide?.previousSlides?.length
     $: canGoNext = !!activeOutputSlide?.nextSlides?.length
 

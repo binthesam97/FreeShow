@@ -14,11 +14,11 @@
     import GroupsEdit from "./GroupsEdit.svelte"
     import TextEdit from "./TextEdit.svelte"
 
-    // Memoize layout calculation
-    $: layout = $outShow ? GetLayout($outShow, $outLayout) : null
+    // Memoize layout calculation - prioritize activeShow for the show tab
+    $: layout = $activeShow ? GetLayout($activeShow, $activeShow?.settings?.activeLayout || "") : ($outShow ? GetLayout($outShow, $outLayout) : null)
     $: _set("layout", layout)
 
-    $: slideNum = $outSlide ?? -1
+    $: slideNum = ($outShow?.id === $activeShow?.id) ? ($outSlide ?? -1) : -1
 
     // Memoize totalSlides calculation
     $: totalSlides = layout ? layout.length : 0

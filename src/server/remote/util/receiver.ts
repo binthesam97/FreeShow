@@ -2,7 +2,7 @@ import type { Item, Show } from "../../../types/Show"
 import { sanitizeVerseText } from "../../../common/scripture/sanitizeVerseText"
 import { setError, translate } from "./helpers"
 import { send } from "./socket"
-import { _, _get, _set, _update, currentScriptureState, overlays, scriptures, scriptureCache, timers, triggers, activeTimers, runningActions, mixer } from "./stores"
+import { _, _get, _set, _update, currentScriptureState, overlays, scriptures, scriptureCache, timers, triggers, activeTimers, runningActions, mixer, songbooks, activeSongBookSong } from "./stores"
 
 function sanitizeBiblePayload(bible: any) {
     if (!bible || !Array.isArray(bible.books)) return bible
@@ -23,7 +23,7 @@ function sanitizeBiblePayload(bible: any) {
 function sanitizeChapterVerses(verses: any) {
     if (!Array.isArray(verses)) return verses
 
-    return verses.map((verse: any, index: number) => {
+    return verses.map((verse: any, index: number) => { 
         const sanitizedVerse = { ...verse }
         sanitizedVerse.number = sanitizedVerse.number || index + 1
         sanitizedVerse.text = sanitizeVerseText(sanitizedVerse.text || sanitizedVerse.value || "")
@@ -77,43 +77,59 @@ export const receiver = {
         if (!_get("isConnected")) return
 
         if (!_get("activeShow") && !_get("quickPlay")) _set("activeTab", "show")
-        // if (activeTab === "shows" || activeTab === "project" || activeTab === "projects") activeTab = "show"
-        // shows[data.id] = data
-        // activeShow = data.id
 
         _set("activeShow", data)
+        
+        // If we are currently watching this show in the output, update outShow too
+        if (_get("outShow")?.id === data.id || !_get("outShow")) {
+            _set("outShow", data)
+        }
     },
     OUT: (data: any) => {
-        if (!_get("isConnected")) return
+        if (!_get("isConnected")) return 
 
         // scripture
-        if (data.id === "temp") {
-            _set("outSlide", 0)
+        if (data.id === "temp") { 
+            console.log("[REMOTE] Received TEMP output (Songbook/Scripture):", data)
+            _set("outSlide", data.slide ?? 0)
             _set("outLayout", "default")
             const show = getShowFromItems(data.tempItems, data.nextSlides[0])
+            show.id = "temp" // Crucial: give it the ID so remote -> EXE commands work
             _set("outShow", show)
+            
+            // Auto-follow temp show if on a relevant tab or no show active
+            if (!_get("activeShow") || _get("activeTab") === "show" || _get("activeTab") === "lyrics" || _get("activeTab") === "slide") {
+                _set("activeShow", show)
+            }
 
             _update("isCleared", "all", false)
             _update("isCleared", "slide", false)
             return
         }
 
+        console.log("[REMOTE] Received OUT update:", data);
+        
         // clear
-        if (data.slide === undefined) return
-
         _set("outSlide", data.slide)
         if (data.layout) _set("outLayout", data.layout)
-        // if (data.styleRes) _set("styleRes", data.styleRes)
-        if (_get("outSlide") === null) _set("outShow", null)
-        else if (data.show) {
+
+        if (_get("outSlide") === null) {
+            _set("outShow", null)
+        } else if (data.show) {
             _set("outShow", data.show)
-            if (!_get("activeShow")) _set("activeTab", "slide")
-            if (!_get("activeShow")) _set("activeShow", _get("outShow"))
-        } else if (_get("outShow") === null && _get("activeShow")) {
-            _set("outShow", _get("activeShow"))
+            // Always update activeShow to match output if we are on a relevant tab
+            if (!_get("activeShow") || _get("activeTab") === "show" || _get("activeTab") === "lyrics" || _get("activeTab") === "slide") {
+                _set("activeShow", _get("outShow"))
+            }
+        } else if (data.id) {
+            // If we have an active show with this ID, sync them
+            if (_get("activeShow")?.id === data.id) {
+                _set("outShow", _get("activeShow"))
+            }
         }
     },
     OUT_DATA: (data: any) => {
+        console.log("[REMOTE] Received OUT_DATA update:", data);
         _set("outData", data)
         send("API:get_cleared")
     },
@@ -134,6 +150,21 @@ export const receiver = {
         const project = sortedProjects.find((a: any) => a.id === _get("project"))
         if (project) _set("activeProject", project)
     },
+    START_SONG: (data: any) => {
+        console.log("[REMOTE] START_SONG handler received data:", data)
+        const id = typeof data === "string" ? data : data?.id
+        console.log("[REMOTE] START_SONG resolved show ID:", id)
+        if (!id) {
+            console.error("[REMOTE] START_SONG error: No show ID found in data")
+            return
+        }
+
+        // Mirror Exactly what Shows.svelte does
+        send("SHOW", { id, autoPlay: _get("quickPlay") })
+
+        _set("active", { id, type: "show" })
+        _set("activeTab", "show")
+    },
     PROJECT: (data: any) => {
         if (!_get("project") && data && _get("isConnected")) {
             _set("project", data)
@@ -146,6 +177,12 @@ export const receiver = {
     },
     SCRIPTURE: (data: any) => {
         scriptures.set(data)
+    },
+    SONGBOOKS: (data: any) => {
+        songbooks.set(data)
+    },
+    GET_SONGBOOKS: (data: any) => {
+        songbooks.set(data)
     },
     CATEGORIES: (data: any) => {
         _.categories.set(data)

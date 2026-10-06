@@ -25,6 +25,7 @@ export const DEFAULT_DICTIONARY = {
         media: "Media",
         overlays: "Overlays",
         audio: "Audio",
+        songbooks: "Songbooks",
         scripture: "Scriptures",
         calendar: "Calendar",
         templates: "Templates",
@@ -74,6 +75,13 @@ export const DEFAULT_DICTIONARY = {
         collections: "Collections",
         bibles_section: "Bibles",
         api_section: "API"
+    },
+    songbooks: {
+        search: "Search songs...",
+        no_book_selected: "No songbook selected",
+        no_songs: "No songs match your search",
+        show_original: "Show original titles",
+        show_transliterated: "Show transliterated titles"
     },
     titlebar: {
         edit: "Edit"

@@ -2,7 +2,7 @@ import { get } from "svelte/store"
 import { OUTPUT, REMOTE, STAGE } from "../../types/Channels"
 import { AudioPlayer } from "../audio/audioPlayer"
 import { midiInListen } from "../components/actions/midi"
-import { getAllActiveOutputIds, getAllNormalOutputs } from "../components/helpers/output"
+import { getAllActiveOutputIds, getAllNormalOutputs, getFirstActiveOutput } from "../components/helpers/output"
 import { loadShows } from "../components/helpers/setShow"
 import { getShowCacheId, updateCachedShow, updateCachedShows, updateShowsList } from "../components/helpers/show"
 import {
@@ -60,13 +60,14 @@ import {
     variables,
     variableTags,
     volume,
-    songBooks
+    songBooks,
+    connections
 } from "../stores"
 import { hasNewerUpdate } from "./common"
 import { driveConnect } from "./drive"
 import { convertBackgrounds, getMixerPayload } from "./remoteTalk"
 import { send } from "./request"
-import { arrayToObject, eachConnection, filterObjectArray, sendData, timedout } from "./sendData"
+import { arrayToObject, eachConnection, filterObjectArray, sendData, setConnectedState, timedout } from "./sendData"
 
 // simple debounce helper (shared for mixer pushes)
 const debounce = (fn: (...args: any[]) => void, wait: number) => {
@@ -213,6 +214,16 @@ export function storeSubscriber() {
 
         // let it update properly
         setTimeout(() => {
+            // Sync connection.active for all remote clients to match current output
+            const currentOutput = getFirstActiveOutput()
+            const currentOutId = currentOutput?.out?.slide?.id
+            if (currentOutId && currentOutId !== "temp") {
+                const remoteConns = get(connections).REMOTE || {}
+                Object.keys(remoteConns).forEach((connId) => {
+                    setConnectedState("REMOTE", connId, "active", currentOutId)
+                })
+            }
+
             sendData(REMOTE, { channel: "OUT" })
             sendData(REMOTE, { channel: "OUT_DATA" })
         })

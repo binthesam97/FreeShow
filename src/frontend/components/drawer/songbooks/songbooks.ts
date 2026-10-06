@@ -2,7 +2,7 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Item } from "../../../../types/Show"
 import { ShowObj } from "../../../classes/Show"
-import { activeProject, drawerTabsData, outLocked, activeSongBookSong } from "../../../stores"
+import { activeProject, drawerTabsData, outLocked, activeSongBookSong, showsCache } from "../../../stores"
 import { getFirstActiveOutput, setOutput } from "../../helpers/output"
 import { history } from "../../helpers/history"
 import { requestMain } from "../../../IPC/main"
@@ -391,11 +391,13 @@ export function createSongShow() {
     const songData = get(activeSongBookSong)
     if (!songData) return
 
-    const song = songData.song
+    return createSongShowFromData(songData.song, songData.showTransliteration)
+}
 
+export function createSongShowFromData(song: any, showTransliteration: boolean = false) {
     const originalVerses = normalizeLyrics(song.Lyrics?.original)
     const transliterationVerses = normalizeLyrics(song.Lyrics?.transliteration)
-    const hasTransliteration = transliterationVerses.length > 0 && songData.showTransliteration
+    const hasTransliteration = transliterationVerses.length > 0 && showTransliteration
     const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration, {
         songBookName: song.Song_Book || "",
         songNumber: song.Song_No
@@ -404,6 +406,9 @@ export function createSongShow() {
 
     const layoutID = uid()
     const show = new ShowObj(false, null, layoutID, Date.now(), false)
+    console.log("[Created new show] Show id: ", show.id);
+    console.log("[Created new show] Show object: ", show);
+    
     show.settings.template = null
 
     show.name = `${song.Song_No}. ${song.Title}`
@@ -431,6 +436,18 @@ export function createSongShow() {
     show.slides = slideEntries
     show.layouts = { [layoutID]: { name: "Default", notes: "", slides: layoutSlides } }
 
-    history({ id: "UPDATE", newData: { data: show, remember: { project: get(activeProject) } }, location: { page: "show", id: "show" } })
-    return show.id
+    const showId = uid()
+    const historyObj: any = { 
+        id: "UPDATE", 
+        newData: { 
+            data: show, 
+            remember: { project: get(activeProject) } 
+        }, 
+        oldData: { id: showId },
+        location: { page: "show", id: "show" } 
+    }
+
+    history(historyObj)
+
+    return showId
 }

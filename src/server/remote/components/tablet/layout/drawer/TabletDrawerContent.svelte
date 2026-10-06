@@ -21,6 +21,7 @@
     let TabletDrawerCalendar: any = null
     let TabletDrawerFunctions: any = null
     let Scripture: any = null
+    let Songbooks: any = null
 
     // Lazy load components on first access
     $: if (loaded.includes("shows") && !TabletDrawerShows) {
@@ -46,6 +47,9 @@
     }
     $: if (loaded.includes("scripture") && !Scripture) {
         import("../../../pages/Scripture.svelte").then(m => Scripture = m.default)
+    }
+    $: if (loaded.includes("songbooks") && !Songbooks) {
+        import("../../../pages/Songbooks.svelte").then(m => Songbooks = m.default)
     }
 </script>
 
@@ -94,6 +98,14 @@
         <div style="height: 100%; overflow: hidden; display: {id === 'scripture' ? 'flex' : 'none'}; flex-direction: column;">
             {#if Scripture}
                 <svelte:component this={Scripture} tablet searchValueFromDrawer={searchValue} on:search-clear={handleScriptureSearchClear} />
+            {/if}
+        </div>
+    {/if}
+
+    {#if loaded.includes("songbooks")}
+        <div style="height: 100%; overflow: hidden; display: {id === 'songbooks' ? 'flex' : 'none'}; flex-direction: column;">
+            {#if Songbooks}
+                <svelte:component this={Songbooks} tablet {searchValue} />
             {/if}
         </div>
     {/if}

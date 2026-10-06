@@ -35,6 +35,8 @@ export function history(obj: History, shouldUndo: null | boolean = null) {
     if (obj.location?.show?.id) showID = obj.location.show.id
     let old: any = null
     const temp: any = {}
+    console.log("[Hisory]", obj);
+    
 
     if (historyActions({})[obj.id]) {
         historyActions({ obj, undo: shouldUndo })[obj.id]()

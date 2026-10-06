@@ -49,7 +49,7 @@
             {#key outSlide}
                 <span transition:fade|local={transition} style="pointer-events: none;">
                     {#if showSlide}
-                        {#each showSlide?.items as item}
+                        {#each showSlide?.items || [] as item}
                             <Textbox {item} />
                         {/each}
                     {/if}

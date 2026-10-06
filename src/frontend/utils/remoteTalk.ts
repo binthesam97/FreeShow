@@ -4,6 +4,7 @@ import type { Show } from "../../types/Show"
 import type { ClientMessage } from "../../types/Socket"
 import { AudioPlayer } from "../audio/audioPlayer"
 import { loadJsonBible } from "../components/drawer/bible/scripture"
+import { loadSongBooks, createSongShow } from "../components/drawer/songbooks/songbooks"
 import { clone, keysToID, removeDeleted } from "../components/helpers/array"
 import { getThumbnailPath, mediaSize } from "../components/helpers/media"
 import { getAllNormalOutputs, getFirstActiveOutput, setOutput } from "../components/helpers/output"
@@ -13,7 +14,7 @@ import { updateOut } from "../components/helpers/showActions"
 import { _show } from "../components/helpers/shows"
 import { clearAll } from "../components/output/clear"
 import { REMOTE } from "./../../types/Channels"
-import { actions, actionTags, activePage, activeProject, activeShow, activeTimers, audioChannelsData, categories, connections, dictionary, folders, language, openedFolders, outLocked, outputs, overlayCategories, overlays, playerVideos, projects, remotePassword, runningActions, scriptures, shows, showsCache, styles, templateCategories, templates, timers, triggers, variables, variableTags, volume } from "./../stores"
+import { actions, actionTags, activePage, activeProject, activeShow, activeTimers, audioChannelsData, categories, connections, dictionary, folders, language, openedFolders, outLocked, outputs, overlayCategories, overlays, playerVideos, projects, remotePassword, runningActions, scriptures, shows, showsCache, styles, templateCategories, templates, timers, triggers, variables, variableTags, volume, songBooks, activeSongBookSong } from "./../stores"
 import { lastClickTime } from "./common"
 import { translateText } from "./language"
 import { send } from "./request"
@@ -41,6 +42,16 @@ export const receiveREMOTE: any = {
     },
     GET_MIXER: (msg: any) => {
         msg.data = getMixerPayload()
+        return msg
+    },
+    GET_SONGBOOKS: async (msg: any) => {
+        let books = get(songBooks)
+        if (!Object.keys(books).length) {
+            books = await loadSongBooks()
+            if (Object.keys(books).length) songBooks.set(books)
+        }
+        msg.channel = "SONGBOOKS"
+        msg.data = books
         return msg
     },
     SET_VOLUME: (msg: any) => {
@@ -82,6 +93,26 @@ export const receiveREMOTE: any = {
         msg.data = getMixerPayload()
         return msg
     },
+    GET_SHOW: async (msg: ClientMessage) => {
+        const id: string = msg.data
+        if (!id) return
+        const show = get(showsCache)[id]
+        if (!show) return
+
+        msg.channel = "SHOW"
+        msg.data = clone({ ...(await convertBackgrounds(show)), id })
+        return msg
+    },
+    GET_ACTIVE_SHOW: async (msg: ClientMessage) => {
+        const activeS = get(activeShow)
+        if (!activeS?.id) return
+        const show = get(showsCache)[activeS.id]
+        if (!show) return
+
+        msg.channel = "SHOW"
+        msg.data = clone({ ...(await convertBackgrounds(show)), id: activeS.id })
+        return msg
+    },
     ACCESS: (msg: any) => {
         if (get(remotePassword).length && msg.data !== get(remotePassword)) return { id: msg.id, channel: "ERROR", data: "wrongPass" }
 
@@ -100,22 +131,46 @@ export const receiveREMOTE: any = {
     //   return msg
     // },
     SHOW: async (msg: any) => {
-        // msg.data = filterObjectArray(get(shows)[msg.data], [""])
-        const showID: string = msg.data
+        const data = msg.data
+        const showID = typeof data === "string" ? data : data.id
+        const autoPlay = typeof data === "object" ? !!data.autoPlay : false
 
         if (msg.id) {
             setConnectedState("REMOTE", msg.id, "active", showID)
         }
 
-        loadingShow = showID
+        loadingShow = showID 
         await loadShows([showID])
 
+        if (loadingShow !== showID) {
+            console.log("[REMOTE SHOW] Aborted: loadingShow !== showID", loadingShow, showID)
+            return
+        }
+
+        // Allows Svelte's internal layout reactivity loops (caused by createSongShow / history UPDATE) to fully settle natively globally before dispatching to projector engines.
+        await new Promise(r => setTimeout(r, 100))
+
+        if (autoPlay) {
+            console.log("[REMOTE SHOW] Executing autoPlay for showID:", showID)
+            // Ensure desktop switches to this show immediately for autoPlay
+            activeShow.set({ id: showID, type: "show" })
+
+            const layout = getLayoutRef(showID)
+            const activeLayout = _show(showID).get("settings.activeLayout") || ""
+            console.log("[REMOTE SHOW] Evaluated Layout Length:", layout.length, "activeLayout:", activeLayout)
+            if (layout.length) {
+                console.log("[REMOTE SHOW] Calling setOutput and updateOut!")
+                setOutput("slide", { id: showID, layout: activeLayout, index: 0 })
+                updateOut(showID, 0, layout)
+            } else {
+                console.log("[REMOTE SHOW] Skipped updateOut due to layout.length == 0. Raw layout:", layout)
+            }
+        } else {
+            console.log("[REMOTE SHOW] Opening show normally (no autoPlay)")
+            openShow(showID)
+        }
+
         msg.data = clone({ ...(await convertBackgrounds(get(showsCache)[showID])), id: showID })
-        // send(REMOTE, ["MEDIA"], { media: msg.data.media })
-
-        if (loadingShow !== showID) return
-
-        openShow(showID)
         return msg
     },
     OUT: async (msg: any) => {
@@ -199,6 +254,26 @@ export const receiveREMOTE: any = {
             return project
         })
 
+        return msg
+    },
+    GET_SONGBOOKS: async (msg: ClientMessage) => {
+        let books = get(songBooks)
+        if (!Object.keys(books).length) {
+            books = await loadSongBooks()
+            songBooks.set(books)
+        }
+        msg.data = books
+        return msg
+    },
+    START_SONG: async (msg: ClientMessage) => {
+        const { song, showTransliteration } = msg.data || {}
+        if (!song) return msg
+        activeSongBookSong.set({ song, showTransliteration })
+        
+        const showId = createSongShow()
+        if (showId) {
+            msg.data = showId
+        }
         return msg
     },
     GET_SCRIPTURE: async (msg: ClientMessage) => {
@@ -375,6 +450,8 @@ export async function initializeRemote(id: string) {
         layout: outSlide?.layout || null,
         styleRes
     }
+    console.log("Output channel", out);
+    
 
     if (out.slide !== null && outSlide?.id && outSlide?.id !== "temp") {
         oldOutSlide = outSlide.id
@@ -382,10 +459,9 @@ export async function initializeRemote(id: string) {
         out.show = await convertBackgrounds(get(showsCache)[oldOutSlide] || {})
         out.show.id = oldOutSlide
 
-        // Send slide thumbnails asynchronously
-        setTimeout(async () => {
-            window.api.send(REMOTE, await receiveREMOTE.SHOW({ channel: "SHOW", id, data: oldOutSlide }))
-        })
+        // Send slide thumbnails
+        const showMsg = await receiveREMOTE.SHOW({ channel: "SHOW", id, data: oldOutSlide })
+        if (showMsg) window.api.send(REMOTE, showMsg)
     }
 
     // Send targeted initial state to this connection
@@ -396,6 +472,19 @@ export async function initializeRemote(id: string) {
     // Send additional data
     send(REMOTE, ["SCRIPTURE"], get(scriptures))
     send(REMOTE, ["CATEGORIES"], get(categories))
+
+    // Send songbooks — load them first if not yet in memory
+    const currentBooks = get(songBooks)
+    if (Object.keys(currentBooks).length) {
+        send(REMOTE, ["SONGBOOKS"], currentBooks)
+    } else {
+        loadSongBooks().then((books) => {
+            if (Object.keys(books).length) {
+                songBooks.set(books)
+                // listener in listeners.ts will send SONGBOOKS automatically via subscribe
+            }
+        })
+    }
 }
 
 export async function convertBackgrounds(show: Show, noLoad = false, init = false) {

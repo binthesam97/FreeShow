@@ -10,12 +10,13 @@
     import Loading from "../../common/components/Loading.svelte"
     import { translate } from "../util/helpers"
     import { send } from "../util/socket"
-    import { _set, active, activeProject, activeShow, activeTab, createShow, dictionary, isCleared, outShow, projects, projectsOpened, scriptures, shows } from "../util/stores"
+    import { _set, active, activeProject, activeShow, activeTab, createShow, dictionary, isCleared, outShow, projects, projectsOpened, scriptures, shows, songbooks } from "../util/stores"
 
     // Phone mode components (always loaded - small footprint)
     import Lyrics from "./pages/Lyrics.svelte"
     import Project from "./pages/Project.svelte"
     import Scripture from "./pages/Scripture.svelte"
+    import Songbooks from "./pages/Songbooks.svelte"
     import Show from "./pages/Show.svelte"
     import ShowContent from "./pages/ShowContent.svelte"
     import Shows from "./pages/Shows.svelte"
@@ -31,6 +32,7 @@
     $: tabs = {
         shows: { name: translate("remote.shows", $dictionary), icon: "search" }, // shows
         scripture: { name: translate("tabs.scripture", $dictionary), icon: "scripture" },
+        songbooks: { name: translate("tabs.songbooks", $dictionary), icon: "songbooks" },
         project: { name: translate("remote.project", $dictionary), icon: "project" },
         show: { name: translate("remote.show", $dictionary), icon: "show" },
         slide: { name: translate("remote.slide", $dictionary), icon: "display_settings" } // slide
@@ -39,8 +41,9 @@
     $: tabsDisabled = {
         shows: $shows.length,
         scripture: Object.keys($scriptures).length,
+        songbooks: true, // Always explicitly enabled to allow lazy fetching
         project: $projects.length || $activeProject,
-        show: $activeShow || ($active?.type || "show") !== "show",
+        show: $activeShow || ($active?.type || "show") !== "show", 
         slide: $outShow,
         lyrics: $outShow
     }
@@ -142,6 +145,8 @@
                 <Shows />
             {:else if tab === "scripture"}
                 <Scripture />
+            {:else if tab === "songbooks"}
+                <Songbooks />
             {:else if tab === "project"}
                 <Project />
             {:else if tab === "show"}

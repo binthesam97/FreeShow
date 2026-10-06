@@ -38,6 +38,7 @@ export let outLayout: Writable<string | null> = writable(null)
 export let styleRes: Writable<any> = writable(null) // this is actually aspect ratio
 export let outShow: Writable<Show | null> = writable(null)
 export let layout: Writable<any[] | null> = writable(null)
+export let selectionLock: Writable<number> = writable(0) // Timestamp of last manual selection
 export let isCleared = writable({ all: true, background: true, slide: true, overlays: true, audio: true, slideTimers: true })
 
 export let projectsOpened: Writable<boolean> = writable(false)
@@ -57,6 +58,12 @@ export let scriptureMultiSelect = writable(false)
 export let selectedVerses = writable<string[]>([])
 export let openedScripture = writable(localStorage.getItem("scripture") || "")
 export let collectionId = writable(localStorage.getItem("collectionId") || "")
+
+export let songbooks: Writable<{ [key: string]: any }> = writable({})
+export let activeSongBookSong: Writable<{ song: any; showTransliteration: boolean } | null> = writable(null)
+export let songbookShowTransliterated = writable(localStorage.getItem("songbookShowTransliterated") === "true")
+songbookShowTransliterated.subscribe((val) => localStorage.setItem("songbookShowTransliterated", String(val)))
+export let openedSongbook = writable("")
 
 export let actions: Writable<{ [key: string]: any }> = writable({})
 export let actionTags: Writable<{ [key: string]: any }> = writable({})
@@ -134,6 +141,7 @@ export const _ = {
     styleRes,
     outShow,
     layout,
+    selectionLock,
     isCleared,
     projectsOpened,
     activeProject,
@@ -146,6 +154,10 @@ export const _ = {
     resized,
     openedScripture,
     collectionId,
+    songbooks,
+    openedSongbook,
+    songbookShowTransliterated,
+    activeSongBookSong,
     currentScriptureState,
     overlays,
     overlayCategories,

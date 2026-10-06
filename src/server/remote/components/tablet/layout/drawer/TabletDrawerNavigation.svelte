@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { categories, shows, activeCategory, dictionary, scriptures, openedScripture, collectionId, actions, actionTags, variables, variableTags, activeActionTagFilter, activeVariableTagFilter, functionsSubTab, timers, triggers, overlays, overlayCategories, activeOverlayCategory, templates, templateCategories, activeTemplateCategory } from "../../../../util/stores"
+    import { categories, shows, activeCategory, dictionary, scriptures, openedScripture, collectionId, actions, actionTags, variables, variableTags, activeActionTagFilter, activeVariableTagFilter, functionsSubTab, timers, triggers, overlays, overlayCategories, activeOverlayCategory, templates, templateCategories, activeTemplateCategory, songbooks, openedSongbook } from "../../../../util/stores"
     import { translate, keysToID, sortByName, buildCategoryData, type CategoryData } from "../../../../util/helpers"
     import { _set } from "../../../../util/stores"
     import Button from "../../../../../common/components/Button.svelte"
@@ -83,6 +83,15 @@
     function setCategory(catId: string) {
         _set("activeCategory", catId)
     }
+
+    // Songbooks tab logic
+    $: songbookEntries = id === "songbooks" ? keysToID($songbooks).map((a: any) => ({ ...a, icon: "songbooks" })) : []
+    $: songbookSections =
+        id === "songbooks"
+            ? [
+                  { id: "all_songbooks", label: "tabs.songbooks", items: songbookEntries }
+              ].filter((s) => s.items.length > 0)
+            : []
 
     // Functions tab logic - only computed when functions tab is active
     $: actionsTagsOnly = id === "functions" ? Object.values($actions).map((a) => a.tags || []) : []
@@ -262,6 +271,32 @@
                             {#if item.collection?.versions?.length}
                                 <span class="count">{item.collection.versions.length}</span>
                             {/if}
+                        </MaterialButton>
+                    {/each}
+                </div>
+            {/each}
+        </div>
+    {:else if id === "songbooks"}
+        <div class="tabSection">
+            {#each songbookSections as section}
+                <div class="section">
+                    <div class="title">{translate(section.label, $dictionary)}</div>
+                    {#each section.items as item}
+                        <MaterialButton
+                            class="tab {$openedSongbook === item.id ? 'active' : ''}"
+                            on:click={() => {
+                                openedSongbook.set(item.id)
+                                localStorage.setItem("songbook", item.id)
+                            }}
+                            style="width: 100%; font-weight: normal; padding: 0.2em 0.8em;"
+                            isActive={$openedSongbook === item.id}
+                            tab
+                        >
+                            <div style="max-width: 85%;" data-title={item.name}>
+                                <Icon id={item.icon} size={1} white={$openedSongbook === item.id} />
+                                <p style="margin: 5px;">{item.name}</p>
+                            </div>
+                            <span class="count">{item.songs?.length || 0}</span>
                         </MaterialButton>
                     {/each}
                 </div>
