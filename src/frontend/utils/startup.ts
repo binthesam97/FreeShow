@@ -3,11 +3,13 @@ import type { ContentProviderId } from "../../electron/contentProviders/base/typ
 import { OUTPUT, STARTUP } from "../../types/Channels"
 import { Main } from "../../types/IPC/Main"
 import { checkStartupActions } from "../components/actions/actions"
+import { syncIcsCalendars } from "../components/drawer/calendar/calendars"
 import { getTimeFromInterval } from "../components/helpers/time"
 import { requestMain, requestMainMultiple, sendMain, sendMainMultiple } from "../IPC/main"
 import { cameraManager } from "../media/cameraManager"
-import { activePopup, alertMessage, cachePath, contentProviderData, currentWindow, deviceId, driveKeys, isDev, language, loaded, loadedState, os, providerConnections, scriptures, shows, special, version, windowState } from "../stores"
+import { activePopup, activeProfile, alertMessage, cachePath, cloudSyncData, contentProviderData, currentWindow, dataPath, deviceId, driveKeys, isDev, loaded, loadedState, os, profiles, providerConnections, shows, special, version, windowState } from "../stores"
 import { startTracking } from "./analytics"
+import { setupCloudSync } from "./cloudSync"
 import { wait, waitUntilValueIsDefined } from "./common"
 import { getDefaultElements } from "./createData"
 import { setLanguage } from "./language"
@@ -51,6 +53,8 @@ export async function startup() {
         },
         "startup"
     )
+
+    window.api.send(STARTUP, { channel: "READY" })
 }
 
 async function startupMain() {
@@ -68,21 +72,28 @@ async function startupMain() {
 
     storeSubscriber()
     remoteListen()
-    checkStartupActions()
+
+    const hasProfiles = Object.keys(get(profiles)).filter((a) => a !== "admin").length > 0
+    if (!hasProfiles || get(activeProfile) !== null) checkStartupActions()
+
     startTracking()
-    contentProviderSync()
+    contentProviderSync(true)
 
     // custom alert
-    if (get(language) === "no" && !get(activePopup) && !Object.values(get(scriptures)).find((a) => ["eea18ccd2ca05dde-01", "7bcaa2f2e77739d5-01"].includes(a.id || "")) && Math.random() < 0.05) {
-        alertMessage.set('Bibel 2011 Bokmål/Nynorsk er nå tilgjengelig som API i "Bibel"-menyen!')
-        activePopup.set("alert")
-    }
+    // if (Math.random() < 0.01) {
+    //     alertMessage.set("")
+    //     activePopup.set("alert")
+    // }
 
     await wait(2000)
+
     autoBackup()
     await wait(3000)
+
     unsavedUpdater()
+    windowFocusListener()
     cameraManager.initializeCameraWarming()
+    syncIcsCalendars()
 
     // CHECK LISTENERS
     // console.log(window.api.getListeners())
@@ -90,6 +101,20 @@ async function startupMain() {
     // RAM MONITOR (every 10 minutes)
     setTimeout(() => checkRamUsage(), 10000)
     setInterval(() => checkRamUsage(), 600000)
+}
+
+// window focus state
+function windowFocusListener() {
+    if (typeof window === "undefined") return
+
+    const updateFocus = () => {
+        if (document.hasFocus()) document.body.classList.remove("unfocused")
+        else document.body.classList.add("unfocused")
+    }
+
+    window.addEventListener("focus", updateFocus)
+    window.addEventListener("blur", updateFocus)
+    updateFocus()
 }
 
 async function checkRamUsage() {
@@ -106,32 +131,44 @@ function autoBackup() {
     const minTimeToBackup = getTimeFromInterval(interval)
 
     if (now - lastBackup > minTimeToBackup) {
-        special.update((a) => {
-            // subtract one hour from time to keep it relatively the same with each backup
-            a.autoBackupPrevious = now - 3600000
-            return a
-        })
-
-        // 20% chance of backing up all shows as well (just in case)
-        save(false, { backup: true, isAutoBackup: true, backupShows: Math.random() < 0.2 })
+        save(false, { backup: true, isAutoBackup: true })
     }
 }
 
-export function contentProviderSync() {
+const lastProviderSyncs: Partial<Record<ContentProviderId, number>> = {}
+export function contentProviderSync(startup = false, remainingOnly = false) {
+    const isCloudSyncEnabled = get(cloudSyncData).enabled && get(cloudSyncData).id
+
+    if (isCloudSyncEnabled && !remainingOnly) {
+        setupCloudSync(startup)
+        return
+    }
+
     const providers = [
-        { providerId: "planningcenter" as ContentProviderId, scope: "services" },
+        { providerId: "planningcenter" as ContentProviderId, scope: "services", data: get(contentProviderData).planningcenter?.syncFolderIds || [], autoSync: get(contentProviderData).planningcenter?.autoSync !== false },
         { providerId: "churchApps" as ContentProviderId, scope: "plans", data: { shows: get(shows), categories: get(contentProviderData).churchApps?.syncCategories || [] } },
-        { providerId: "amazinglife" as ContentProviderId, scope: "openid profile email" }
+        { providerId: "amazinglife" as ContentProviderId, scope: "openid profile email" },
+        { providerId: "onstage" as ContentProviderId, scope: "presenter", data: get(contentProviderData).onstage || {}, autoSync: get(contentProviderData).onstage?.autoSync !== false }
     ]
 
-    providers.forEach(({ providerId, scope, data }) => {
+    providers.forEach(({ providerId, scope, data, autoSync }) => {
+        if (startup && autoSync === false) return
+
+        // make sure the same provider does not run multiple times at once
+        const now = Date.now()
+        const lastSync = lastProviderSyncs[providerId] || 0
+        if (now - lastSync < 5000) return
+        lastProviderSyncs[providerId] = now
+
         const cloudOnly = providerId === "churchApps" && get(special).churchAppsCloudOnly
         sendMain(Main.PROVIDER_STARTUP_LOAD, { providerId, scope, data, cloudOnly })
     })
 
     setTimeout(() => {
+        if (get(cloudSyncData).id) return
+
         const hasDriveSync = typeof get(driveKeys) === "object" && Object.keys(get(driveKeys)).length
-        if (!Object.keys(get(providerConnections)).length && !get(activePopup) && Math.random() < (hasDriveSync ? 0.3 : 0.03)) {
+        if (!Object.keys(get(providerConnections)).length && !get(activePopup) && Math.random() < (hasDriveSync ? 0.2 : 0.001)) {
             alertMessage.set("You can now set up free cloud sync with ChurchApps! Go to Settings>Files to log in." + (hasDriveSync ? "<br>It's recommended to switch over from your current Google Sync!" : ""))
             activePopup.set("alert")
         }
@@ -140,12 +177,26 @@ export function contentProviderSync() {
 
 function getMainData() {
     requestMainMultiple({
-        [Main.VERSION]: (a) => version.set(a),
-        [Main.IS_DEV]: (a) => isDev.set(a),
-        [Main.GET_OS]: (a) => os.set(a),
-        [Main.GET_CACHE_PATH]: (a) => cachePath.set(a),
-        [Main.DEVICE_ID]: (a) => deviceId.set(a),
-        [Main.MAXIMIZED]: (a) => windowState.set({ ...windowState, maximized: a })
+        [Main.VERSION]: (a) => (a ? version.set(a) : null),
+        [Main.IS_DEV]: (a) => isDev.set(a || false),
+        [Main.GET_OS]: (a) => (a ? os.set(a) : null),
+        [Main.GET_CACHE_PATH]: (a) => cachePath.set(a || ""),
+        [Main.DEVICE_ID]: (a) => deviceId.set(a || ""),
+        [Main.MAXIMIZED]: (a) => windowState.set({ ...get(windowState), maximized: a ?? false }),
+        [Main.DATA_PATH]: (a) => (a ? dataPath.set(a) : null),
+        // get connected providers, even before the first sync of the session
+        [Main.PROVIDER_CONNECTIONS]: (a) => {
+            if (!a) return
+            providerConnections.update((c) => {
+                Object.keys(a).forEach((providerId) => {
+                    // churchApps is handled separately, due to cloud sync
+                    if (providerId === "churchApps") return
+
+                    c[providerId as ContentProviderId] = true
+                })
+                return c
+            })
+        }
     })
 }
 

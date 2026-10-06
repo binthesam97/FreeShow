@@ -1,8 +1,10 @@
 <script lang="ts">
     import { onMount } from "svelte"
-    import { actions, categories, popupData } from "../../../stores"
-    import T from "../../helpers/T.svelte"
+    import { actions, activePopup, categories, popupData } from "../../../stores"
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
+    import Tip from "../Tip.svelte"
+    import MaterialButton from "../../inputs/MaterialButton.svelte"
+    import InputRow from "../../input/InputRow.svelte"
 
     let selectedCategory = $popupData?.id
     onMount(() => {
@@ -25,16 +27,18 @@
 
         currentAction = id
     }
+
+    function editAction() {
+        popupData.set({ id: currentAction })
+        activePopup.set("action")
+    }
 </script>
 
-<p class="tip"><T id="category.action_tip" /></p>
+<Tip type="info" value="category.action_tip" bottom={20} />
 
-<MaterialDropdown label="midi.start_action" options={actionOptions.map((a) => ({ label: a.name, value: a.id }))} value={currentAction} allowEmpty on:change={(e) => updateValue(e.detail)} />
-
-<style>
-    .tip {
-        margin-bottom: 10px;
-        opacity: 0.7;
-        font-size: 0.9em;
-    }
-</style>
+<InputRow>
+    <MaterialDropdown label="midi.start_action" options={actionOptions.map((a) => ({ label: a.name, value: a.id }))} value={currentAction} allowEmpty on:change={(e) => updateValue(e.detail)} />
+    {#if currentAction && $actions[currentAction]}
+        <MaterialButton title="titlebar.edit" icon="edit" on:click={editAction} />
+    {/if}
+</InputRow>

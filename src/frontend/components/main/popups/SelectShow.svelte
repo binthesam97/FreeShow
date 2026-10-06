@@ -1,6 +1,6 @@
 <script lang="ts">
     import { activePopup, popupData, shows, sortedShowsList } from "../../../stores"
-    import { formatSearch, isRefinement, showSearch, tokenize } from "../../../utils/search"
+    import { formatSearch, showSearch } from "../../../utils/search"
     import VirtualList from "../../drawer/VirtualList.svelte"
     import { clone, keysToID, sortByName } from "../../helpers/array"
     import Icon from "../../helpers/Icon.svelte"
@@ -13,36 +13,22 @@
     $: privateShows = sortByName(keysToID($shows).filter((a) => a.private === true))
 
     $: defaultShows = clone([...(showPrivate ? privateShows : []), ...sortedShows])
-    $: if (defaultShows) search()
+    $: if (defaultShows) search(searchValue)
 
     $: active = $popupData.active || ""
 
     let searchedShows = clone(defaultShows)
     let searchValue = ""
-    let previousSearchTokens: string[] = []
-    let previousFilteredShows = clone(defaultShows)
 
-    function search(value: string | null = null) {
-        searchValue = formatSearch(value || "")
+    function search(value: string) {
+        searchValue = value || ""
 
-        if (searchValue.length < 2) {
+        if (formatSearch(searchValue).trim().length < 2) {
             searchedShows = clone(defaultShows)
-            previousSearchTokens = []
-            previousFilteredShows = clone(defaultShows)
             return
         }
 
-        const currentTokens = tokenize(searchValue)
-        const narrowing = isRefinement(currentTokens, previousSearchTokens)
-        const baseList = narrowing ? previousFilteredShows : clone(defaultShows)
-
-        searchedShows = showSearch(searchValue, baseList)
-
-        if (searchValue.length > 15 && searchedShows.length > 50) searchedShows = searchedShows.slice(0, 50)
-        if (searchValue.length > 30 && searchedShows.length > 30) searchedShows = searchedShows.slice(0, 30)
-
-        previousSearchTokens = currentTokens
-        previousFilteredShows = searchedShows
+        searchedShows = showSearch(searchValue, defaultShows)
 
         // scroll to top
         document.querySelector("svelte-virtual-list-viewport")?.scrollTo(0, 0)
@@ -75,7 +61,7 @@
 
 <div class="list">
     {#if sortedShows.length}
-        {#if searchValue.length > 1 && searchedShows.length === 0}
+        {#if formatSearch(searchValue).trim().length > 1 && searchedShows.length === 0}
             <Center size={1.2} faded><T id="empty.search" /></Center>
         {:else}
             <VirtualList items={searchedShows} let:item={show}>

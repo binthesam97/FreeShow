@@ -2,10 +2,11 @@
     import { onMount } from "svelte"
     import { uid } from "uid"
     import type { Event } from "../../../../types/Calendar"
-    import { activeDays, activePopup, drawerTabsData, eventEdit, events, popupData } from "../../../stores"
+    import { activeDays, activePopup, calendars, drawerTabsData, eventEdit, events, popupData } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import CreateAction from "../../actions/CreateAction.svelte"
     import { getTime, isSameDay } from "../../drawer/calendar/calendar"
+    import { createCustomCalendar, isCalendarImported } from "../../drawer/calendar/calendars"
     import { createRepeatedEvents, updateEventData } from "../../drawer/calendar/event"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
@@ -87,7 +88,8 @@
             location: "",
             repeat: false,
             repeatData: defaultRepeatData,
-            notes: ""
+            notes: "",
+            origin: undefined
         }
 
         // update action
@@ -107,6 +109,12 @@
         date = new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes())
         date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
         return date.toISOString().substring(0, 10)
+    }
+
+    const parseISODate = (isoStr: string) => {
+        if (!isoStr) return new Date()
+        const [year, month, day] = isoStr.split("-").map(Number)
+        return new Date(year, month - 1, day)
     }
 
     function saveAll() {
@@ -163,11 +171,18 @@
         return new Date([...newDate, time].join(" "))
     }
 
-    const repeats = [
+    $: weekdayIndex = editEvent.isoFrom ? parseISODate(editEvent.isoFrom).getDay() : 1
+    $: weekdayName = translateText("weekday." + (weekdayIndex === 0 ? 7 : weekdayIndex))
+    $: repeats = [
         { value: "day", label: translateText("calendar.day") },
         { value: "week", label: translateText("calendar.week") },
         { value: "month", label: translateText("calendar.month") },
-        { value: "year", label: translateText("calendar.year") }
+        { value: "year", label: translateText("calendar.year") },
+        { value: "1st", label: "1st " + weekdayName },
+        { value: "2nd", label: "2nd " + weekdayName },
+        { value: "3rd", label: "3rd " + weekdayName },
+        { value: "4th", label: "4th " + weekdayName },
+        { value: "last", label: "last " + weekdayName }
     ]
 
     // "repeat_on": "on",
@@ -264,6 +279,41 @@
     let actionSelector: any = null
 
     let showMore = false
+
+    $: customCalendars = Object.values($calendars || {}).filter((cal: any) => !isCalendarImported(cal))
+    $: currentCal = editEvent.origin ? $calendars?.[editEvent.origin] || Object.values($calendars || {}).find((c: any) => c.name === editEvent.origin) : null
+    $: isCurrentOriginImported = editEvent.origin ? (currentCal ? isCalendarImported(currentCal) : false) : false
+
+    $: calendarOptions = isCurrentOriginImported
+        ? [
+              {
+                  value: editEvent.origin || "",
+                  label: currentCal?.name || editEvent.origin,
+                  icon: "calendar",
+                  iconColor: currentCal?.color || editEvent.color
+              }
+          ]
+        : customCalendars.map((cal: any) => ({
+              value: cal.id,
+              label: cal.name,
+              icon: "calendar",
+              iconColor: cal.color
+          }))
+
+    function handleCalendarChange(calId: string) {
+        editEvent.origin = calId || undefined
+        if (calId && $calendars?.[calId]?.color) {
+            editEvent.color = $calendars[calId].color
+        }
+    }
+
+    function handleCreateCalendar(name: string) {
+        const newCalId = createCustomCalendar(name)
+        editEvent.origin = newCalId
+        if ($calendars?.[newCalId]?.color) {
+            editEvent.color = $calendars[newCalId].color
+        }
+    }
 </script>
 
 {#if selectedType === "event"}
@@ -273,6 +323,10 @@
     </InputRow>
 
     {#if showMore}
+        <InputRow>
+            <MaterialDropdown label="calendar.calendar" value={editEvent.origin || ""} options={calendarOptions} disabled={isCurrentOriginImported} allowEmpty addNew={isCurrentOriginImported ? null : "new.calendar"} on:change={(e) => handleCalendarChange(e.detail)} on:new={(e) => handleCreateCalendar(e.detail)} />
+        </InputRow>
+
         <MaterialTextInput label="calendar.location" value={editEvent.location || ""} on:input={(e) => (editEvent.location = e.detail)} />
         <MaterialTextInput label="calendar.notes" value={editEvent.notes || ""} on:input={(e) => (editEvent.notes = e.detail)} />
     {/if}
@@ -323,8 +377,12 @@
 
     {#if editEvent.repeat}
         <InputRow style="background-color: var(--primary-darker);border-radius: 4px;">
-            <span style="display: flex;align-items: center;font-size: 0.9em;padding: 0 10px;"><T id="calendar.repeat_every" /></span>
-            <MaterialNumberInput label="edit.count" disabled={!!editEvent.group} style="width: 80px;" value={editEvent.repeatData.count} min={1} on:change={(e) => (editEvent.repeatData.count = e.detail)} />
+            {#if ["1st", "2nd", "3rd", "4th", "last"].includes(editEvent.repeatData.type)}
+                <span style="display: flex;align-items: center;font-size: 0.9em;padding: 0 10px;">Repeat monthly on the</span>
+            {:else}
+                <span style="display: flex;align-items: center;font-size: 0.9em;padding: 0 10px;"><T id="calendar.repeat_every" /></span>
+                <MaterialNumberInput label="edit.count" disabled={!!editEvent.group} style="width: 80px;" value={editEvent.repeatData.count} min={1} on:change={(e) => (editEvent.repeatData.count = e.detail)} />
+            {/if}
             <MaterialDropdown label="edit.interval" disabled={!!editEvent.group} style="width: 100px;" options={repeats} value={editEvent.repeatData.type} on:change={(e) => (editEvent.repeatData.type = e.detail)} />
             <!-- TODO: select weekdays? -->
             <!-- {#if selectedRepeat.id === "week"}

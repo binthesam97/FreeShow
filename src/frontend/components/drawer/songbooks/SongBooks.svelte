@@ -3,7 +3,7 @@
     import { activeSongBookSong, outLocked, outputs, songBooks, templates, songbookShowTransliterated } from "../../../stores"
     import { setDefaultSongbookTemplates } from "../../../utils/createData"
     import { getFirstActiveOutput } from "../../helpers/output"
-    import { nextSlide, previousSlide } from "../../helpers/showActions"
+    import { OutputHelper } from "../../helpers/OutputHelper"
     import { createSongSearchEntry, createSongShow, loadSongBooks, normalizeLyrics, playSong, searchSongbookSongs, sortSongsByNumber } from "./songbooks"
     import type { SongSearchEntry, SongVerse } from "./songbooks"
     import Icon from "../../helpers/Icon.svelte"
@@ -215,10 +215,10 @@
 {#if selectedSong}
     <FloatingInputs arrow let:open>
         {#if open || isActiveInOutput}
-            <MaterialButton disabled={!canGoPrevious} title="preview._previous_slide [Arrow Left]" on:click={previousSlide}>
+            <MaterialButton disabled={!canGoPrevious} title="preview._previous_slide [Arrow Left]" on:click={() => OutputHelper.advanceOutputs("previous")}>
                 <Icon size={1.3} id="previous" white={!isActiveInOutput} />
             </MaterialButton>
-            <MaterialButton disabled={!canGoNext} title="preview._next_slide [Arrow Right]" on:click={nextSlide}>
+            <MaterialButton disabled={!canGoNext} title="preview._next_slide [Arrow Right]" on:click={() => OutputHelper.advanceOutputs("next")}>
                 <Icon size={1.3} id="next" white={!isActiveInOutput} />
             </MaterialButton>
         {/if}

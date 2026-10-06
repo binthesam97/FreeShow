@@ -1,8 +1,8 @@
 import type { Item, Show } from "../../../types/Show"
-import { sanitizeVerseText } from "../../../common/scripture/sanitizeVerseText"
-import { setError, translate } from "./helpers"
+import { sanitizeVerseText } from "../../common/util/scripture"
+import { applyThemeColors, setError, translate } from "./helpers"
 import { send } from "./socket"
-import { _, _get, _set, _update, currentScriptureState, overlays, scriptures, scriptureCache, timers, triggers, activeTimers, runningActions, mixer, songbooks, activeSongBookSong } from "./stores"
+import { _, _get, _set, _update, activeTimers, currentScriptureState, overlays, runningActions, scriptureCache, scriptures, timers, songbooks } from "./stores"
 
 function sanitizeBiblePayload(bible: any) {
     if (!bible || !Array.isArray(bible.books)) return bible
@@ -33,6 +33,9 @@ function sanitizeChapterVerses(verses: any) {
 
 export type ReceiverKey = keyof typeof receiver
 export const receiver = {
+    THEME_COLORS: (data: any) => {
+        applyThemeColors(data)
+    },
     PASSWORD: (data: any) => {
         if (data.dictionary) _set("dictionary", data.dictionary)
         let password: boolean = data.password
@@ -56,7 +59,8 @@ export const receiver = {
         })
     },
     ACCESS: () => {
-        if (_get("password").remember && _get("password").stored.length) localStorage.password = _get("password").stored
+        const storedPwd = _get("password").stored
+        if (storedPwd && storedPwd.length) localStorage.password = storedPwd
         _set("isConnected", true)
 
         // Request current output data which should include scripture state
@@ -308,11 +312,11 @@ export const receiver = {
     VARIABLE_TAGS: (data: any) => {
         _set("variableTags", data)
     },
+    TIMER_TAGS: (data: any) => {
+        _set("timerTags", data)
+    },
     TIMERS: (data: any) => {
         timers.set(data)
-    },
-    TRIGGERS: (data: any) => {
-        triggers.set(data)
     },
     ACTIVE_TIMERS: (data: any) => {
         activeTimers.set(data)
@@ -334,16 +338,23 @@ export const receiver = {
         _set("actionTags", data.actionTags)
         _set("variables", data.variables)
         _set("variableTags", data.variableTags)
+        _set("timerTags", data.timerTags)
         timers.set(data.timers)
-        triggers.set(data.triggers)
         activeTimers.set(data.activeTimers)
         runningActions.set(data.runningActions)
     },
+    AUDIO_ROUTING: (data: any) => {
+        _set("audioRouting", data)
+    },
+    AUDIO_CHANNELS_DATA: (data: any) => {
+        _set("audioChannelsData", data || {})
+    },
+    GET_AUDIO_MIXER: (data: any) => {
+        if (data.audioRouting !== undefined) _set("audioRouting", data.audioRouting)
+        if (data.audioChannelsData !== undefined) _set("audioChannelsData", data.audioChannelsData || {})
+    },
     GET_AUDIO: (data: any) => {
         _set("audio", data)
-    },
-    GET_MIXER: (data: any) => {
-        _set("mixer", data)
     },
     MEDIA: (data: any) => {
         if (!data) {
@@ -370,52 +381,6 @@ export const receiver = {
         }
 
         _set("audio", audioFiles)
-    },
-    VOLUME: (data: any) => {
-        mixer.update((prev: any) => {
-            const current = prev || {}
-            return {
-                ...current,
-                main: {
-                    ...current.main,
-                    volume: data
-                }
-            }
-        })
-    },
-    OUTPUTS: (data: any) => {
-        mixer.update((prev: any) => {
-            const current = prev || {}
-            const currentOutputs = current.outputs || {}
-
-            // Merge new data with existing outputs to preserve volume/mute state if not present in update
-            const newOutputs = { ...currentOutputs }
-            Object.keys(data).forEach((id) => {
-                newOutputs[id] = { ...(newOutputs[id] || {}), ...data[id] }
-            })
-
-            return {
-                ...current,
-                outputs: newOutputs
-            }
-        })
-    },
-    AUDIO_CHANNELS_DATA: (data: any) => {
-        mixer.update((prev: any) => {
-            const current = prev || { main: {}, outputs: {} }
-            const { main, ...outs } = data
-
-            const outputs = { ...current.outputs }
-            Object.keys(outs).forEach((id) => {
-                if (outputs[id]) outputs[id] = { ...outputs[id], ...outs[id] }
-            })
-
-            return {
-                ...current,
-                main: { ...current.main, ...main },
-                outputs
-            }
-        })
     },
 
     /////

@@ -3,11 +3,15 @@ import { mainWindow, powerSaveBlockerId, resetMainWindow } from ".."
 import { Main } from "../../types/IPC/Main"
 import { ToMain } from "../../types/IPC/ToMain"
 import { sendMain, sendToMain } from "../IPC/main"
+import { StreamReceiverHost } from "../capture/StreamReceiverHost"
 import { NdiReceiver } from "../ndi/NdiReceiver"
 import { OutputHelper } from "../output/OutputHelper"
 import { closeServers } from "../servers"
+import { RtmpStreamer } from "../streaming/RtmpStreamer"
 import { stopApiListener } from "./api"
 import { stopMidi } from "./midi"
+import { SpeechToText } from "../ai/stt/SpeechToTextManager"
+import { unsetPlayingAudio } from "../audio/nowPlaying"
 
 export let dialogClose = false // is unsaved
 export function callClose(e: Electron.Event) {
@@ -21,13 +25,23 @@ export function saveAndClose() {
     sendMain(Main.CLOSE, true)
 }
 
+let isExiting = false
 export async function exitApp() {
+    if (isExiting) return
+    isExiting = true
+
     console.info("Closing app!")
 
     dialogClose = false
 
+    SpeechToText.stop()
+
+    RtmpStreamer.stopAll()
     await OutputHelper.Lifecycle.closeAllOutputs()
     NdiReceiver.stopReceiversNDI()
+    StreamReceiverHost.stop()
+
+    unsetPlayingAudio()
 
     closeServers()
     stopApiListener()
@@ -60,6 +74,7 @@ export async function exitApp() {
         }, 500)
     } catch (err) {
         console.error("Failed closing app:", err)
+        isExiting = false
     }
 }
 

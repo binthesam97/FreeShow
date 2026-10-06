@@ -1,6 +1,7 @@
 <script lang="ts">
+    import { onDestroy } from "svelte"
     import { fade } from "svelte/transition"
-    import { activePage, activePopup, contextActive, contextData, currentWindow, dictionary, localeDirection, os, special, spellcheck, theme, themes } from "../../stores"
+    import { activePage, activePopup, companion, contextActive, contextData, currentWindow, dictionary, localeDirection, os, slideDeleteHighlight, special, spellcheck, theme, themes } from "../../stores"
     import { translateText } from "../../utils/language"
     import { closeContextMenu } from "../../utils/shortcuts"
     import { getEditItems } from "../edit/scripts/itemHelpers"
@@ -10,6 +11,7 @@
     import { contextMenuGroups, contextMenuItems, contextMenuLayouts } from "./contextMenus"
     import { flattenMenuItems, handleKeydown as handleSearchKeydown, searchMenuItems, type FlatMenuItem } from "./contextMenuSearch"
     import { quickLoadItems } from "./loadItems"
+    import { saveTextSelectionRange } from "./menuClick"
     import SpellCheckMenu from "./SpellCheckMenu.svelte"
 
     let contextElem: HTMLDivElement | null = null
@@ -27,12 +29,13 @@
     let lastTriggeredElem: HTMLDivElement | null = null // doesn't store the $selected state
     function onContextMenu(e: MouseEvent) {
         spellcheck.set(null)
+        saveTextSelectionRange()
 
         let target: any = e.target
         if (!target || closingMenuTimeout) return
 
-        let input = ["text", "textarea"].includes(target.type) && !target.closest(".numberInput")
-        if ((!input && (target.closest(".contextMenu") || $activePopup)) || target.closest(".nocontext")) {
+        let input = ["text", "textarea"].includes(target.type) && !target.closest?.(".numberInput")
+        if ((!input && (target.closest?.(".contextMenu") || $activePopup)) || target.closest?.(".nocontext")) {
             closeContextMenu()
             return
         }
@@ -44,7 +47,7 @@
         // side = "right"
         translate = 0
 
-        contextElem = target.closest(".context") || document.body
+        contextElem = target.closest?.(".context") || document.body
         let id: string | null = contextElem?.classList.length ? [...contextElem?.classList].find((c: string) => c.includes("#")) || null : null
 
         // don't show drawer context menu in search input
@@ -55,7 +58,15 @@
             contextElem = target
         }
 
-        activeMenu = getContextMenu(id) || contextMenuLayouts.default
+        activeMenu = [...(getContextMenu(id) || contextMenuLayouts.default)]
+        // show "Copy ID" button if API is enabled
+        if ($companion?.enabled && id) {
+            const baseId = id.slice(1).split("_readonly")[0].split("_default")[0]
+            const idCopyableMenus = ["action", "overlay_card", "drawer_show_button", "global_timer", "variable", "project_button", "template_card", "stage_slide", "style", "audio_stream", "interaction", "camera_card", "screen_card", "output_screen", "output_screen_stage"]
+            if (idCopyableMenus.includes(baseId) && !activeMenu.includes("copy_id")) {
+                activeMenu.push("SEPARATOR", "copy_id")
+            }
+        }
 
         let contextHeight = activeMenu.reduce((acc, id) => acc + (id.includes("GROUP") ? 73.6 : id === "SEPARATOR" ? 17 : 33.6), 0) + 16
         // if ($spellcheck?.suggestions?.length) contextHeight += $spellcheck.suggestions.length * 33.6 + 33.6
@@ -94,7 +105,7 @@
     }
 
     const click = (e: MouseEvent) => {
-        if (!e.target?.closest(".contextMenu")) closeContextMenu()
+        if (!e.target?.closest?.(".contextMenu")) closeContextMenu()
     }
 
     function handleKeydown(e: KeyboardEvent) {
@@ -107,7 +118,13 @@
 
     // prevent duplicated menus (due to Svelte transition bug)
     let closingMenuTimeout: NodeJS.Timeout | null = null
-    $: if ($contextActive === false) startCloseTimer()
+    $: if ($contextActive === false) {
+        startCloseTimer()
+        slideDeleteHighlight.set(null)
+    }
+    onDestroy(() => {
+        slideDeleteHighlight.set(null)
+    })
     function startCloseTimer() {
         if (!highlighted.id) return
         if (contextElem) {
@@ -133,7 +150,7 @@
     function shouldShowMenuWithItems(id: string) {
         if (id === "rearrange") return getEditItems().length > 1
 
-        if (id === "bind_to") return $contextData.outputList
+        if (id === "bind_to" || id === "bind_to_scene") return $contextData.outputList
         if (id === "format") return $contextData.textContent || $activePage !== "show"
         if (id === "remove_layers") return $contextData.layers
         if (id === "tag_filter") return $contextData.tags
@@ -141,6 +158,7 @@
         if (id === "player_tag_filter") return $contextData.player_tags
         if (id === "action_tag_filter") return $contextData.action_tags
         if (id === "variable_tag_filter") return $contextData.variable_tags
+        if (id === "timer_tag_filter") return $contextData.timer_tags
 
         return true
     }
@@ -161,7 +179,7 @@
     let rgb = { r: 35, g: 35, b: 45 }
     $: if ($theme) updateColor()
     function updateColor() {
-        const color = $themes[$theme]?.colors["primary"]
+        const color = $themes[$theme]?.colors?.["primary"]
         if (!color) return
 
         const newRgb = hexToRgb(color)

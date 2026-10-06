@@ -24,12 +24,16 @@ type InputColor = {
     type: "color"
     value: string
 }
+type InputColors = {
+    type: "colors"
+    value: string[]
+}
 type InputDropdown = {
     type: "dropdown"
     value: string
     options: DropdownOptions
 }
-export type DropdownOptions = { label: string; value: string; prefix?: string; style?: string; data?: string }[]
+export type DropdownOptions = { label: string; value: string; icon?: string; iconColor?: string; prefix?: string; style?: string; data?: string }[]
 
 type InputMidi = {
     type: "midi"
@@ -40,7 +44,7 @@ type InputRest = {
     value: RestValues
 }
 
-type Inputs = InputString | InputNumber | InputCheckbox | InputColor | InputDropdown | InputMidi | InputRest
+type Inputs = InputString | InputNumber | InputCheckbox | InputColor | InputColors | InputDropdown | InputMidi | InputRest
 export type Input = BaseInput & Inputs
 
 type ExtractType<T> = T extends { type: infer U } ? U : never

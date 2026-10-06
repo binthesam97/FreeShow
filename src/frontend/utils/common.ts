@@ -128,8 +128,8 @@ export function startAutosave() {
     previousAutosave = Date.now()
     autosaveTimeout = setTimeout(() => {
         const skip = get(activePopup) === "initialize" || get(activePopup) === "cloud_method"
-        if (!skip) save(false, { autosave: true })
-        startAutosave()
+        if (skip) startAutosave()
+        else save(false, { autosave: true })
     }, saveInterval)
 }
 
@@ -174,7 +174,6 @@ export function toggleRemoteStream() {
     if (get(disabledServers).output_stream === false) value.value = true
 
     setTimeout(() => {
-        // , rate: get(special).previewRate || "auto"
         send(OUTPUT, ["SET_VALUE"], { id: captureOutputId, key: "capture", value })
     }, 1800)
 }
@@ -226,6 +225,11 @@ export function triggerFunction(id: string) {
 export function isDarkTheme() {
     const contrastColor = getContrast(get(themes)[get(theme)]?.colors?.primary || "")
     return contrastColor === "#FFFFFF"
+}
+
+// escape any text value, so it can be safely used inside a RegExp as plain text */
+export function escapeRegExp(value: string) {
+    return (value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 const throttled: { [key: string]: any } = {}

@@ -89,7 +89,7 @@
             slideItems = slide[$activeEdit.id!]?.items
         }
 
-        if (!slideItems) return
+        if (!slideItems?.[index]) return
 
         let actions = clone(slideItems[index].actions)
         delete actions[action]
@@ -116,15 +116,26 @@
     $: textTransform = !!(styles["text-transform"] && styles["text-transform"] !== "none")
 
     let conditionsUpdater = 0
-    const updaterInterval = setInterval(() => conditionsUpdater++, 3000)
-    onDestroy(() => clearInterval(updaterInterval))
+    let isMic = false
+    $: isMic = JSON.stringify(item?.conditions?.showItem || "").includes('"element":"volume"')
 
-    $: showItemState = isConditionMet(item?.conditions?.showItem, getItemText(item), "default", conditionsUpdater)
+    let updaterInterval: NodeJS.Timeout | undefined
+    $: {
+        if (updaterInterval) clearInterval(updaterInterval)
+        if (item?.conditions?.showItem) {
+            updaterInterval = setInterval(() => conditionsUpdater++, isMic ? 100 : 3000)
+        }
+    }
+    onDestroy(() => {
+        if (updaterInterval) clearInterval(updaterInterval)
+    })
+
+    $: showItemState = item?.conditions?.showItem ? isConditionMet(item.conditions.showItem, getItemText(item), "default", conditionsUpdater) : false
 </script>
 
 <!-- all icons are square, so only corner resizers need to be active -->
 {#if !hideMovebox}
-    <Movebox {ratio} itemStyle={item?.style} active={$activeEdit.items.includes(index)} onlyCorners={item?.type === "icon"} />
+    <Movebox {ratio} itemStyle={item?.style} active={$activeEdit.items.includes(index)} onlyCorners={item?.type === "icon" && item?.id !== "empty"} />
 {/if}
 
 <div class="actions">

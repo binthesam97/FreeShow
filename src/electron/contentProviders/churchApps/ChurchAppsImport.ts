@@ -47,7 +47,7 @@ export class ChurchAppsImport {
         const projectItems: any[] = []
         const planItems: any = await ChurchAppsConnect.apiRequest({
             api: "doing",
-            authenticated: false,
+            authenticated: true,
             scope: "plans",
             endpoint: `/planItems/presenter/${plan.churchId}/${plan.id}`
         })
@@ -61,7 +61,7 @@ export class ChurchAppsImport {
                     id: uid(5),
                     name: pi.label || "",
                     scheduleLength: pi.seconds,
-                    notes: pi.description || ""
+                    notes: [pi.description, pi.assignees].filter(Boolean).join("\n")
                 })
 
                 for (const child of pi.children || []) {
@@ -148,10 +148,9 @@ export class ChurchAppsImport {
             console.error(err)
         }
 
-        if (!data?.arrangementKey) return null
+        if (!data || !data.arrangementKey || !data.arrangement || !data.song || !data.songDetail) return null
 
-        const sections = ChurchAppsShowBuilder.parseLyrics(data.arrangement.lyrics)
-        return ChurchAppsShowBuilder.createSongShow(data.arrangementKey, data.arrangement, data.song, data.songDetail, sections)
+        return ChurchAppsShowBuilder.createSongShow(data.arrangementKey, data.arrangement, data.song, data.songDetail)
     }
 
     private static async fetchVenueFeed(venueId: string): Promise<VenueFeed | null> {

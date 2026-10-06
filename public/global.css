@@ -1,21 +1,21 @@
 /* custom CMG Sans */
 @font-face {
     font-family: "CMGSans";
-    src: url("./fonts/CMGSans-Medium.ttf");
+    src: url("./fonts/CMGSans-Medium.woff2") format("woff2");
 }
 @font-face {
     font-family: "CMGSans";
-    src: url("./fonts/CMGSans-Bold.ttf");
+    src: url("./fonts/CMGSans-Bold.woff2") format("woff2");
     font-weight: bold;
 }
 @font-face {
     font-family: "CMGSans";
-    src: url("./fonts/CMGSans-MediumItalic.ttf");
+    src: url("./fonts/CMGSans-MediumItalic.woff2") format("woff2");
     font-style: italic;
 }
 @font-face {
     font-family: "CMGSans";
-    src: url("./fonts/CMGSans-BoldItalic.ttf");
+    src: url("./fonts/CMGSans-BoldItalic.woff2") format("woff2");
     font-weight: bold;
     font-style: italic;
 }
@@ -86,6 +86,13 @@ body {
     font-size: var(--font-size);
 }
 
+/* persistent resizing cursor */
+body[data-resizing],
+body[data-resizing] * {
+    cursor: var(--resizing-cursor) !important;
+    user-select: none !important;
+}
+
 /* scroll bar */
 ::-webkit-scrollbar {
     width: 8px;
@@ -109,6 +116,10 @@ body {
 /* selection */
 ::selection {
     background-color: var(--secondary-opacity);
+}
+
+body.unfocused ::selection {
+    background-color: rgb(128 128 128 / 0.4);
 }
 
 h1,

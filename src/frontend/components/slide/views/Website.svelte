@@ -7,10 +7,49 @@
 
     export let src: string
     export let navigation = true
+    export let zoom: number | undefined = undefined
     export let clickable = false
+    export let disablePreview = false
 
     let webview: any
     export let ratio: number
+
+    let webviewReady = false
+    let prevSrc = ""
+
+    function initWebview(node: HTMLElement) {
+        node.addEventListener("dom-ready", onDomReady)
+        node.addEventListener("did-finish-load", setStyle)
+        node.addEventListener("did-navigate", onDidNavigate)
+
+        return {
+            destroy() {
+                node.removeEventListener("dom-ready", onDomReady)
+                node.removeEventListener("did-finish-load", setStyle)
+                node.removeEventListener("did-navigate", onDidNavigate)
+            }
+        }
+    }
+
+    function onDomReady() {
+        webviewReady = true
+        websiteLoaded()
+        checkNavigation()
+        setStyle()
+    }
+
+    function onDidNavigate() {
+        checkNavigation()
+        if (webviewReady) {
+            try {
+                url = webview?.getURL() || parsedSrc
+            } catch (err) {
+                console.debug("Webview getURL failed:", err)
+            }
+        }
+    }
+
+    $: if (webview && webviewReady && (ratio !== undefined || zoom !== undefined)) setStyle()
 
     let parsedSrc = ""
     $: if (src) checkURL()
@@ -32,11 +71,32 @@
         parsedSrc = valid ? src : ""
     }
 
-    let loaded = false
-    $: if (parsedSrc) loaded = false
+    $: if (parsedSrc && parsedSrc !== prevSrc) {
+        prevSrc = parsedSrc
+        webviewReady = false
+    }
 
-    $: if (webview && ratio) setWebpageRatio()
-    function setWebpageRatio() {
+    function setStyle() {
+        if (!webview || !webviewReady) return
+
+        if ($currentWindow !== "output") {
+            try {
+                webview.setAudioMuted(true)
+            } catch (err) {
+                console.debug("Failed to mute webview audio:", err)
+            }
+        }
+
+        const factor = (parseFloat(zoom?.toString() || "100") || 100) / 100
+
+        try {
+            if (typeof webview.setZoomFactor === "function") {
+                webview.setZoomFactor(factor)
+            }
+        } catch (err) {
+            console.debug("Failed to set webview zoom factor:", err)
+        }
+
         // custom scale does often not work on embeds (Presentations)
         if (src.includes("embed")) return
 
@@ -45,37 +105,44 @@
         let isFullscreen = true || (webview.closest(".previewOutput")?.offsetWidth || 0) > 450
         const inverse = isFullscreen ? 100 : Math.round(100 / ratio)
 
-        if (loaded) setStyle()
-        else {
-            webview?.addEventListener("dom-ready", websiteLoaded)
-            webview?.addEventListener("did-finish-load", setStyle)
-            webview?.addEventListener("did-navigate", () => {
-                checkNavigation()
-                url = webview?.getURL() || parsedSrc
-            })
-        }
-
-        function setStyle() {
-            if (!webview) return
-            loaded = true
-
-            if ($currentWindow !== "output") webview.setAudioMuted(true)
-
-            webview.executeJavaScript(`
-            document.body.style.transform = 'scale(${isFullscreen ? 1 : ratio})';
-            document.body.style.transformOrigin = '0 0';
-            document.body.style.width = '${inverse}%';  // Scale factor inverse to maintain full width
-            document.body.style.height = '${inverse}%';  // Scale factor inverse to maintain full height
-        `)
+        try {
+            webview
+                .executeJavaScript(
+                    `
+                if (document.documentElement) {
+                    document.documentElement.style.zoom = '${factor}';
+                }
+                if (document.body) {
+                    document.body.style.transform = 'scale(${isFullscreen ? 1 : ratio})';
+                    document.body.style.transformOrigin = '0 0';
+                    const scaleFactor = ${inverse};
+                    document.body.style.width = scaleFactor + '%';
+                    document.body.style.height = scaleFactor + '%';
+                }
+            `
+                )
+                ?.catch((err: any) => {
+                    console.debug("Webview executeJavaScript failed:", err)
+                })
+        } catch (err) {
+            console.debug("Failed to execute JavaScript on webview:", err)
         }
     }
 
     function websiteLoaded() {
-        if ($currentWindow !== "output") return
+        if ($currentWindow !== "output" || !webview || !webviewReady) return
 
         // set focus on website
         send(OUTPUT, ["FOCUS"], { id: Object.keys($outputs)[0] })
-        setTimeout(() => webview?.focus())
+        setTimeout(() => {
+            if (webviewReady && webview) {
+                try {
+                    webview.focus()
+                } catch (err) {
+                    console.debug("Webview focus failed:", err)
+                }
+            }
+        })
     }
 
     let hover = false
@@ -90,17 +157,31 @@
     let backDisabled = true
     let forwardDisabled = true
     function navigate(back = true) {
-        if (!webview) return
+        if (!webview || !webviewReady) return
 
-        if (back) webview.goBack()
-        else webview.goForward()
+        try {
+            if (back) webview.goBack()
+            else webview.goForward()
+        } catch (err) {
+            console.debug("Webview navigation failed:", err)
+        }
 
         setTimeout(checkNavigation)
     }
 
     function checkNavigation() {
-        backDisabled = !webview?.canGoBack()
-        forwardDisabled = !webview?.canGoForward()
+        if (!webviewReady || !webview) {
+            backDisabled = true
+            forwardDisabled = true
+            return
+        }
+
+        try {
+            backDisabled = !webview.canGoBack()
+            forwardDisabled = !webview.canGoForward()
+        } catch (err) {
+            console.debug("Webview navigation check failed:", err)
+        }
     }
 
     $: url = parsedSrc
@@ -112,23 +193,29 @@
     }
 </script>
 
-<div class="website" class:clickable on:mouseover={mouseover} on:focus={mouseover} on:mouseleave={mouseleave}>
-    {#if navigation && hover && $currentWindow === "output"}
-        <div class="controls" style="zoom: {1 / ratio};">
-            {#if !backDisabled || !forwardDisabled}
-                <Button on:click={() => navigate(true)} disabled={backDisabled}>
-                    <Icon id="back" white />
-                </Button>
-                <Button on:click={() => navigate(false)} disabled={forwardDisabled}>
-                    <Icon id="arrow_forward" white />
-                </Button>
-            {/if}
+{#if disablePreview}
+    <div class="iconPreview">
+        <Icon id="web" size={3} white />
+    </div>
+{:else}
+    <div class="website" class:clickable on:mouseover={mouseover} on:focus={mouseover} on:mouseleave={mouseleave}>
+        {#if navigation && hover && $currentWindow === "output"}
+            <div class="controls" style="zoom: {1 / ratio};">
+                {#if !backDisabled || !forwardDisabled}
+                    <Button on:click={() => navigate(true)} disabled={backDisabled}>
+                        <Icon id="back" white />
+                    </Button>
+                    <Button on:click={() => navigate(false)} disabled={forwardDisabled}>
+                        <Icon id="arrow_forward" white />
+                    </Button>
+                {/if}
 
-            <p class="url" style="zoom: {ratio};">{formatUrl(url)}</p>
-        </div>
-    {/if}
-    <webview id="webview" src={parsedSrc} bind:this={webview} />
-</div>
+                <p class="url" style="zoom: {ratio};">{formatUrl(url)}</p>
+            </div>
+        {/if}
+        <webview id="webview" src={parsedSrc} bind:this={webview} use:initWebview />
+    </div>
+{/if}
 
 <style>
     .website {
@@ -169,5 +256,19 @@
         display: flex;
         align-items: center;
         padding: 2px 10px;
+    }
+
+    .iconPreview {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        width: 100%;
+        height: 100%;
+
+        border: 2px solid white;
+        background-color: rgb(0 50 100 / 0.3);
+
+        zoom: 8;
     }
 </style>

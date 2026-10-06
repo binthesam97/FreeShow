@@ -16,10 +16,16 @@
     export let item: Item | null
 
     let currentItemSections = clone(itemSections)
+    $: isTextbox = (item?.type || "text") === "text"
+    $: {
+        currentItemSections = clone(itemSections)
+        if (!isTextbox) delete currentItemSections.shape_outside
+        dataChanged()
+    }
 
     let data: { [key: string]: string } = {}
 
-    $: if (item?.style || item === null) updateData()
+    $: if (item !== undefined) updateData()
     function updateData() {
         data = getStyles(item?.style, true)
         dataChanged()
@@ -76,7 +82,7 @@
             }
         }
 
-        let allItems: number[] = $activeEdit.items
+        let allItems: number[] = clone($activeEdit.items)
 
         // update all items if nothing is selected
         if (!allItems.length) allSlideItems.forEach((_item, i) => allItems.push(i))

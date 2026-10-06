@@ -14,6 +14,7 @@
     export let mirror = false
     export let preview = false
     export let transition: Transition
+    export let styleIdOverride = ""
 
     $: transitionEnabled = !!((transition.type !== "none" && transition.duration) || transition.in || transition.out)
 
@@ -36,21 +37,29 @@
     }
 
     const showItemRef = { outputId, type: "default" }
-    // $: videoTime = $videosTime[outputId] || 0
-    // $: if ($activeTimers || $variables || $playingAudio || $playingAudioPaths || videoTime) updateValues()
     let conditionsUpdater = 0
-    const updaterInterval = setInterval(() => {
-        if (isClearing) return
-        if (currentItems.find((a) => a?.conditions)) conditionsUpdater++
-    }, 300)
+    let isMic = false
+    $: isMic = JSON.stringify(currentItems.map((a) => a?.conditions) || "").includes('"element":"volume"')
+
+    let updaterInterval: NodeJS.Timeout
+    $: {
+        clearInterval(updaterInterval)
+        updaterInterval = setInterval(
+            () => {
+                if (isClearing || !Array.isArray(currentItems)) return
+                if (currentItems.find((a) => a?.conditions)) conditionsUpdater++
+            },
+            isMic ? 100 : 300
+        )
+    }
     onDestroy(() => clearInterval(updaterInterval))
 </script>
 
 {#key show}
     {#each currentItems as item}
-        {#if show && shouldItemBeShown(item, currentItems, showItemRef, conditionsUpdater)}
-            <SlideItemTransition {transitionEnabled} globalTransition={transition} {item} let:customItem>
-                <Textbox item={customItem} ref={{ type: "overlay", id }} {mirror} {preview} {outputId} updateDynamicValues={!isClearing} />
+        {#if show && shouldItemBeShown(item, [], showItemRef, conditionsUpdater)}
+            <SlideItemTransition {transitionEnabled} {isClearing} globalTransition={transition} {item} let:customItem>
+                <Textbox item={customItem} ref={{ type: "overlay", id }} {mirror} {preview} {outputId} {styleIdOverride} updateDynamicValues={!isClearing} />
             </SlideItemTransition>
         {/if}
     {/each}

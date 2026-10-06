@@ -36,86 +36,93 @@ export default function autosize(elem: HTMLElement, { type, textQuery, defaultFo
     const boxElem = virtualElem()
     if (!boxElem) return defaultFontSize
 
-    const boxWidth = boxElem.clientWidth
-    const boxHeight = boxElem.clientHeight
+    try {
+        const boxWidth = boxElem.clientWidth
+        const boxHeight = boxElem.clientHeight
 
-    let textChildren: HTMLElement[] | HTMLCollection = []
-    if (textQuery) textChildren = boxElem.querySelectorAll(textQuery) as any
-    if (!textChildren.length) textChildren = boxElem.children.length ? boxElem.children : [boxElem]
+        const rawTextChildren: HTMLElement[] = textQuery ? Array.from(boxElem.querySelectorAll(textQuery)) : boxElem.children.length ? (Array.from(boxElem.children) as HTMLElement[]) : [boxElem]
 
-    let fontSize = defaultFontSize // maxFontSize * 0.5
-    const styles: string[] = []
-    addStyleToElemText(fontSize)
+        const chordNodes: { elem: HTMLElement; ratio: number }[] = []
+        boxElem.querySelectorAll<HTMLElement>("[data-chord-size-ratio]").forEach((el) => {
+            const ratio = Number(el.dataset.chordSizeRatio) || 0
+            if (ratio) chordNodes.push({ elem: el, ratio })
+        })
 
-    if (type === "shrinkToFit") {
-        if (!textIsBiggerThanBox()) {
-            // don't change the font size
-            return finish(defaultFontSize)
+        const textNodes = rawTextChildren.map((el) => {
+            const style = el.getAttribute("style") || ""
+            const ratio = Number(el.dataset.autosizeRatio) || 1
+            const hasBaseFontSize = style.includes("var(--base-font-size)")
+            return { el, style, ratio, hasBaseFontSize }
+        })
+
+        let fontSize = defaultFontSize
+        addStyleToElemText(fontSize)
+
+        if (type === "shrinkToFit" && !textIsBiggerThanBox()) {
+            return defaultFontSize
         }
-        // shrinkToFit is same as growToFit if text is larger
-    }
 
-    let lowestValue = minFontSize
-    let highestValue = maxFontSize
-    let previousSize = 0
+        let lowestValue = minFontSize
+        let highestValue = maxFontSize
+        let previousSize = fontSize
 
-    size()
-
-    const finalResult = Math.min(maxFontSize, lowestValue)
-
-    // prefer lowest value (due to margin)
-    return finish(finalResult)
-
-    function finish(value: number) {
-        boxElem!.remove()
-        return value
-    }
-
-    function size() {
         if (textIsBiggerThanBox()) highestValue = fontSize - 1
         else lowestValue = fontSize
 
-        // if difference is less than 2px margin, return early
-        if (highestValue - lowestValue < PRECISION) return
+        while (highestValue - lowestValue >= PRECISION) {
+            // always double/half the amount for the quickest search
+            fontSize = (highestValue + lowestValue) * 0.5
 
-        // always double/half the amount for the quickest search
-        fontSize = (highestValue + lowestValue) * 0.5
+            // prevent loops on sub-pixel changes
+            if (Math.abs(fontSize - previousSize) < 1) break
+            previousSize = fontSize
 
-        // prevent loops
-        if (Math.abs(fontSize - previousSize) < 1) return
-        previousSize = fontSize
+            addStyleToElemText(fontSize)
 
-        addStyleToElemText(fontSize)
-        size()
-    }
-
-    function textIsBiggerThanBox() {
-        if (boxElem!.scrollWidth > boxWidth || boxElem!.scrollHeight > boxHeight) return true
-
-        const boxRect = boxElem!.getBoundingClientRect()
-        let contentRight = boxRect.left
-        let contentBottom = boxRect.top
-
-        for (const textElem of Array.from(textChildren)) {
-            const rects = Array.from(textElem.getClientRects())
-            if (!rects.length) continue
-
-            rects.forEach((rect) => {
-                contentRight = Math.max(contentRight, rect.right)
-                contentBottom = Math.max(contentBottom, rect.bottom)
-            })
+            if (textIsBiggerThanBox()) highestValue = fontSize - 1
+            else lowestValue = fontSize
         }
 
-        return contentRight - boxRect.left > boxWidth + 1 || contentBottom - boxRect.top > boxHeight + 1
-    }
+        // prefer lowest value (due to margin)
+        return Math.min(maxFontSize, lowestValue)
 
-    function addStyleToElemText(currentFontSize: number) {
-        let i = 0
-        for (const textElem of Array.from(textChildren)) {
-            if (!styles[i]) styles[i] = textElem.getAttribute("style") || ""
-            textElem.setAttribute("style", styles[i] + `;overflow:visible;font-size: ${currentFontSize}px !important;`)
-            i++
+        function textIsBiggerThanBox() {
+            if (boxElem!.scrollWidth > boxWidth || boxElem!.scrollHeight > boxHeight) return true
+
+            // also check the actual text line boxes (overflowing inline text may not affect scroll size)
+            const boxRect = boxElem!.getBoundingClientRect()
+            let contentRight = boxRect.left
+            let contentBottom = boxRect.top
+
+            for (const node of textNodes) {
+                for (const rect of Array.from(node.el.getClientRects())) {
+                    contentRight = Math.max(contentRight, rect.right)
+                    contentBottom = Math.max(contentBottom, rect.bottom)
+                }
+            }
+
+            return contentRight - boxRect.left > boxWidth + 1 || contentBottom - boxRect.top > boxHeight + 1
         }
+
+        function addStyleToElemText(currentFontSize: number) {
+            for (let i = 0; i < chordNodes.length; i++) {
+                chordNodes[i].elem.style.setProperty("--font-size", `${currentFontSize}px`)
+                chordNodes[i].elem.style.setProperty("--chord-size", `${currentFontSize * chordNodes[i].ratio}px`)
+            }
+
+            for (let i = 0; i < textNodes.length; i++) {
+                const node = textNodes[i]
+                const size = currentFontSize * node.ratio
+                if (node.hasBaseFontSize) {
+                    const newStyle = node.style.replace(/--base-font-size:\s*[^;]+;?/gi, `--base-font-size: ${size}px;`)
+                    node.el.setAttribute("style", newStyle + ";overflow:visible;")
+                } else {
+                    node.el.setAttribute("style", `${node.style};overflow:visible;font-size: ${size}px !important;`)
+                }
+            }
+        }
+    } finally {
+        boxElem.remove()
     }
 
     function virtualElem() {
@@ -127,6 +134,15 @@ export default function autosize(elem: HTMLElement, { type, textQuery, defaultFo
         cloned.style.opacity = "0"
         // overflow = hidden...
 
+        // don't treat the clone as editable content
+        cloned.setAttribute("contenteditable", "false")
+        cloned.setAttribute("spellcheck", "false")
+        cloned.setAttribute("aria-hidden", "true")
+        cloned.querySelectorAll("[contenteditable]").forEach((el) => {
+            el.setAttribute("contenteditable", "false")
+            el.setAttribute("spellcheck", "false")
+        })
+
         // "include" paddings
         const computedStyle = getComputedStyle(elem)
         const newWidth = elem.clientWidth - parseFloat(computedStyle.paddingRight) - parseFloat(computedStyle.paddingLeft)
@@ -135,33 +151,33 @@ export default function autosize(elem: HTMLElement, { type, textQuery, defaultFo
         cloned.style.height = `${newHeight}px`
         cloned.style.padding = "0"
 
-        // "align-items: flex-end;" does not work with auto size
-        cloned.style.alignItems = "center"
-        if (cloned.querySelector(".edit")) (cloned.querySelector(".edit") as HTMLElement).style.justifyContent = "center"
+        // scrollHeight only measures overflow below the box: with flex-end (and half of it with center) overflow is invisible to it,
+        // so measure with flex-start - vertical alignment does not affect the content size, the computed fit is the same
+        cloned.style.alignItems = "flex-start"
+        const editElem = cloned.querySelector<HTMLElement>(".edit")
+        if (editElem) editElem.style.justifyContent = "flex-start"
 
-        for (const elemHide of Array.from(cloned.querySelectorAll(".hideFromAutosize"))) {
-            ;(elemHide as HTMLElement).style.display = "none"
-        }
+        cloned.querySelectorAll<HTMLElement>(".hideFromAutosize").forEach((el) => (el.style.display = "none"))
+        cloned.querySelectorAll<HTMLElement>(".chords").forEach((el) => (el.style.maxHeight = "65px"))
 
-        // fix chords size
-        for (const chordElem of Array.from(cloned.querySelectorAll(".chords"))) {
-            ;(chordElem as HTMLElement).style.maxHeight = "65px"
-        }
+        // scrolling text should not include repeated text in measurement
+        const scrollWrapper = cloned.querySelector<HTMLElement>(".scrollWrapper")
+        if (scrollWrapper) scrollWrapper.style.setProperty("--copyCountHorizontal", "0")
+        // only keep first scrollContent element
+        cloned.querySelectorAll(".scrollContent").forEach((el, index) => {
+            if (index > 0) el.remove()
+        })
 
         // CRITICAL FIX FOR LIST ITEMS:
         // List items have font-size on both the parent .break div AND the inner span elements
         // This causes double font-size application during measurement
         // We need to remove font-size from .break divs so only the spans (selected by textQuery) control sizing
         if (isList) {
-            const breakElements = cloned.querySelectorAll(".break")
-            for (const breakElem of Array.from(breakElements)) {
-                const htmlBreak = breakElem as HTMLElement
-                const currentStyle = htmlBreak.getAttribute("style") || ""
-                const newStyle = currentStyle.replace(/font-size:\s*[^;]+;?/gi, "")
-                htmlBreak.setAttribute("style", newStyle)
-            }
+            cloned.querySelectorAll<HTMLElement>(".break").forEach((el) => {
+                const currentStyle = el.getAttribute("style") || ""
+                el.setAttribute("style", currentStyle.replace(/font-size:\s*[^;]+;?/gi, ""))
+            })
         }
-
         elem.after(cloned)
         return cloned
     }

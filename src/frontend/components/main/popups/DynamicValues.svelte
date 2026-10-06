@@ -12,6 +12,9 @@
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import MaterialTextInput from "../../inputs/MaterialTextInput.svelte"
     import Center from "../../system/Center.svelte"
+    import { registerPopupSubmit } from "../../../utils/popup"
+
+    registerPopupSubmit(() => applyValue())
 
     const obj = $popupData.obj || {}
     const caret = $popupData.caret || {}
@@ -35,19 +38,24 @@
     function getValues() {
         let list = getDynamicIds(false, mode, showAll).map((id) => ({ id }))
 
+        // WIP organize better - and don't hide any values
+        // _color is only for CSS "var(--slide-group-color)", but we should show them in a seperate way
+
         const isStage = $activePage === "stage"
-        const nonStageHidden = ["show_text_full"]
-        const stageHidden = ["slide_text_previous", "slide_text_next"]
-        if (isStage) list = list.filter((a) => !stageHidden.includes(a.id))
-        else list = list.filter((a) => !nonStageHidden.includes(a.id))
+        const hidden = ["slide_text", "slide_group_color", "slide_group_upcoming_color"]
+        let nonStageHidden = ["show_text_full", "slide_group_text"]
+        if ($showsCache[$activeShow?.id || ""]?.reference?.type !== "interaction") nonStageHidden.push("interaction_")
+        const stageHidden = ["interaction_"]
+        if (isStage) list = list.filter((a) => !hidden.includes(a.id) && !stageHidden.some((h) => a.id.startsWith(h)))
+        else list = list.filter((a) => !hidden.includes(a.id) && !nonStageHidden.some((h) => a.id.startsWith(h)))
 
         let separatorId = ""
         // the ones that can have a custom name should be first (to prevent it from overwriting a category)
-        const separators = ["$", "timer_", "meta_", "rss_", "project_", "time_", "show_", "slide_text_", "exif_", "video_", "audio_", "scripture_"]
+        const separators = ["$", "timer_", "meta_", "rss_", "project_", "time_", "show_", "slide_text", "exif_", "video_", "audio_", "scripture_", "interaction_"]
 
         let newList: { [key: string]: typeof list } = {}
         list.forEach((value) => {
-            const separator = separators.find((a) => value.id.includes(a)) || ""
+            const separator = separators.find((a) => value.id.startsWith(a)) || ""
             if (separator && separatorId !== separator && separatorId !== "$" && !newList[separator]?.length) {
                 separatorId = separator
                 newList[separatorId] = []
@@ -62,11 +70,12 @@
     }
 
     function getTitle(id: string) {
+        if (id === "interaction_") return "tabs.interactions"
         if (id === "scripture_") return "tabs.scripture"
         if (id === "time_") return "timer.time"
         if (id === "project_") return "guide_title.project"
         if (id === "show_") return "guide_title.show"
-        if (id === "slide_text_") return "edit.text"
+        if (id === "slide_text") return "edit.text"
         if (id === "exif_") return "items.image (EXIF)"
         if (id === "video_") return "edit.video"
         if (id === "audio_") return "tools.audio"
@@ -107,17 +116,20 @@
         // previousSearchValue = searchValue
     }
 
-    function applyValue(e: any, id = "") {
+    function applyValue(e?: any, id = "") {
         if (!id) {
-            if (e.key !== "Enter" || searchValue.length < 2) return
+            if (searchValue.length < 2) return
             id = Object.values(searchedValues)[0]?.[0]?.id
         }
         if (!id) return
 
-        let isStage = !!obj.contextElem?.classList.contains("stage_item")
-        if (!obj.contextElem?.classList.contains("editItem") && !isStage) return
+        const contextElem = (obj.contextElem as HTMLElement | null) || null
+        const contextEditItem = contextElem?.closest(".editItem") as HTMLElement | null
+        let isStage = !!contextElem?.closest(".stage_item")
+        if (!contextEditItem && !isStage) return
 
         let edit = $activeEdit
+        const selectedItemIndex = edit.items?.[0] ?? Number(contextEditItem?.getAttribute("data-index") || 0)
 
         if (isStage) {
             let activeItemId = $activeStage?.items[0]
@@ -170,33 +182,36 @@
 
         function updateItemText(items) {
             let replaced = false
+            const caretLine = Number.isFinite(caret.line) ? caret.line : 0
+            let caretPos = Number.isFinite(caret.pos) ? caret.pos : 0
 
-            let lines = items[edit.items?.[0]]?.lines || []
+            let lines = items[selectedItemIndex]?.lines || []
             if (isStage) lines = items?.lines || []
+            const lineIndex = lines[caretLine]?.text ? caretLine : 0
 
-            lines[caret.line]?.text?.forEach((text) => {
+            lines[lineIndex]?.text?.forEach((text) => {
                 if (replaced) return
 
                 let value = text.value
-                if (value.length < caret.pos) {
-                    caret.pos -= value.length
+                if (value.length < caretPos) {
+                    caretPos -= value.length
                     return
                 }
 
                 let valueIdString = dynamicValueText(id)
-                let newValue = value.slice(0, caret.pos) + valueIdString + value.slice(caret.pos)
+                let newValue = value.slice(0, caretPos) + valueIdString + value.slice(caretPos)
                 text.value = newValue
                 replaced = true
 
                 // if applying multiple
-                caret.pos += valueIdString.length
+                caret.pos = caretPos + valueIdString.length
             })
 
             return items
         }
 
         function finish() {
-            if (e.ctrlKey) {
+            if (e?.ctrlKey) {
                 resetInput = true
                 setTimeout(() => (resetInput = false))
                 searchValue = ""
@@ -217,8 +232,6 @@
     }, 1000)
     onDestroy(() => clearInterval(dynamicInterval))
 </script>
-
-<svelte:window on:keydown={applyValue} />
 
 <MaterialButton class="popup-reset" icon="edit" iconSize={1.1} title="create_show.more_options" on:click={() => activePopup.set("manage_dynamic_values")} white />
 
@@ -244,15 +257,12 @@
                                 {#if preview}{@html preview}{:else}—{/if}
                             </p>
 
-                            <p style="display: inline-flex;">
+                            <p style="display: inline-flex;" data-title={value.id}>
                                 <span style="color: var(--secondary);">{"{"}</span>
                                 {#if value.id.startsWith("$")}
                                     <span style="color: var(--secondary);">{"$"}</span>
                                     {value.id.slice(1)}
                                 {:else}
-                                    <!-- variable_set_ -->
-                                    <!-- <span style="color: var(--secondary);">{value.id.slice(0, value.id.indexOf("_") + 1)}</span> -->
-                                    <!-- {value.id.slice(value.id.indexOf("_") + 1)} -->
                                     {value.id}
                                 {/if}
                                 <span style="color: var(--secondary);">{"}"}</span>
@@ -300,7 +310,7 @@
         background-color: var(--primary-darkest);
         padding: 10px;
 
-        max-width: 600px;
+        max-width: 500px;
     }
 
     .value.active {

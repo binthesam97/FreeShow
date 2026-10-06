@@ -1,6 +1,7 @@
 <script>
     import { os } from "../../../stores"
-    import T from "../../helpers/T.svelte"
+    import { translateText } from "../../../utils/language"
+    import HRule from "../../input/HRule.svelte"
 
     const ctrl = $os.platform === "darwin" ? "cmd" : "ctrl"
     const alt = $os.platform === "darwin" ? "option" : "alt"
@@ -13,7 +14,8 @@
         "actions.toggle_drawer": `${ctrl} + d`,
         "actions.export": `${ctrl} + e`,
         "main.search": `${ctrl} + f`,
-        "main.quick_search": `${ctrl} + g`,
+        "actions.find_replace": `${ctrl} + f`, // only in editor
+        "main.quick_search": `${ctrl} + g`, // also F8
         "popup.history": `${ctrl} + h`,
         "edit._title_italic": `${ctrl} + i`,
         "actions.import": `${ctrl} + i`,
@@ -32,18 +34,24 @@
         "actions.paste": `${ctrl} + v`,
         // "": `${ctrl} + w`, // closing something
         "actions.cut": `${ctrl} + x`,
-        "actions.redo": `${ctrl} + y`,
+        "actions.redo": `${ctrl} + y`, // or Ctrl+Shift+Z
         "actions.undo": `${ctrl} + z`,
         "popup.shortcuts": `${ctrl} + ?`,
 
         shift: "SEPARATOR",
 
         "actions.focus_mode": `${ctrl} + shift + f`,
+        // "new.show": `${ctrl} + shift + n`, // normally Ctrl+n
         "show.change_view": `${ctrl} + shift + v`,
+
+        ctrl_alt: "SEPARATOR",
+
+        "Show Import from Clipboard": `${ctrl} + ${alt} + i`,
 
         alt: "SEPARATOR",
 
-        "Show Import from Clipboard": `${ctrl} + ${alt} + i`,
+        "actions.cut_in_half": `${alt} + enter`,
+        // "actions.delete": "del / backspace",
 
         clear: "SEPARATOR",
 
@@ -62,7 +70,8 @@
         // "from start": "f5",
         // MAC: cmd + shift + f
         // "main.quick_search": "f8",
-        "actions.fullscreen": "f11",
+        // F11 does not mean fullscreen on macOS (shortcuts.ts)
+        ...($os.platform === "darwin" ? {} : { "actions.fullscreen": "f11" }),
 
         // presenterKeys: "SEPARATOR",
 
@@ -72,25 +81,26 @@
         "actions.change_tab": "num",
         "actions.change_drawer_tab": `${ctrl} + num`,
         "actions.change_slide": "← / →",
+        // "preview._next_slide": "→ / PgDn", // space / f5
+        // "preview._previous_slide": "← / PgUp",
         "actions.change_project_item": "↑ / ↓",
         "actions.change_drawer_item": `${ctrl} + ← / →`,
-        "actions.change_drawer_category": `${ctrl} + ↑ / ↓`
+        "actions.change_drawer_category": `${ctrl} + ↑ / ↓`,
+
+        "tabs.search_tip": "SEPARATOR",
+
+        "context.addToProject": `Enter`,
+        "media.play": `${ctrl} + Enter`
     }
 </script>
 
 <main>
     {#each Object.entries(shortcuts) as [id, shortcut]}
         {#if shortcut === "SEPARATOR"}
-            <hr />
+            <HRule title={id.includes(".") ? translateText(id) : ""} />
         {:else}
             <div>
-                <p>
-                    {#if id.includes(".")}
-                        <T {id} />
-                    {:else}
-                        {id}
-                    {/if}
-                </p>
+                <p>{translateText(id)}</p>
                 <span class="shortcut">{shortcut}</span>
             </div>
         {/if}
@@ -113,16 +123,6 @@
     }
     main div:nth-child(odd) {
         background-color: rgb(0 0 20 / 0.08);
-    }
-
-    hr {
-        background-color: var(--primary-lighter);
-
-        height: 3px;
-        border: none;
-        margin: 10px 0;
-
-        opacity: 0.7;
     }
 
     .shortcut {

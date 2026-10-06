@@ -5,7 +5,10 @@ import type { ContentProvider } from "./base/ContentProvider"
 import { ContentProviderFactory } from "./base/ContentProvider"
 import type { ContentProviderId } from "./base/types"
 import { ChurchAppsProvider } from "./churchApps/ChurchAppsProvider"
+import { OnStageProvider } from "./onStage/OnStageProvider"
 import { PlanningCenterProvider } from "./planningCenter/PlanningCenterProvider"
+import type { PCOFolderTreeNode } from "./planningCenter/request"
+import type { PCOLiveData } from "./planningCenter/live"
 
 /**
  * Registry for all content providers in the application.
@@ -24,6 +27,7 @@ export class ContentProviderRegistry {
         ContentProviderFactory.register("churchApps", ChurchAppsProvider)
         ContentProviderFactory.register("planningcenter", PlanningCenterProvider)
         ContentProviderFactory.register("amazinglife", AmazingLifeProvider)
+        ContentProviderFactory.register("onstage", OnStageProvider)
         ContentProviderFactory.register("canva", CanvaProvider)
 
         this.initialized = true
@@ -44,6 +48,23 @@ export class ContentProviderRegistry {
     static getAvailableProviders(): ContentProviderId[] {
         this.ensureInitialized()
         return ContentProviderFactory.getRegisteredProviders()
+    }
+
+    /**
+     * The providers that already hold an access token, so the app knows what is connected before
+     * any sync has run this session.
+     */
+    static getConnectedProviders(): { [key in ContentProviderId]?: boolean } {
+        this.ensureInitialized()
+
+        const connections: { [key in ContentProviderId]?: boolean } = {}
+        this.getAvailableProviders().forEach((providerId) => {
+            const provider = this.getProvider(providerId)
+            const hasAccess = (provider?.supportedScopes || []).some((scope) => !!getContentProviderAccess(providerId, scope))
+            if (hasAccess) connections[providerId] = true
+        })
+
+        return connections
     }
 
     /**
@@ -137,6 +158,70 @@ export class ContentProviderRegistry {
         } catch (error) {
             console.error(`Failed to perform startup load for ${providerId}:`, error)
         }
+    }
+
+    /**
+     * Fetch the folder/service-type tree for a provider (Planning Center only for now)
+     */
+    static async fetchFolderTree(providerId: ContentProviderId): Promise<PCOFolderTreeNode[]> {
+        this.ensureInitialized()
+        return this.getProvider<PlanningCenterProvider>(providerId)?.fetchFolderTree?.() ?? []
+    }
+
+    /**
+     * Fetch the full folder/service-type/plan tree for selecting a specific PCO plan
+     */
+    static async fetchServiceTree(providerId: ContentProviderId): Promise<PCOFolderTreeNode[]> {
+        this.ensureInitialized()
+        return this.getProvider<PlanningCenterProvider>(providerId)?.fetchServiceTree?.() ?? []
+    }
+
+    /**
+     * Load a single PCO plan by service type and plan ID
+     */
+    static async loadSinglePlan(serviceTypeId: string, planId: string): Promise<void> {
+        this.ensureInitialized()
+        return this.getProvider<PlanningCenterProvider>("planningcenter")?.loadSinglePlan?.(serviceTypeId, planId)
+    }
+
+    /**
+     * Get PCO Live countdown data for a specific plan
+     */
+    static async getPcoLiveData(serviceTypeId: string, planId: string): Promise<PCOLiveData | null> {
+        this.ensureInitialized()
+        return this.getProvider<PlanningCenterProvider>("planningcenter")?.getLiveData?.(serviceTypeId, planId) ?? null
+    }
+
+    /**
+     * Authorize a Pusher channel subscription for PCO Live real-time updates
+     */
+    static async getPcoPusherAuth(socketId: string, channelName: string, serviceTypeId: string): Promise<{ auth: string; channel_data?: string } | null> {
+        this.ensureInitialized()
+        return this.getProvider<PlanningCenterProvider>("planningcenter")?.getPusherAuth?.(socketId, channelName, serviceTypeId) ?? null
+    }
+
+    /**
+     * Reload a single OnStage service, leaving the other projects alone
+     */
+    static async loadOnStageService(serviceId: string, data?: any): Promise<void> {
+        this.ensureInitialized()
+        return this.getProvider<OnStageProvider>("onstage")?.loadServices?.({ ...data, serviceId })
+    }
+
+    /**
+     * List the OnStage teams available for switching
+     */
+    static async getOnStageTeams(): Promise<{ id: string; name: string; current: boolean }[]> {
+        this.ensureInitialized()
+        return this.getProvider<OnStageProvider>("onstage")?.getTeams?.() ?? []
+    }
+
+    /**
+     * Switch the active OnStage team (may launch a browser consent for a new team)
+     */
+    static async switchOnStageTeam(teamId: string): Promise<{ success: boolean }> {
+        this.ensureInitialized()
+        return this.getProvider<OnStageProvider>("onstage")?.switchTeam?.(teamId) ?? { success: false }
     }
 
     /**

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { activeDays, activePopup, eventEdit, events } from "../../../stores"
+    import { activeDays, activePopup, calendars, eventEdit, events, special } from "../../../stores"
     import { triggerClickOnEnterSpace } from "../../../utils/clickable"
     import { translateText } from "../../../utils/language"
     import { actionData } from "../../actions/actionData"
@@ -8,21 +8,24 @@
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
     import Center from "../../system/Center.svelte"
-    import { copyDate, getTime, isBetween, isSameDay } from "./calendar"
+    import { copyDate, endsMidnightNextDay, getTime, isBetween, isSameDay } from "./calendar"
+    import { isCalendarHidden } from "./calendars"
 
     export let type = "event"
 
     let current = new Date($activeDays[0])
     let currentEvents: any[] = []
 
-    $: updateEvents({ type, $activeDays, $events })
+    $: updateEvents({ type, $activeDays, $events, calendars: $calendars, hideUnlabeled: $special?.hideUnlabeledCalendar })
 
     function updateEvents(_updater: any) {
         current = new Date($activeDays[0])
         let tempEvents: any[] = []
 
         Object.entries($events).forEach(([id, a]) => {
-            if (isBetween(new Date(a.from), new Date(a.to), copyDate(current))) tempEvents.push({ id, ...a })
+            if (isCalendarHidden($calendars, $special?.hideUnlabeledCalendar, a.origin)) return
+            const toDate = a.to ? new Date(a.to) : new Date(a.from)
+            if (isBetween(new Date(a.from), toDate, copyDate(current))) tempEvents.push({ ...a, id })
         })
 
         // sort
@@ -68,8 +71,8 @@
                                 {#if isSameDay(new Date(event.from), current)}
                                     {getTime(new Date(event.from))}
                                 {/if}
-                                {#if !isSameDay(new Date(event.from), current) || new Date(event.from).getTime() - new Date(event.to).getTime() > 0}
-                                    {#if isSameDay(new Date(event.to), current)}
+                                {#if type !== "action" && (!isSameDay(new Date(event.from), current) || new Date(event.to).getTime() > new Date(event.from).getTime())}
+                                    {#if isSameDay(new Date(event.to), current) || endsMidnightNextDay(current, new Date(event.to))}
                                         {#if isSameDay(new Date(event.from), current)}
                                             -
                                         {/if}

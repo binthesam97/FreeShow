@@ -1,4 +1,6 @@
 import { get, Writable, writable } from "svelte/store"
+import type { AudioChannelData } from "../../../types/Audio"
+import type { AudioRoutingConfig } from "../../../types/AudioRouting"
 import type { Bible } from "../../../types/Bible"
 import type { OutData } from "../../../types/Output"
 import type { Dictionary } from "../../../types/Settings"
@@ -69,13 +71,14 @@ export let actions: Writable<{ [key: string]: any }> = writable({})
 export let actionTags: Writable<{ [key: string]: any }> = writable({})
 export let variables: Writable<{ [key: string]: any }> = writable({})
 export let variableTags: Writable<{ [key: string]: any }> = writable({})
+export let timerTags: Writable<{ [key: string]: any }> = writable({})
 export let timers: Writable<{ [key: string]: any }> = writable({})
-export let triggers: Writable<{ [key: string]: any }> = writable({})
 export let activeTimers: Writable<any[]> = writable([])
 export let runningActions: Writable<string[]> = writable([])
 
 export let activeActionTagFilter: Writable<string[]> = writable([])
 export let activeVariableTagFilter: Writable<string[]> = writable([])
+export let activeTimerTagFilter: Writable<string[]> = writable([])
 export let functionsSubTab: Writable<string> = writable("actions")
 
 export type CurrentScriptureState = {
@@ -118,6 +121,8 @@ export let scriptureSearchResults: Writable<any> = writable(null)
 
 export let audio: Writable<{ [key: string]: any }> = writable({})
 export let mixer: Writable<any> = writable(null)
+export let audioRouting: Writable<AudioRoutingConfig | null> = writable(null)
+export let audioChannelsData: Writable<{ [key: string]: AudioChannelData }> = writable({})
 
 /////
 
@@ -180,16 +185,19 @@ export const _ = {
     scriptureSearchResults,
     audio,
     mixer,
+    audioRouting,
+    audioChannelsData,
     actions,
     actionTags,
     variables,
     variableTags,
+    timerTags,
     timers,
-    triggers,
     activeTimers,
     runningActions,
     activeActionTagFilter,
     activeVariableTagFilter,
+    activeTimerTagFilter,
     functionsSubTab
 }
 

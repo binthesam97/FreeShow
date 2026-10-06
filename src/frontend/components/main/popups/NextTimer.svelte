@@ -9,6 +9,18 @@
     import { joinTime, secondsToTime } from "../../helpers/time"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import MaterialNumberInput from "../../inputs/MaterialNumberInput.svelte"
+    import { registerPopupSubmit } from "../../../utils/popup"
+
+    registerPopupSubmit(() => {
+        if (allSlides) {
+            const isReset = isProjectItem ? !allTime || allTime === value : totalTime && (appliedToSlides === allTime || allTime === 0)
+            if (isReset) updateValue(undefined)
+            else if (allTime !== 0) updateValue(allTime)
+        } else {
+            updateValue(value)
+            activePopup.set(null)
+        }
+    })
 
     let type = $popupData.type || "show"
 
@@ -60,15 +72,28 @@
             let goToStartRefs = allActiveSlides.reduce((value, ref) => (ref.data?.end ? [...value, ref] : value), [] as LayoutRef[])
             if (goToStartRefs.length === 1) {
                 let showId = $activeShow?.id || ""
-                let layoutId = _show().get("settings.activeLayout")
-                showsCache.update((a) => {
-                    let ref = goToStartRefs[0]
-                    if (!ref) return a
+                if (showId) {
+                    let layoutId = _show(showId).get("settings.activeLayout")
+                    showsCache.update((a) => {
+                        const ref = goToStartRefs[0]
+                        const show = a[showId]
+                        if (!ref || !show) return a
 
-                    if (ref.type === "parent") delete a[showId].layouts[layoutId]?.slides?.[ref.index]?.end
-                    else delete a[showId].layouts[layoutId]?.slides?.[ref.parent?.index ?? -1]?.children?.[ref.id]?.end
-                    return a
-                })
+                        const layout = show.layouts?.[layoutId]
+                        if (!layout) return a
+
+                        if (ref.type === "parent") {
+                            const slide = layout.slides?.[ref.index]
+                            if (slide) delete slide.end
+                        } else {
+                            const parentIndex = ref.parent?.index ?? -1
+                            const parentSlide = layout.slides?.[parentIndex]
+                            const child = parentSlide?.children?.[ref.id]
+                            if (child) delete child.end
+                        }
+                        return a
+                    })
+                }
             }
 
             history({ id: "SHOW_LAYOUT", newData: { key: "end", data: !!value, indexes: [indexes[indexes.length - 1]] }, location: { page: "show", override: "change_slide_action_loop" } })
@@ -91,26 +116,10 @@
     $: newTime = allTime * count
 
     const getTime = (time: number) => (time > 59 ? joinTime(secondsToTime(time)) : time + "s")
-
-    function keydown(e: any, newValue: number) {
-        if (e.detail?.key === "Enter") {
-            updateValue(newValue)
-            activePopup.set(null)
-        }
-    }
-
-    function globalKeydown(e: KeyboardEvent) {
-        if (e.key === "Enter" && !document.activeElement?.closest(".edit") && allSlides) {
-            updateValue(allTime)
-            activePopup.set(null)
-        }
-    }
 </script>
 
-<svelte:window on:keydown={globalKeydown} />
-
 {#if allSlides}
-    <MaterialNumberInput style="margin-bottom: 10px;" label="timer.seconds" value={allTime} max={3600} on:change={(e) => (allTime = e.detail)} on:keydown={(e) => keydown(e, allTime)} />
+    <MaterialNumberInput style="margin-bottom: 10px;" label="timer.seconds" value={allTime} max={3600} on:change={(e) => (allTime = e.detail)} />
 
     <!-- reset if next timer applied, but not same on all slides ?? (set input to 0) -->
     {#if isProjectItem ? !allTime || allTime === value : totalTime && (appliedToSlides === allTime || allTime === 0)}
@@ -129,5 +138,5 @@
         </p>
     {/if}
 {:else}
-    <MaterialNumberInput label="timer.seconds" {value} max={3600} on:change={updateValue} on:keydown={(e) => keydown(e, e.detail?.target?.value)} />
+    <MaterialNumberInput label="timer.seconds" {value} max={3600} on:change={updateValue} />
 {/if}

@@ -1,11 +1,13 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
-    import type { Item, OutSlide, SlideData, TimelineAction, Transition } from "../../../../types/Show"
-    import { showsCache, slideTimelineSpeedMultiplier } from "../../../stores"
+    import type { Item, OutSlide, SlideData, TimelineAction } from "../../../../types/Show"
+    import { scriptureSettings, showsCache, slideTimelineSpeedMultiplier, templates } from "../../../stores"
     import { waitUntilValueIsDefined } from "../../../utils/common"
     import { shouldItemBeShown } from "../../edit/scripts/itemHelpers"
+    import { getItemText } from "../../edit/scripts/textStyle"
     import { clone } from "../../helpers/array"
     import { loadCustomFonts } from "../../helpers/fonts"
+    import { getStyleTemplate, itemNeedsAutoSize, slideHasAutoSizeItem } from "../../helpers/output"
     import Textbox from "../../slide/Textbox.svelte"
     import { SlideTimeline } from "../../timeline/SlideTimeline"
     import SlideItemTransition from "../transitions/SlideItemTransition.svelte"
@@ -34,7 +36,7 @@
     function updateShow() {
         // custom fonts
         const currentShow = $showsCache[outSlide.id]
-        if (currentShow?.settings?.customFonts) loadCustomFonts(currentShow.settings.customFonts)
+        loadCustomFonts(currentShow?.settings?.customFonts || [])
         origin = currentShow?.origin || ""
     }
 
@@ -53,15 +55,10 @@
     let persistentItems: Item[] = []
     let persistentItemIndexes: number[] = []
 
-    // Check if a transition is "meaningful" (not none and duration > 0)
-    function hasRealTransition(itemTransition: Transition | undefined, globalTrans: Transition | undefined): boolean {
-        // Item-level transition takes priority
-        const trans = itemTransition || globalTrans
-        if (!trans) return false
-        // If type is "none" or duration is 0/undefined, no real transition
-        if (trans.type === "none") return false
-        if (!trans.duration || trans.duration === 0) return false
-        return true
+    // Check if an item has lines/text content
+    function hasLinesContent(item: Item | undefined): boolean {
+        if (!item) return false
+        return !!getItemText(item).length
     }
 
     // Compare two items to see if their visible content is identical
@@ -75,13 +72,21 @@
     let precomputePending = new Set<string>()
 
     const showItemRef = { outputId, slideIndex: outSlide?.index }
-    // $: videoTime = $videosTime[outputId] || 0 // WIP only update if the items text has a video dynamic value
-    // $: if ($activeTimers || $variables || $playingAudio || $playingAudioPaths || videoTime) updateValues()
     let conditionsUpdater = 0
-    const updaterInterval = setInterval(() => {
-        if (isClearing) return
-        if (currentItems.find((a) => a?.conditions)) conditionsUpdater++
-    }, 300)
+    let isMic = false
+    $: isMic = JSON.stringify(currentItems.map((a) => a?.conditions) || "").includes('"element":"volume"')
+
+    let updaterInterval: NodeJS.Timeout
+    $: {
+        clearInterval(updaterInterval)
+        updaterInterval = setInterval(
+            () => {
+                if (isClearing || !Array.isArray(currentItems)) return
+                if (currentItems.find((a) => a?.conditions)) conditionsUpdater++
+            },
+            isMic ? 100 : 300
+        )
+    }
     onDestroy(() => clearInterval(updaterInterval))
 
     // do not update if only line has changed
@@ -104,6 +109,16 @@
     let currentSlideItems: Item[] | null = null
     $: if (currentSlide?.items !== 0) {
         if (JSON.stringify(currentSlide?.items) !== JSON.stringify(currentSlideItems)) currentSlideItems = clone(currentSlide?.items || null)
+    }
+    $: if (current && outSlide) {
+        if (current.outSlide && current.outSlide.id === outSlide.id && current.outSlide.index === outSlide.index) {
+            current.outSlide.itemClickReveal = outSlide.itemClickReveal
+            current.outSlide.revealCount = outSlide.revealCount
+            current.outSlide.line = outSlide.line
+        }
+    }
+    $: if (current && lines) {
+        current.lines = clone(lines)
     }
 
     $: if (currentSlideItems !== undefined || currentOutSlide || currentLines) updateItems()
@@ -158,6 +173,17 @@
         return item?.id ? String(item.id) : `idx-${index}`
     }
 
+    // outgoing items hold for auto size delay while incoming content calculates font size
+    $: incomingNeedsAutoSize = slideNeedsAutoSize(currentSlide, outSlide, currentStyle)
+    function slideNeedsAutoSize(slide: any, out: OutSlide, style: any) {
+        if (slide?.items?.some(itemNeedsAutoSize)) return true
+
+        let customTemplate = getStyleTemplate(out, style)
+        if (!Object.keys(customTemplate).length && out?.id === "temp") customTemplate = $templates[$scriptureSettings.template] || {}
+
+        return slideHasAutoSizeItem(customTemplate)
+    }
+
     let isClearingToEmpty = false
     async function updateItems() {
         let betweenClearingTransition = transition.between || transition
@@ -207,32 +233,24 @@
         let currentTransitionDuration = transitionEnabled ? (itemTransitionDuration ?? currentTransition?.duration ?? 0) : 0
         let waitToShow = currentTransitionDuration * ((currentTransition?.fadeInOffset ?? 50) / 100)
 
-        // Identify items that are unchanged and have no real transition (to skip redraw)
+        // Identify items that are unchanged and have no lines content (to keep outputted without fade)
         const newPersistentIndexes: number[] = []
         const newPersistentItems: Item[] = []
         const transitioningItems: Item[] = []
         const transitioningIndexes: number[] = []
 
-        // First, check if ANY item on the slide has a real transition
-        // If so, all items should animate together (no persistent items)
-        const slideHasAnyTransition = currentSlide.items.some((item: Item) => {
-            const itemTrans = item.actions?.transition
-            return hasRealTransition(itemTrans, currentTransition)
-        })
-
         currentSlide.items.forEach((newItem: Item, newIndex: number) => {
             // Find matching old item by index (position-based matching for slides)
             const oldItem = currentItems[newIndex]
 
-            // Item is persistent only if:
+            // Item is persistent if:
             // 1. Content is unchanged AND
-            // 2. No real transition on this item AND
-            // 3. No other item on the slide has a transition (so whole slide animates together)
-            if (itemsAreEqual(oldItem, newItem) && !slideHasAnyTransition) {
+            // 2. It does not have lines/text content (non-text items or text items without lines content)
+            if (!hasLinesContent(newItem) && itemsAreEqual(oldItem, newItem)) {
                 newPersistentIndexes.push(newIndex)
                 newPersistentItems.push(clone(newItem))
             } else {
-                // Item needs to be re-rendered (changed, has transition, or another item has transition)
+                // Item needs to be re-rendered (changed, or has lines content)
                 transitioningIndexes.push(newIndex)
                 transitioningItems.push(clone(newItem))
             }
@@ -243,7 +261,8 @@
         persistentItems = newPersistentItems
 
         // between
-        if (currentItems.length && currentSlide.items.length) transitioningBetween = true
+        const isDifferentSlide = current.currentSlide?.id !== currentSlide?.id || current.outSlide?.index !== outSlide?.index || current.outSlide?.id !== outSlide?.id
+        if (isDifferentSlide && currentItems.length && currentSlide.items.length) transitioningBetween = true
 
         if (timeout) clearTimeout(timeout)
 
@@ -318,7 +337,7 @@
         const interval = setInterval(() => {
             if (isClearing || !isReady || !timelineActions.length) return
             // WIP use actual slide timeline pos when available?
-            timelinePos += 10 * $slideTimelineSpeedMultiplier
+            timelinePos += 15 * $slideTimelineSpeedMultiplier
             styleActions(timelineActions)
 
             // loop back when reached last action
@@ -326,18 +345,21 @@
                 const lastActionTime = Math.max(...timelineActions.map((a) => a.time + (a.duration || 0) * 1000))
                 if (timelinePos >= lastActionTime) timelinePos = 0
             }
-        }, 10)
+        }, 15)
 
         function styleActions(actions: TimelineAction[]) {
             const itemStyleActions = actions.filter((a) => a.type === "style")
-            // group by style key
+            // group by style key & indexes
             const groupedActions = new Map<string, TimelineAction[]>()
             for (const action of itemStyleActions) {
                 const key = action.data?.key
                 if (!key) continue
 
-                if (!groupedActions.has(key)) groupedActions.set(key, [])
-                groupedActions.get(key)?.push(action)
+                const indexes = action.data?.indexes ? action.data.indexes.join(",") : ""
+                const groupKey = `${key}-${indexes}`
+
+                if (!groupedActions.has(groupKey)) groupedActions.set(groupKey, [])
+                groupedActions.get(groupKey)?.push(action)
             }
 
             const slideKey = `${outSlide?.id}-${outSlide?.layout}-${outSlide?.index}`
@@ -387,19 +409,18 @@
 
 <!-- Render all items in original order to maintain z-index layering -->
 {#each currentItems as item, index}
-    {#if shouldItemBeShown(item, currentItems, showItemRef, conditionsUpdater) && (!item.clickReveal || current.outSlide?.itemClickReveal)}
+    {#if item && shouldItemBeShown(item, [], showItemRef, conditionsUpdater) && (!item.clickReveal || current.outSlide?.itemClickReveal)}
         {#if persistentItemIndexes.includes(index)}
             <!-- Persistent item: unchanged content, render outside transition to avoid flicker -->
             <Textbox
                 backdropFilter={current.slideData?.["backdrop-filter"] || ""}
-                disableListTransition={mirror}
                 chords={item.chords?.enabled}
                 animationStyle={animationData.style || {}}
                 item={timelineItems.get(`${current.outSlide?.id}-${current.outSlide?.layout}-${current.outSlide?.index}`)?.[index] || item}
                 transition={null}
                 {ratio}
                 {outputId}
-                ref={{ type: "show", showId: current.outSlide?.id, slideId: current.currentSlide?.id, id: current.currentSlide?.id || "", layoutId: current.outSlide?.layout }}
+                ref={{ type: "show", showId: current.outSlide?.id, slideId: current.currentSlide?.id, id: current.currentSlide?.id || "", layoutId: current.outSlide?.layout, origin }}
                 linesStart={current.lines?.[currentLineId || ""]?.[item.lineReveal ? "linesStart" : "start"]}
                 linesEnd={current.lines?.[currentLineId || ""]?.[item.lineReveal ? "linesEnd" : "end"]}
                 clickRevealed={!!current.lines?.[currentLineId || ""]?.clickRevealed}
@@ -415,10 +436,9 @@
             <!-- Transitioning item: render with animation wrapper inside {#key} -->
             {#key show}
                 {#if show}
-                    <SlideItemTransition {preview} {transitionEnabled} {transitioningBetween} globalTransition={transition} currentSlide={current.currentSlide} {item} outSlide={current.outSlide} lines={current.lines} currentStyle={current.currentStyle} let:customSlide let:customItem let:customLines let:customOut let:transition>
+                    <SlideItemTransition {preview} {transitionEnabled} {transitioningBetween} {isClearing} {incomingNeedsAutoSize} globalTransition={transition} currentSlide={current.currentSlide} {item} outSlide={current.outSlide} lines={current.lines} currentStyle={current.currentStyle} let:customSlide let:customItem let:customLines let:customOut let:transition>
                         <Textbox
                             backdropFilter={current.slideData?.["backdrop-filter"] || ""}
-                            disableListTransition={mirror}
                             chords={customItem.chords?.enabled}
                             animationStyle={animationData.style || {}}
                             item={timelineItems.get(`${customOut?.id}-${customOut?.layout}-${customOut?.index}`)?.[index] || customItem}

@@ -1,5 +1,5 @@
 import type { Cropping, Resolution } from "./Settings"
-import type { OutBackground, OutSlide, OutTransition } from "./Show"
+import type { OutBackground, OutScene, OutSlide, OutTransition } from "./Show"
 
 export interface Outputs {
     [key: string]: Output
@@ -18,20 +18,53 @@ export interface Output {
     cropping?: Cropping
     blending?: { left: number; right: number; rotate: number; opacity: number; centered: boolean; offset: number }
     screen: string | null
-    kioskMode?: boolean
     alwaysOnTop?: boolean
     transparent?: boolean
-    allowMainScreen?: boolean // allow custom output bounds
     ndi?: boolean
     ndiData?: any
+    omt?: boolean
+    omtData?: any
     blackmagic?: boolean
     blackmagicData?: any
+    webrtc?: boolean
+    webrtcData?: { url?: string; token?: string; streaming?: boolean; fps?: string | number; bitrate?: string | number }
+    rtmp?: boolean
+    rtmpData?: RtmpData
     forcedResolution?: Resolution
     invisible?: boolean
     taskbar?: boolean
     style?: string
     show?: any
     out?: OutData
+}
+
+export interface SyncedOutputs {
+    [id: string]: string
+}
+
+// RTMP
+export interface RtmpDestination {
+    id: string
+    url: string
+    key: string
+    enabled: boolean
+}
+export interface RtmpData {
+    streaming?: boolean
+    fps?: string | number
+    bitrate?: string | number
+    encoder?: string
+    destinations?: RtmpDestination[]
+    url?: string // deprecated, only used in v1.6.4
+    key?: string // deprecated, only used in v1.6.4
+}
+export type RtmpDestinationState = "idle" | "connecting" | "live" | "reconnecting" | "error"
+export interface RtmpStatus {
+    /**
+     * `restarts`/`lastIssue` persist for the whole stream rather than clearing on recovery: a
+     * destination that keeps dropping and reconnecting reads as healthy from `state` alone.
+     */
+    [destinationId: string]: { state: RtmpDestinationState; error?: string; restarts?: number; lastIssue?: string }
 }
 
 export interface OutData {
@@ -41,6 +74,7 @@ export interface OutData {
     effects?: string[]
     overlays?: string[]
     transition?: null | OutTransition
+    scene?: null | OutScene
 }
 
 export interface Animation {

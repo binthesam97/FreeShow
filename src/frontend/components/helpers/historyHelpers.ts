@@ -2,10 +2,10 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import { REMOTE } from "../../../types/Channels"
 import { ShowObj } from "../../classes/Show"
-import { activeDrawerTab, activeEdit, activeProject, activeRename, activeShow, activeStage, activeTagFilter, audioPlaylists, currentOutputSettings, dictionary, drawerTabsData, effects, events, focusMode, folders, globalTags, groups, notFound, openedFolders, overlays, playerVideos, profiles, projects, projectTemplates, projectView, shows, showsCache, special, stageShows, styles, theme, themes } from "../../stores"
+import { actions, activeDrawerTab, activeEdit, activeProject, activeRename, activeShow, activeStage, activeTagFilter, audioPlaylists, currentOutputSettings, dictionary, drawerTabsData, editingProjectTemplate, effects, events, focusMode, folders, globalTags, groups, interactions, notFound, openedFolders, overlays, playerVideos, profiles, projects, projectTemplates, projectView, scenes, shows, showsCache, special, stageShows, styles, theme, themes } from "../../stores"
 import { translateText } from "../../utils/language"
 import { updateThemeValues } from "../../utils/updateSettings"
-import { EMPTY_CATEGORY, EMPTY_EFFECT, EMPTY_EVENT, EMPTY_LAYOUT, EMPTY_PLAYER_VIDEO, EMPTY_PROJECT, EMPTY_PROJECT_FOLDER, EMPTY_SECTION, EMPTY_SLIDE, EMPTY_STAGE, EMPTY_TAG } from "../../values/empty"
+import { EMPTY_CATEGORY, EMPTY_EFFECT, EMPTY_EVENT, EMPTY_LAYOUT, EMPTY_PLAYER_VIDEO, EMPTY_PROJECT, EMPTY_PROJECT_FOLDER, EMPTY_SCENE, EMPTY_SECTION, EMPTY_SLIDE, EMPTY_STAGE, EMPTY_TAG } from "../../values/empty"
 import { getWeekNumber } from "../drawer/calendar/calendar"
 import { audioFolders, categories, mediaFolders, outputs, overlayCategories, templateCategories, templates } from "./../../stores"
 import { clone, keysToID, sortByName } from "./array"
@@ -65,7 +65,7 @@ export const _updaters = {
         store: projects,
         empty: EMPTY_PROJECT,
         initialize: (data) => {
-            return replaceEmptyValues(data, { name: getProjectName(), created: Date.now(), modified: Date.now(), used: Date.now() })
+            return replaceEmptyValues(data, { name: getProjectName(data.parent), created: Date.now(), modified: Date.now(), used: Date.now() })
         },
         select: (id: string, { data }: any, initializing: boolean) => {
             activeProject.set(id)
@@ -190,6 +190,14 @@ export const _updaters = {
         },
         timestamp: true
     },
+    project_show_placeholder: {
+        store: projectTemplates,
+        empty: { id: "", type: "show_placeholder", name: "—" },
+        initialize: (data) => {
+            return replaceEmptyValues(data, { id: uid(5) }) // name: translateText("formats.show")
+        },
+        timestamp: true
+    },
 
     project_key: { store: projects, timestamp: true },
     project_folder_key: { store: folders, timestamp: true },
@@ -287,6 +295,17 @@ export const _updaters = {
     overlay_category: { store: overlays, empty: null, timestamp: true },
     overlay_key: { store: overlays, empty: {}, timestamp: true },
 
+    scene: {
+        store: scenes,
+        empty: EMPTY_SCENE,
+        initialize: (data, id: string) => {
+            activeRename.set("scene_" + id)
+            return data
+        },
+        timestamp: true
+    },
+    scene_key: { store: scenes, empty: {}, timestamp: true },
+
     template: {
         store: templates,
         empty: EMPTY_SLIDE,
@@ -328,7 +347,11 @@ export const _updaters = {
 
     show: {
         store: showsCache,
-        empty: new ShowObj(), // this should not be used (it's not updated)
+        // Lazy to avoid constructing ShowObj during module evaluation.
+        // This helps avoid circular-import initialization issues.
+        get empty() {
+            return new ShowObj() // this should not be used
+        },
         initialize: (data: any) => {
             const replacer: any = {}
 
@@ -357,12 +380,20 @@ export const _updaters = {
             if (data.remember?.project && get(projects)[data.remember.project]?.shows) {
                 projects.update((p) => {
                     if (data.remember.index !== undefined && p[data.remember.project].shows.length > data.remember.index) {
-                        p[data.remember.project].shows = addToPos(p[data.remember.project].shows, [{ id }], data.remember.index)
-                        showRef.index = data.remember.index
+                        if (data.remember.replacePlaceholder) {
+                            p[data.remember.project].shows[data.remember.index] = { id }
+                            showRef.index = data.remember.index
+                        } else {
+                            p[data.remember.project].shows = addToPos(p[data.remember.project].shows, [{ id }], data.remember.index)
+                            showRef.index = data.remember.index
+                        }
                     } else {
                         p[data.remember.project].shows.push({ id })
                         showRef.index = p[data.remember.project].shows.length - 1
                     }
+
+                    // update project modified so changes work with cloud sync
+                    p[data.remember.project].modified = Date.now()
 
                     return p
                 })
@@ -435,11 +466,16 @@ export const _updaters = {
         select: (id: string, { subkey }: any, initializing: boolean) => {
             _show(id).set({ key: "settings.activeLayout", value: subkey })
 
-            // set active layout in project
-            if (get(activeShow)?.index !== undefined && get(activeProject) && get(projects)[get(activeProject)!]?.shows?.[get(activeShow)!.index!]) {
-                projects.update((a) => {
-                    a[get(activeProject)!].shows[get(activeShow)!.index!].layout = subkey
-                    a[get(activeProject)!].shows[get(activeShow)!.index!].layoutInfo = { name: _show(id).get("layouts")?.[subkey]?.name || "" }
+            // set active layout in project / template
+            const isTemplate = !!get(editingProjectTemplate)
+            const projectId = isTemplate ? get(editingProjectTemplate) : get(activeProject)
+            const store = isTemplate ? projectTemplates : projects
+            const activeShowIndex = get(activeShow)?.index
+
+            if (activeShowIndex !== undefined && projectId && get(store)[projectId!]?.shows?.[activeShowIndex]) {
+                store.update((a) => {
+                    a[projectId!].shows[activeShowIndex].layout = subkey
+                    a[projectId!].shows[activeShowIndex].layoutInfo = { name: _show(id).get("layouts")?.[subkey]?.name || "" }
                     return a
                 })
             }
@@ -564,6 +600,14 @@ export const _updaters = {
             if (!initializing || data.key) return
             activeRename.set("profile_" + id)
         }
+    },
+    action: {
+        store: actions,
+        empty: { name: "", triggers: [] }
+    },
+    interaction: {
+        store: interactions,
+        empty: { name: "", inputs: [] }
     }
 }
 
@@ -674,21 +718,31 @@ export function getDefaultProjectName() {
         return DEFAULT_PROJECT_NAME
     }
 }
-export function getProjectName(updater = get(special)) {
-    let name = updater.default_project_name ?? getDefaultProjectName()
-
+export function getProjectName(parentFolder: string = "", updater = get(special)) {
+    const defaultName = updater.default_project_name ?? getDefaultProjectName()
     let date = new Date()
 
     // use Dnum date if it exists
-    const dNumMatch = name.match(/{D[0-7]}/)
-    if (dNumMatch) {
-        const dNum = parseInt(dNumMatch[0].match(/\d/)?.[0] || "0")
-        date = getNextWeekdayDate(date, dNum === 7 ? 0 : dNum)
-    }
+    const dNumMatch = defaultName.match(/{D[0-7]}/)
+    const dNum = dNumMatch ? parseInt(dNumMatch[0][2]) : null
+    if (dNum !== null) date = getNextWeekdayDate(date, dNum === 7 ? 0 : dNum)
 
-    projectReplacers.forEach((a) => {
-        name = name.replaceAll(`{${a.id}}`, a.value(date))
-    })
+    const replaceDate = (date: Date) => projectReplacers.reduce((name, a) => name.replaceAll(`{${a.id}}`, a.value(date)), defaultName)
+    let name = replaceDate(date)
+
+    // if a project in the same folder with the same name exists, append a number to make it unique (or get next available dNum date)
+    const projectsInFolder = Object.values(get(projects)).filter((project) => !parentFolder || project.parent === parentFolder)
+    const names = new Set(projectsInFolder.map((project) => project.name))
+    if (dNum !== null) {
+        while (names.has(name)) {
+            date.setDate(date.getDate() + 7)
+            name = replaceDate(date)
+        }
+    } else if (names.has(name)) {
+        let num = 2
+        while (names.has(`${name} (${num})`)) num++
+        name = `${name} (${num})`
+    }
 
     return name
 }

@@ -19,10 +19,23 @@ export const effectItems = {
 
     aurora: { default: { bandCount: 7, amplitude: 60, wavelength: 500, speed: 0.6, colorStops: ["#00ffcc", "#00ffb7", "#00ff88"] } },
     bloom: { default: { blobCount: 25, blurAmount: 60, speed: 2 } },
+    mesh_gradient: {
+        default: {
+            speed: 1,
+            motion: 0.07,
+            spread: 1,
+            density: 4,
+            grain: 0,
+            colors: ["#101020", "#111124", "#141530", "#181a3a", "#1e2044", "#24264e", "#2b2c58", "#3a3663", "#4d4270", "#65517d", "#7d5f83", "#9b7288", "#b98a8b", "#d2a48f", "#e4bd9b", "#f0d3ae"]
+        }
+    },
     fog: { default: { count: 40, size: 120, speed: 2, opacity: 0.05, blur: 45, spread: 200 } },
 
     city: { default: { count: 40, height: 200, width: 40, color: "#222222", windowColor: "#ffff99", night: true, flickerSpeed: 1 } },
     fireworks: { default: { speed: 0.5, count: 50, size: 1.5 } },
+    confetti: { default: { speed: 1, count: 100, size: 1 } },
+
+    candle: { default: { width: 140, height: 280, color: "#ece2d0", lit: true, speed: 5 } },
 
     rays: { default: { speed: 1, color_1: "#000000", color_2: "#ffffff", numRays: 8 } },
 

@@ -5,12 +5,15 @@ import { ShowObj } from "../classes/Show"
 import { getItemText, getSlideText } from "../components/edit/scripts/textStyle"
 import { clone } from "../components/helpers/array"
 import { history } from "../components/helpers/history"
+import { setQuickAccessMetadata } from "../components/helpers/setShow"
 import { checkName, getCustomMetadata, getLabelId } from "../components/helpers/show"
 import { _show } from "../components/helpers/shows"
 import { linesToTextboxes } from "../components/show/formatTextEditor"
-import { activePopup, activeProject, activeShow, alertMessage, dictionary, drawerTabsData, formatNewShow, groupNumbers, groups, special, splitLines } from "../stores"
+import { VIRTUAL_BREAK_CHAR } from "../show/slides"
+import { activePopup, activeProject, activeShow, alertMessage, dictionary, drawerTabsData, formatNewShow, groups, special, splitLines } from "../stores"
 import { translateText } from "../utils/language"
 import { setTempShows } from "./importHelpers"
+import { findPatterns } from "./txtAutoSections"
 
 export function getQuickExample() {
     const tip = translateText("create_show.quick_lyrics_example_tip")
@@ -50,6 +53,14 @@ export function convertText({ name = "", origin = "", category = null, text, noF
     // in "Text edit" spaces can be used to create empty "child" slides
     text = text.replaceAll("\r", "").replaceAll("\n \n", "\n\n")
 
+    // extract any trailing URL
+    let source = ""
+    const urlMatch = text.match(/\n\s*(https?:\/\/\S+)\s*$/i)
+    if (urlMatch) {
+        if (!source) source = urlMatch[1].trim()
+        text = text.replace(/\n\s*https?:\/\/\S+\s*$/i, "")
+    }
+
     // preprocess chord lines before splitting into sections
     const allLines = text.split("\n")
     const processedLines = preprocessLines(allLines)
@@ -71,7 +82,7 @@ export function convertText({ name = "", origin = "", category = null, text, noF
             }
 
             const meta = line.split("=")
-            const metaKey = meta[0].toLowerCase().replaceAll(" ", "").trim()
+            const metaKey = meta[0]?.toString().toLowerCase().replaceAll(" ", "").trim() || ""
             if (metaKey === "notes") {
                 plainNotes = meta[1]
                 return
@@ -94,14 +105,23 @@ export function convertText({ name = "", origin = "", category = null, text, noF
 
     // get ccli
     let ccli = ""
-    if (!Object.keys(plainTextMetadata).length && sections[sections.length - 1]?.includes("www.ccli.com")) {
-        ccli = sections.pop()!
+    if (!Object.keys(plainTextMetadata).length && isCCLIBlock(sections[sections.length - 1])) {
+        const lastSection = sections[sections.length - 1]
+        const lines = lastSection.split("\n")
+        const songIdIndex = lines.findIndex((line) => /CCLI\s*(?:Song)?\s*#\s*\d+/i.test(line))
+        if (songIdIndex > 0 && lines.slice(0, songIdIndex).join("\n").trim()) {
+            ccli = lines.slice(songIdIndex).join("\n")
+            sections[sections.length - 1] = lines.slice(0, songIdIndex).join("\n")
+        } else {
+            ccli = sections.pop()!
+        }
     }
 
     let labeled: { type: string; text: string }[] = []
 
+    const autoGroups: boolean = get(special).autoGroups !== false
     // find chorus phrase
-    const patterns = findPatterns(sections)
+    const patterns = findPatterns(sections, autoGroups)
     sections = patterns.sections
     labeled = patterns.indexes.map((a, i) => ({ type: a, text: sections[i] || "" }))
     labeled = checkRepeats(labeled)
@@ -109,10 +129,10 @@ export function convertText({ name = "", origin = "", category = null, text, noF
     if (!name) name = plainTextMetadata.title || trimNameFromString(labeled[0]?.text)
 
     const layoutID: string = uid()
-    const show: Show = new ShowObj(false, category, layoutID)
+    let show: Show = new ShowObj(false, category, layoutID)
     if (origin) show.origin = origin
     // , existingSlides
-    const { slides, layouts } = createSlides(labeled, noFormatting)
+    const { slides, layouts } = createSlides(labeled, noFormatting, autoGroups)
 
     // if (onlySlides) return { slides, layouts }
 
@@ -121,34 +141,27 @@ export function convertText({ name = "", origin = "", category = null, text, noF
     show.layouts[layoutID].slides = layouts
 
     if (ccli) {
-        const meta: string[] = ccli.split("\n")
-        // songselect order
-        if (meta[4]?.includes("CCLI")) {
-            show.meta = {
-                title: show.name,
-                CCLI: meta[4].substring(meta[4].indexOf("#") + 1), // CCLI License
-                // CCLI Song = meta[1]
-                // artist: meta[0],
-                author: meta[0],
-                // composer: meta[0],
-                // publisher: meta[0],
-                copyright: meta[2]
-            }
-        } else {
-            show.meta = {
-                title: show.name,
-                CCLI: meta[0].substring(meta[0].indexOf("#") + 2),
-                artist: meta[1],
-                author: meta[2],
-                composer: meta[3],
-                publisher: meta[1],
-                copyright: meta[4]
-            }
-        }
+        show.meta = { ...show.meta, ...extractCCLIMetadata(ccli, name) }
     } else if (Object.keys(plainTextMetadata).length) {
         show.meta = plainTextMetadata
     }
+    if (show.meta.CCLI) show = setQuickAccessMetadata(show, "CCLI", show.meta.CCLI)
     if (show.meta.number !== undefined) show.quickAccess = { number: show.meta.number }
+    if (source && !show.meta.publisher) show.meta.publisher = source
+
+    // remove first block if it matches the metadata title
+    if (show.meta.title && show.layouts[layoutID]?.slides?.length > 0) {
+        const firstSlideId = show.layouts[layoutID].slides[0].id
+        const firstSlide = show.slides[firstSlideId]
+        if (firstSlide) {
+            const slideText = getSlideText(firstSlide).trim()
+            const slideLines = slideText.split("\n").filter(Boolean)
+            if (slideLines.length === 1 && slideLines[0].toLowerCase() === show.meta.title.toLowerCase()) {
+                show.layouts[layoutID].slides.shift()
+                delete show.slides[firstSlideId]
+            }
+        }
+    }
 
     if (plainNotes) show.layouts[layoutID].notes = plainNotes
 
@@ -185,10 +198,85 @@ export function trimNameFromString(text: string) {
     return name
 }
 
+function isCCLIBlock(text: string): boolean {
+    if (!text) return false
+    const lower = text.toLowerCase()
+    return lower.includes("www.ccli.com") || lower.includes("ccli song") || lower.includes("ccli licence") || lower.includes("ccli license")
+}
+function extractCCLIMetadata(ccliText: string, title?: string): Record<string, string> {
+    const lines = ccliText
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+
+    const meta: Record<string, string> = {}
+    if (title) meta.title = title
+
+    const unknownData: string[] = []
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+
+        // CCLI Song #
+        const songMatch = line.match(/CCLI\s*(?:Song)?\s*#\s*(\d+)/i)
+        if (songMatch) {
+            meta.CCLI = songMatch[1].trim()
+            continue
+        }
+
+        // CCLI License #
+        const licMatch = line.match(/CCLI\s*Licen[cs]e\s*(?:No\.?|#)?\s*(\d+)/i)
+        if (licMatch) {
+            if (!meta.license) meta.license = licMatch[1].trim()
+            continue
+        }
+
+        // Copyright / Year
+        const copyrightMatch = line.match(/^(?:©|\(c\)|copyright)\s*(.+)$/i)
+        if (copyrightMatch) {
+            meta.copyright = line
+            const yearMatch = copyrightMatch[1].match(/\b(19\d{2}|20\d{2})\b/)
+            if (yearMatch) meta.year = yearMatch[1]
+            continue
+        }
+
+        // SongSelect disclaimer / website link
+        if (/terms\s+of\s+use|all\s+rights\s+reserved|ccli\.com/i.test(line)) continue
+
+        unknownData.push(line)
+    }
+
+    // push into Author
+    if (unknownData.length > 0) meta.author = unknownData.join(", ")
+
+    return meta
+}
+
+export function isHeaderLine(line: string, isFirstLineOfGroup: boolean = true): boolean {
+    if (!line || line.trim() === "") return false
+    const trimmed = line.trim()
+
+    // Match bracket headers like [Verse] or [Intro]
+    if (/^\[.+\]$/.test(trimmed)) return true
+
+    // Match colon headers like "Intro:", "Verse 1:", "Chorus: x2"
+    if (/^[\d\s]*[\p{L}\w\s-]+\s*:\s*([xх]\d+)?$/iu.test(trimmed)) {
+        if (!isFirstLineOfGroup) return false
+        const rawName = trimmed.replace(/[\[\]'":]+/g, "").trim()
+        if (findGroupMatch(rawName) || findGroupMatch(getLabelId(trimmed))) return true
+
+        const wordOnly = rawName.replace(/[xх]\d+|\d+|[^\p{L}\w\s-]/giu, "").trim()
+        return wordOnly.split(/\s+/).filter(Boolean).length === 1
+    }
+
+    return false
+}
+
 function isChordLine(line: string): boolean {
     if (!line || line.trim() === "") return false
+    if (isHeaderLine(line)) return false
 
-    const chordPattern = /[A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add)?(?:\d+)?(?:\/[A-G][#b]?)?/g
+    const chordPattern = /\b[A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add)?(?:\d+)?(?:\/[A-G][#b]?)?\b/g
     const nonWhitespace = line.replace(/\s/g, "")
     if (!nonWhitespace) return false
 
@@ -201,22 +289,29 @@ function isChordLine(line: string): boolean {
     // If more than 20% of non-whitespace characters are not chords, it's probably not a chord line
     return nonChordChars / nonWhitespace.length <= 0.2
 }
+
 function preprocessLines(lines: string[]): string[] {
     const output: string[] = []
     let i = 0
 
     while (i < lines.length) {
         const currentLine = lines[i]
+        const isFirstLineOfGroup = i === 0 || lines[i - 1].trim() === ""
 
-        // Check if this is a section header (like [Verse], [Chorus], etc.)
-        const isSectionHeader = currentLine.trim().match(/^\[.+\]$/)
-        if (isSectionHeader) {
-            output.push(currentLine)
+        // Check if this is a section header (like [Verse], [Chorus], "Verse 1:", etc.)
+        if (isHeaderLine(currentLine, isFirstLineOfGroup)) {
+            // Ensure a section break if preceding line was not empty
+            if (output.length > 0 && output[output.length - 1] !== "") {
+                output.push("")
+            }
+            // Standardize header formatting to brackets
+            const headerText = currentLine.replace(/[\[\]:]/g, "").trim()
+            output.push(`[${headerText}]`)
             i++
             continue
         }
 
-        // Check if current line is a chord line with a lyric line below
+        // Check if current line is a chord line
         if (isChordLine(currentLine)) {
             let j = i + 1
             // Skip one empty line if present
@@ -224,14 +319,16 @@ function preprocessLines(lines: string[]): string[] {
                 j++
             }
 
-            if (j < lines.length && lines[j].trim() !== "" && !isChordLine(lines[j])) {
+            if (j < lines.length && lines[j].trim() !== "" && !isChordLine(lines[j]) && !isHeaderLine(lines[j], false)) {
                 // Found a lyric line - combine chord and lyric lines
                 const combinedLine = insertChordsIntoLyrics(currentLine, lines[j])
                 output.push(combinedLine)
                 i = j + 1
             } else {
-                // No corresponding lyric line found
-                output.push(currentLine)
+                // Standalone chord line (e.g. Intro, Instrumental, Outro)
+                // Wrap all individual chords in square brackets
+                const bracketedChords = currentLine.replace(/\b[A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add)?(?:\d+)?(?:\/[A-G][#b]?)?\b/g, (chord) => `[${chord}]`)
+                output.push(bracketedChords)
                 i++
             }
         } else {
@@ -243,46 +340,48 @@ function preprocessLines(lines: string[]): string[] {
 
     return output
 }
+
 function insertChordsIntoLyrics(chordLine: string, lyricLine: string): string {
-    const chordRegex = /[A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add)?(?:\d+)?(?:\/[A-G][#b]?)?/g
+    const chordRegex = /\b[A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add)?(?:\d+)?(?:\/[A-G][#b]?)?\b/g
     const chords: { chord: string; position: number }[] = []
     let match: RegExpExecArray | null
 
+    // Only allow chord positions within the lyric line length
     while ((match = chordRegex.exec(chordLine)) !== null) {
-        // Adjust chord position to attach to words instead of spaces
-        let position = match.index
+        // Ignore if the chord name is longer than 12 characters or contains spaces
+        if (match[0].length > 12 || /\s/.test(match[0])) continue
 
+        let position = match.index
         // If chord position is at a space, move it to the next word
         if (position < lyricLine.length && lyricLine[position] === " ") {
-            // Find the next non-space character
             while (position < lyricLine.length && lyricLine[position] === " ") {
                 position++
             }
         }
 
-        chords.push({
-            chord: match[0],
-            position
-        })
+        chords.push({ chord: match[0], position })
     }
 
     if (chords.length === 0) return lyricLine
 
     let result = ""
     let chordIdx = 0
-    const maxLen = Math.max(chordLine.length, lyricLine.length)
 
-    for (let pos = 0; pos < maxLen; pos++) {
+    // Only iterate up to the lyric line length
+    for (let pos = 0; pos < lyricLine.length; pos++) {
         // Insert chord if it starts at this position
-        if (chordIdx < chords.length && chords[chordIdx].position === pos) {
+        while (chordIdx < chords.length && chords[chordIdx].position === pos) {
             result += `[${chords[chordIdx].chord}]`
             chordIdx++
         }
-
         // Add lyric character at this position
-        if (pos < lyricLine.length) {
-            result += lyricLine[pos]
-        }
+        result += lyricLine[pos]
+    }
+
+    // If any chords remain that are positioned at or after the end, append them at the end
+    while (chordIdx < chords.length) {
+        result += `[${chords[chordIdx].chord}]`
+        chordIdx++
     }
 
     return result
@@ -290,7 +389,7 @@ function insertChordsIntoLyrics(chordLine: string, lyricLine: string): string {
 
 // TODO: this sometimes splits all slides up with no children (when adding [group])
 // , existingSlides = {}
-function createSlides(labeled: { type: string; text: string }[], noFormatting) {
+function createSlides(labeled: { type: string; text: string }[], noFormatting: boolean, autoGroups: boolean) {
     const slides: { [key: string]: Slide } = {}
     const layouts: SlideData[] = []
 
@@ -321,13 +420,13 @@ function createSlides(labeled: { type: string; text: string }[], noFormatting) {
 
         let id = ""
         const formatText: boolean = noFormatting ? false : get(formatNewShow)
-        const autoGroups: boolean = get(special).autoGroups !== false
 
         const slideText: string = fixText(a.text, formatText)
         // this only accounted for the parent slide, so if the same group was placed multiple times with different children that would be replaced & all "duplicate" children would be removed!
         // if (stored[a.type]) id = stored[a.type].find((b) => b.text === text)?.id
 
-        const hasTextGroup: boolean = (a.text.trim()[0] === "[" && a.text.includes("]")) || a.text.trim()[a.text.length - 1] === ":"
+        const firstLine = a.text.trim().split("\n")[0]?.trim() || ""
+        const hasTextGroup: boolean = isHeaderLine(firstLine, true)
 
         if (id) {
             if (activeGroup && !hasTextGroup) return
@@ -345,16 +444,19 @@ function createSlides(labeled: { type: string; text: string }[], noFormatting) {
         // stored[a.type].push({ id, text })
 
         let group = activeGroup && !hasTextGroup ? null : a.type
-        if (!autoGroups && !hasTextGroup && group) group = "verse"
+        if (!autoGroups && !hasTextGroup && group) {
+            const matched = findGroupMatch(group)
+            if (matched) group = matched
+            else group = "verse"
+        }
         const color: string | null = null
 
         // split slide notes from text ("---")
         const slideTextAndNotes = slideText.split("---")
-        if (!slideTextAndNotes[0]?.length) return
 
-        while (new Set(slideTextAndNotes[0].split("")).size === 1 && slideTextAndNotes[0][0] === "-") slideTextAndNotes.shift()
-        let allLines: string[] = [slideTextAndNotes.shift() || ""]
-        if (allLines[0].endsWith("\n")) allLines[0] = allLines[0].slice(0, -1)
+        while (slideTextAndNotes[0] && new Set(slideTextAndNotes[0].split("")).size === 1 && slideTextAndNotes[0][0] === "-") slideTextAndNotes.shift()
+        let allLines: string[] = [slideTextAndNotes.length > 0 ? slideTextAndNotes.shift() || "" : ""]
+        if (allLines[0] && allLines[0].endsWith("\n")) allLines[0] = allLines[0].slice(0, -1)
 
         while (slideTextAndNotes[0] === "") slideTextAndNotes.shift()
         const slideNotes = slideTextAndNotes.join("\n").slice(1)
@@ -395,8 +497,10 @@ function createSlides(labeled: { type: string; text: string }[], noFormatting) {
                 items = items
                     // .filter((a) => !a.type || a.type === "text" || a.lines)
                     .map((item) => {
-                        item.lines?.forEach((_, index) => {
-                            item.lines![index].text[0].style = activeItems?.[0]?.lines?.[0]?.text?.[0]?.style || ""
+                        item.lines?.forEach((line) => {
+                            if (line.text?.[0]) {
+                                line.text[0].style = activeItems?.[0]?.lines?.[0]?.text?.[0]?.style || ""
+                            }
                         })
                         return item
                     })
@@ -414,9 +518,32 @@ function createSlides(labeled: { type: string; text: string }[], noFormatting) {
                     let isChord = false
 
                     line?.text?.forEach((text) => {
+                        if (typeof text !== "object" || text === null) return
                         let newValue = ""
                         text.value?.split("").forEach((char) => {
                             if ((char === "[" || char === "]") && !text.value.slice(0, -2).includes(":")) {
+                                if (char === "]" && isChord && chords.length > 0) {
+                                    const currentKey = chords[chords.length - 1].key
+                                    // Check if this is a virtual break marker, not a chord
+                                    if (currentKey === "_VB") {
+                                        // Remove the virtual break from chords array and add it to text
+                                        chords.pop()
+                                        newValue += VIRTUAL_BREAK_CHAR
+                                        isChord = false
+                                        return
+                                    }
+
+                                    // Validate that the extracted key is a valid musical chord
+                                    const validChordPattern = /^[A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add)?(?:\d+)?(?:\/[A-G][#b]?)?$/
+                                    if (!validChordPattern.test(currentKey)) {
+                                        chords.pop()
+                                        newValue += `[${currentKey}]`
+                                        letterIndex += currentKey.length + 2
+                                        isChord = false
+                                        return
+                                    }
+                                }
+
                                 isChord = char === "["
                                 if (isChord) chords.push({ id: uid(5), pos: letterIndex, key: "" })
                                 return
@@ -466,6 +593,9 @@ function removeSlideDuplicates(slides: { [key: string]: Slide }, layouts: SlideD
         if (slide.group === null) return
 
         let text = getSlideText(slide)
+        // Include Group ID in the cache key to differentiate slides with identical text but different groups (e.g., key changes)
+        text += `_GROUPID_${slide.group}`
+
         // for empty slides, include group label in deduplication key
         if (!text.trim()) text = `EMPTY_${slide.group}`
         text += slide.children?.reduce((value, childId) => (value += getSlideText(slides[childId])), "") || ""
@@ -503,14 +633,21 @@ function linesToItems(lines: string) {
 function checkRepeats(labeled: { type: string; text: string }[]) {
     const newLabels: { type: string; text: string }[] = []
     labeled.forEach((a) => {
-        const match = a.text.match(/\nx[0-9]/)
-        if (match !== null && match.index !== undefined) {
-            const repeatNumber = a.text.slice(match.index + 2, match.index + 4).replace(/[A-Z]/gi, "")
-            // remove
-            a.text = a.text.slice(0, match.index + 1) + a.text.slice(match.index + match[0].length + 1, a.text.length)
-            ;[...Array(Number(repeatNumber))].map(() => {
+        // Match repeat markers in text, either newline xN (\nx2) or end of header line (: x2)
+        const match = a.text.match(/(?:\n|^[^\n]+?)\s*[xх]([0-9]+)\s*(?:\n|$)/i)
+        if (match !== null && match[1]) {
+            const repeatNumber = parseInt(match[1])
+
+            if (!isNaN(repeatNumber) && repeatNumber > 0 && repeatNumber < 10) {
+                // remove repeat marker from text
+                a.text = a.text.replace(/\s*[xх][0-9]+\s*$/m, "").trim()
+
+                for (let i = 0; i < repeatNumber; i++) {
+                    newLabels.push({ ...a })
+                }
+            } else {
                 newLabels.push(a)
-            })
+            }
         } else newLabels.push(a)
     })
     return newLabels
@@ -523,9 +660,6 @@ function fixText(text: string, formatText: boolean): string {
         text = text.replace(/\([^)]{1,2}\) /g, "")
     }
 
-    // remove group from text
-    if (text[0] === "[" && text.includes("]")) text = text.slice(text.indexOf("]") + 1)
-    if (text.indexOf(":") === text.split("\n")[0].length - 1 && (formatText || text.split("\n")[0]?.split(" ").length < 3)) text = text.slice(text.indexOf(":") + 1)
 
     if (formatText) {
         // repeat text
@@ -575,158 +709,67 @@ function fixText(text: string, formatText: boolean): string {
         })
     }
 
-    const label: string = getLabelId(lines[0])
+    const firstLine = lines[0] || ""
+    const label: string = getLabelId(firstLine)
 
-    // remove first line if it's a label
-    if (findGroupMatch(label)) lines = lines.slice(1, lines.length)
+    // remove first line if it's a label or header
+    if (findGroupMatch(label) || isHeaderLine(firstLine)) lines = lines.slice(1, lines.length)
 
     text = lines.filter((a) => a).join("\n")
 
     return text
 }
 
-//
+// --- Match Helpers ---
 
-const similarityNum = 0.7
+export function similarity(s1: string, s2: string): number {
+    if (!s1.length && !s2.length) return 1.0
+    const maxLength = Math.max(s1.length, s2.length)
+    if (maxLength === 0) return 1.0
 
-function findPatterns(sections: string[]) {
-    const similarCount: { matches: number[]; count: 0 }[] = []
-    // total count of totally different slides
-    let totalMatches = 0
-    sections.forEach(countMatchingSections)
-
-    // let totalMatches = similarCount.filter((a) => a > 0).length
-    let matches = 0
-    const stored: { type: string; text: string }[] = []
-    const indexes = similarCount.map(getIndexes)
-
-    return { sections, indexes }
-
-    function countMatchingSections(section: string, i: number) {
-        similarCount[i] = { matches: [], count: 0 }
-
-        const alreadyCounted = similarCount.find((a) => a.matches.includes(i))
-        if (alreadyCounted) {
-            similarCount[i] = alreadyCounted
-            return
-        }
-
-        sections.forEach(count)
-        if (similarCount[i].count > 0) totalMatches++
-
-        function count(b: string, j: number) {
-            if (i === j || similarityNum > similarity(section, b)) return
-            similarCount[i].count++
-            similarCount[i].matches.push(j)
-        }
-    }
-
-    function getIndexes(similar: { matches: number[]; count: 0 }, i: number): string {
-        // let lines = sections[i].split("\n")
-        const splitted: string[] = sections[i].split("\n").filter((a) => a.length)
-        const length: number = sections[i].replaceAll("\n", "").length
-        const find = stored.find((a) => similarity(a.text, sections[i]) > similarityNum)
-
-        // TODO: repeat x6
-        // TODO: labels in text
-        // TODO: frihet, the blessing
-        // verses repeat..., bridge repeat
-
-        // if (lines.length < 2) group =  "break"
-        if (find) return find.type
-        if (!length) return "break"
-
-        // TODO: group....
-        const name = getLabelId(splitted[0])
-        if (findGroupMatch(name)) return findGroupMatch(name) || name
-
-        // let textGroup: string = splitted[0].trim()[0] === "[" && splitted[0].includes("]") ? splitted[0].slice(splitted[0].indexOf("[") + 1, splitted[0].indexOf("]")) : ""
-
-        // TODO: remove numbers....
-        if ((splitted[0].match(/\[[^\]]*]/g)?.[0] || "").length === splitted[0].length || splitted[0].trim()[splitted[0].length - 1] === ":") {
-            return splitted[0]
-                .replace(/[\[\]'":]+/g, "") // []'":
-                .replace(/x[0-9]/g, "") // x0-9
-                .replace(/[0-9]/g, "") // 0-9
-                .trim()
-        }
-
-        // if (length < 10 && !sections[i].includes("\n")) return sections[i].trim()
-        if (length < 30 || linesSimilarity(sections[i])) return "tag"
-        if (splitted[0].length < 8 && splitted[1].length > 20) {
-            sections[i] = splitted.slice(1, splitted.length).join("\n")
-            let group = splitted[0]
-            if (get(groupNumbers)) group = group.replace(/\d+/g, "").trim()
-            return get(groups)[group.toLowerCase()] ? group.toLowerCase() : splitted[0]
-        }
-        if (similar.count > 0) {
-            const globalGroups = ["pre_chorus", "chorus", "bridge", "bridge", "bridge"]
-            matches++
-            let group = globalGroups[matches]
-            if (totalMatches > 2) group = globalGroups[matches - 1] || "other"
-            stored.push({ type: group, text: sections[i] })
-            return group
-        }
-
-        return "verse"
-    }
+    return (maxLength - editDistance(s1, s2)) / maxLength
 }
 
-function linesSimilarity(text: string): boolean {
-    const lines = text.split("\n")
-    if (lines.length < 3) return false
-    let isSimilar = false
-    lines.reduce((a: string, b: string) => {
-        if (similarity(a, b) > 0.95) isSimilar = true
-        return ""
-    })
-    return isSimilar
-}
+function editDistance(s1: string, s2: string): number {
+    const str1 = s1.toLowerCase()
+    const str2 = s2.toLowerCase()
+    const costs: number[] = Array.from({ length: str2.length + 1 }, (_, i) => i)
 
-// https://stackoverflow.com/questions/10473745/compare-strings-javascript-return-of-likely
-export function similarity(s1: string, s2: string) {
-    let longer = s1
-    let shorter = s2
-    if (s1.length < s2.length) {
-        longer = s2
-        shorter = s1
-    }
-    const longerLength: number = longer.length
-    if (longerLength === 0) {
-        return 1.0
-    }
-    return (longerLength - editDistance(longer, shorter)) / parseFloat(longerLength.toString())
-}
-
-function editDistance(s1: string, s2: string) {
-    s1 = s1.toLowerCase()
-    s2 = s2.toLowerCase()
-
-    const costs: number[] = []
-    for (let i = 0; i <= s1.length; i++) {
+    for (let i = 1; i <= str1.length; i++) {
         let lastValue = i
-        for (let j = 0; j <= s2.length; j++) {
-            if (i === 0) costs[j] = j
-            else {
-                if (j > 0) {
-                    let newValue = costs[j - 1]
-                    if (s1.charAt(i - 1) !== s2.charAt(j - 1)) newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1
-                    costs[j - 1] = lastValue
-                    lastValue = newValue
-                }
-            }
+        for (let j = 1; j <= str2.length; j++) {
+            const newValue = str1[i - 1] === str2[j - 1] ? costs[j - 1] : Math.min(costs[j - 1], lastValue, costs[j]) + 1
+            costs[j - 1] = lastValue
+            lastValue = newValue
         }
-        if (i > 0) costs[s2.length] = lastValue
+        costs[str2.length] = lastValue
     }
-    return costs[s2.length]
+    return costs[str2.length]
 }
 
 export function findGroupMatch(group: string): string {
-    if (get(groups)[group]) return group
+    if (!group) return ""
+    // Normalize label: remove brackets, colons, surrounding numbers, repeat markers (e.g. "x2")
+    const searchLabel = group
+        .replace(/[\[\]'":]+/g, "")
+        .replace(/[xх]\d+/gi, "")
+        .replace(/^\d+\s*/, "")
+        .replace(/\s*\d+$/, "")
+        .toLowerCase()
+        .trim()
+
+    if (!searchLabel) return ""
+
+    // Check if the label matches a custom group name defined by the user
+    const allGroups = get(groups)
+    if (allGroups[searchLabel]) return searchLabel
+
+    const customMatch = Object.entries(allGroups).find(([_, config]: [string, any]) => config.name?.toLowerCase() === searchLabel)
+    if (customMatch) return customMatch[0]
 
     let groupMatch = ""
     Object.entries(get(dictionary).groups || {}).forEach(([id, value]) => {
-        if (value.toLowerCase() === group) groupMatch = id
+        if (value.toLowerCase() === searchLabel || value.toLowerCase() === group.toLowerCase().trim()) groupMatch = id
     })
     if (groupMatch) return groupMatch
 

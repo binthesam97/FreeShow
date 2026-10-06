@@ -1,15 +1,11 @@
 <script lang="ts">
-    import { onDestroy, onMount } from "svelte"
-    import { uid } from "uid"
-    import { OUTPUT } from "../../../../types/Channels"
     import type { MediaStyle } from "../../../../types/Main"
     import type { Styles } from "../../../../types/Settings"
     import type { OutBackground, Transition } from "../../../../types/Show"
-    import { AudioAnalyser } from "../../../audio/audioAnalyser"
-    import { audioChannelsData, currentWindow, media, outputs, playerVideos, playingVideos, special, videosData, videosTime, volume } from "../../../stores"
-    import { destroy, receive, send } from "../../../utils/request"
+    import { media, playerVideos, special } from "../../../stores"
     import BmdStream from "../../drawer/live/BMDStream.svelte"
     import NdiStream from "../../drawer/live/NDIStream.svelte"
+    import OmtStream from "../../drawer/live/OMTStream.svelte"
     import { getMediaStyle } from "../../helpers/media"
     import Player from "../../system/Player.svelte"
     import Camera from "../Camera.svelte"
@@ -24,9 +20,7 @@
     export let fadingOut = false
     export let currentStyle: Styles | null = null
     export let animationStyle = ""
-    export let duration = 0
     export let mirror = false
-    export let styleBackground = false
 
     $: id = data.path || data.id || ""
 
@@ -35,206 +29,32 @@
     $: if (type === "video" || type === "image") type = "media"
 
     let mediaStyle: MediaStyle = {}
-    $: if (data && currentStyle) mediaStyle = getMediaStyle(data, currentStyle)
-
-    // VIDEO
-
-    let videoData = { duration: 0, paused: true, muted: true, loop: styleBackground }
-    let videoTime = 0
-
-    // let videoDuration = 0
-    // if (!videoData.duration && duration) videoData.duration = videoDuration
-    // else if (videoData.duration && videoDuration !== videoData.duration) videoDuration = videoData.duration
-
-    // always muted in mirror (draw/key)
-    $: if (mirror && !videoData.muted) videoData.muted = true
-    // video values updated
-    $: if (!mirror && (data.muted !== undefined || data.loop !== undefined)) updateValues()
-    function updateValues() {
-        if (fadingOut) return
-
-        videoData.muted = data.muted ?? true
-        videoData.loop = data.loop ?? false
-    }
-    // draw
-
-    //Without the second if, the preview videos don't actually play but just skip ahead when kept in sync with the setTimeout()
-    $: if (mirror && !styleBackground && $videosData[outputId]?.paused) videoData.paused = true
-    $: if (mirror && !styleBackground && $videosData[outputId]?.paused === false) videoData.paused = false
-
-    $: if (mirror && !styleBackground && $videosTime[outputId] !== undefined) setPreviewVideoTime()
-    function setPreviewVideoTime() {
-        // timeout in case video is going to fade out
-        setTimeout(() => {
-            if (fadingOut || (!videoData.paused && videoTime < 2)) return
-
-            const diff = Math.abs($videosTime[outputId] - videoTime)
-            if (diff > 0.5) {
-                videoTime = $videosTime[outputId]
-
-                if (videoTime < 0.6) {
-                    videoData.paused = true // quick fix for preview stutter when video loops (should be a better fix)
-                } else {
-                    videoData.paused = $videosData[outputId]?.paused
-                }
-            }
-        }, 50)
-    }
-
-    $: if (!mirror && !fadingOut) send(OUTPUT, ["MAIN_DATA"], { [outputId]: videoData })
-    $: if (!mirror && !fadingOut) sendVideoTime(videoTime)
-
-    let sendingTimeout: NodeJS.Timeout | null = null
-    let timeUpdateTimeout = 220
-    function sendVideoTime(time: number) {
-        if (sendingTimeout) return
-
-        send(OUTPUT, ["MAIN_TIME"], { [outputId]: time })
-        sendingTimeout = setTimeout(() => {
-            if (fadingOut) return
-
-            send(OUTPUT, ["MAIN_TIME"], { [outputId]: time })
-            sendingTimeout = null
-        }, timeUpdateTimeout)
-    }
-
-    const videoReceiver = {
-        TIME: (data: any) => {
-            let outputData = data[outputId]
-            if (!outputData || fadingOut) return
-
-            videoTime = outputData
-        },
-        DATA: (data: any) => {
-            let outputData = data[outputId]
-            if (!outputData || fadingOut) return
-
-            videoData = { ...outputData, duration: videoData.duration || 0 }
-        }
-    }
-
-    let listenerId = ""
-    let receiving = false
-
-    let mounted = false
-    onMount(() => (mounted = true))
-    $: if (id && !fadingOut && mounted) startReceiver()
-    function startReceiver() {
-        const isStage = !!Object.values($outputs)[0]?.stageOutput
-        if ((mirror && !isStage) || receiving) return
-        receiving = true
-
-        destroy(OUTPUT, listenerId)
-
-        listenerId = "MEDIA_RECEIVE_" + uid(5)
-        receive(OUTPUT, videoReceiver, listenerId)
-    }
-
-    onDestroy(removeReceiver)
-    $: if (fadingOut || id) removeReceiver()
-    function removeReceiver() {
-        if (mirror || !receiving || !mounted) return
-        receiving = false
-
-        destroy(OUTPUT, listenerId)
-    }
-
-    // call end just before (to make room for transition) - this also triggers video ended on loop
-    $: if (videoData.duration && videoTime >= videoData.duration - (duration / 1000 + 0.1)) videoEnded()
-
-    let endedCalled = false
-    function videoEnded() {
-        if (fadingOut || mirror || endedCalled) return
-
-        endedCalled = true
-        setTimeout(() => (endedCalled = false), duration || 1000)
-
-        send(OUTPUT, ["MAIN_VIDEO_ENDED"], { id: outputId, loop: videoData.loop, duration })
-    }
-
-    // FADE OUT AUDIO
-
-    $: audioChannelVolume = $audioChannelsData[outputId]?.volume ?? 1
-    $: isMuted = !!($audioChannelsData[outputId]?.isMuted || $audioChannelsData.main?.isMuted)
-    // $: if (isMuted !== undefined) setMuted(isMuted)
-    // function setMuted(muted: boolean) {
-    //     if (!video) return
-    //     video.muted = muted
-    // }
-
-    $: if (fadingOut && !videoData.muted) fadeoutVideo()
-    $: if (!fadingOut && !videoData.muted && id) setVolume($volume * (isMuted ? 0 : 1) * audioChannelVolume * (($media[id]?.volume ?? currentStyle?.volume ?? 100) / 100))
-    const speed = 0.01
-    const margin = 0.9 // video should fade to 0 before clearing
-    function fadeoutVideo() {
-        if (mirror || !video || !fadingOut || !duration) return
-
-        let time = duration * speed * margin
-        setTimeout(() => {
-            if (!video) return
-
-            video.volume = Math.max(0, Number((video.volume - speed).toFixed(3)))
-            fadeoutVideo()
-        }, time)
-    }
-    function setVolume(volume: number) {
-        if (!video || !isFinite(volume) || isNaN(volume)) return
-        video.volume = Math.max(0, Math.min(1, volume))
-    }
-
-    // AUDIO
-
-    $: videoExists = !!video
-    $: if ($currentWindow === "output" && videoExists) analyseVideo()
-
-    onDestroy(() => {
-        if ($currentWindow !== "output" || !previousPath) return
-
-        AudioAnalyser.detach(previousPath)
-
-        // playingVideos.set([])
-        playingVideos.update((a) => {
-            let videoIndex = a.findIndex((a) => a.id === previousPath)
-            if (videoIndex > -1) a.splice(videoIndex, 1)
-            return a
-        })
-    })
-
-    // analyse video audio
-    let video: HTMLVideoElement | undefined
-    // previousPath is probably not needed as component is unmounted on new path
-    let previousPath = id
-    function analyseVideo() {
-        if (fadingOut || $playingVideos[0]?.id === id) return
-        if (previousPath && previousPath !== id) {
-            AudioAnalyser.detach(previousPath)
-        }
-        if (!video) return
-
-        playingVideos.set([{ id, video }])
-        AudioAnalyser.attach(id, video)
-        AudioAnalyser.recorderActivate()
-        previousPath = id
-    }
+    $: if (data && currentStyle) mediaStyle = getMediaStyle({ ...$media[id], ...data }, currentStyle)
 </script>
 
 <OutputTransition {transition} inTransition={transition.in} outTransition={transition.out} on:outrostart={() => (fadingOut = true)}>
     {#if type === "media"}
-        <Media path={id} {data} {animationStyle} bind:video bind:videoData bind:videoTime {mirror} {mediaStyle} on:loaded on:ended={videoEnded} />
+        <!-- on:ended={videoEnded} -->
+        <Media {outputId} path={id} {data} {animationStyle} {mirror} {mediaStyle} {fadingOut} on:loaded />
     {:else if type === "screen"}
         <Window {id} class="media" style="width: 100%;height: 100%;" on:loaded />
     {:else if type === "ndi"}
         {#key id}
-            <NdiStream screen={{ id, name: "" }} background {mirror} />
+            <NdiStream screen={{ id, name: "" }} background {mirror} {outputId} />
+        {/key}
+    {:else if type === "omt"}
+        {#key id}
+            <OmtStream screen={{ id, name: "" }} background {mirror} {outputId} />
         {/key}
     {:else if type === "blackmagic"}
-        <BmdStream screen={{ id, name: "" }} background {mirror} />
+        <BmdStream screen={{ id, name: "" }} background {mirror} {outputId} />
     {:else if type === "camera"}
         <Camera {id} groupId={data.cameraGroup || ""} class="media" style="width: 100%;height: 100%;" on:loaded />
     {:else if type === "player"}
         <!-- prevent showing controls in output -->
         {#if $special.hideCursor || $playerVideos[id]?.type !== "youtube"}<div class="overlay" />{/if}
-        <Player {outputId} {id} bind:videoData bind:videoTime startAt={data.startAt} on:loaded on:ended={videoEnded} />
+        <!-- on:ended={videoEnded} -->
+        <Player {outputId} {id} on:loaded />
     {/if}
 </OutputTransition>
 

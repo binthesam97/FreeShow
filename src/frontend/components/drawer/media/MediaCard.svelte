@@ -24,11 +24,12 @@
     export let shiftRange: any[] = []
     export let thumbnailPath = ""
     export let thumbnail = true
+    export let loadFullImage = false
     export let contentProvider: ContentProviderId | false = false
     export let contentFileData: ContentFile | null = null
 
     let failed = false
-    if (thumbnail && !thumbnailPath) getThumbnail()
+    $: if (thumbnail && !thumbnailPath && !loadFullImage) getThumbnail()
     async function getThumbnail() {
         failed = false
         thumbnailPath = await loadThumbnail(path)
@@ -116,7 +117,10 @@
             wait = false
         }, 800)
 
-        if (findMatchingOut(path, $outputs)) {
+        const activeOutputs = getAllActiveOutputs()
+
+        const isActive = activeOutputs.some((a) => (a.out?.background?.path || a.out?.background?.id) === path)
+        if (isActive) {
             clearBackground()
             return
         }
@@ -127,7 +131,7 @@
         if (videoType === "foreground") clearSlide()
 
         // get style per output
-        getAllActiveOutputs().forEach((output) => {
+        activeOutputs.forEach((output) => {
             const currentOutputStyle = $styles[output.style || ""]
             const currentMediaStyle = getMediaStyle($media[path], currentOutputStyle)
             setOutput("background", { path, type, loop, muted, startAt: 0, ...currentMediaStyle, ignoreLayer: videoType === "foreground" }, false, output.id)
@@ -187,6 +191,7 @@
                 delete a[path].fit
                 delete a[path].flipped
                 delete a[path].flippedY
+                delete a[path].blend
                 delete a[path].filter
                 delete a[path].cropping
             } else if (key === "tags") {
@@ -203,7 +208,7 @@
 <SelectElem id="media" class="context #media_card" data={{ name, path, type, contentProvider }} {shiftRange} draggable fill>
     <Card
         resolution={{ width: 16, height: 9 }}
-        loaded={(loaded && ($mediaOptions.mode === "grid" ? thumbnailPath !== "" : true)) || failed}
+        loaded={(loaded && ($mediaOptions.mode === "grid" ? thumbnailPath !== "" || loadFullImage : true)) || failed}
         style={thumbnail ? `width: ${$mediaOptions.mode === "grid" ? 100 : 100 / $mediaOptions.columns}%;` : ""}
         mode={$mediaOptions.mode}
         width={100}
@@ -243,7 +248,7 @@
                     </div>
                 </div>
             {/if}
-            {#if !!mediaStyle.filter?.length || $media[path]?.fit || mediaStyle.flipped || mediaStyle.flippedY || Object.keys(mediaStyle.cropping || {}).length}
+            {#if !!mediaStyle.filter?.length || $media[path]?.fit || mediaStyle.flipped || mediaStyle.flippedY || (mediaStyle.blend && mediaStyle.blend !== "normal") || Object.keys(mediaStyle.cropping || {}).length}
                 <div style="max-width: 100%;">
                     <div class="button">
                         <Button style="padding: 3px;" redHover title={translateText("actions.remove")} on:click={() => removeStyle("filters")}>
@@ -271,8 +276,8 @@
                 <Icon size={2.5} id="close" style="color: var(--disconnected);" white />
             </div>
         {:else if thumbnail}
-            {#if thumbnailPath}
-                <MediaLoader bind:loaded bind:hover bind:duration bind:videoElem {resolution} {type} {path} {thumbnailPath} {name} {mediaStyle} />
+            {#if thumbnailPath || loadFullImage}
+                <MediaLoader bind:loaded bind:hover bind:duration bind:videoElem {resolution} {type} {path} {thumbnailPath} {name} {mediaStyle} {loadFullImage} />
             {/if}
         {:else}
             <div class="icon">

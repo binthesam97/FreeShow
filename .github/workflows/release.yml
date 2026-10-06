@@ -8,20 +8,19 @@ on:
 jobs:
   publish_windows:
     name: "Publish Windows"
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
       - name: Install dependencies
-        # npm ci is better, but requires package-lock.json file
-        run: npm install
+        run: npm ci
 
       - name: Build and release app
         env:
@@ -37,10 +36,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -48,10 +47,10 @@ jobs:
         run:
           |
           sudo apt-get update
-          sudo apt-get install -y libfontconfig1-dev uuid-dev libltc-dev --fix-missing
+          sudo apt-get install -y libfontconfig1-dev uuid-dev libltc-dev libegl1-mesa-dev libgles2-mesa-dev --fix-missing
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build and release app
         env:
@@ -66,10 +65,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -77,14 +76,14 @@ jobs:
         run:
           |
           sudo apt-get update
-          sudo apt-get install -y libfontconfig1-dev uuid-dev libltc-dev --fix-missing
+          sudo apt-get install -y libfontconfig1-dev uuid-dev libltc-dev libegl1-mesa-dev libgles2-mesa-dev --fix-missing
 
       # WIDEVINE
       # - name: Use stock Electron on ARM64
       #   run: npm run replace-electron
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Install FPM
         run:
@@ -109,10 +108,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -127,7 +126,7 @@ jobs:
         run: npm install -g node-gyp
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Install dmg-license
         run: npm i dmg-license

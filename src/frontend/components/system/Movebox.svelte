@@ -1,7 +1,7 @@
 <script lang="ts">
     import { openToolsTab } from "../../stores"
     import { getStyles } from "../helpers/style"
-    import { radiusSliderOffset, radiusSliderRatio } from "./textbox"
+    import { radiusHandleSize, radiusSliderOffset, radiusSliderRatio } from "./textbox"
 
     export let ratio = 1
     export let itemStyle = ""
@@ -17,7 +17,7 @@
     $: styleRotationDeg = getRotationDeg(itemStyle)
 
     function getRotationDeg(style: string) {
-        if (!style) return 0
+        if (typeof style !== "string" || !style) return 0
         const match = style.match(/rotate\((-?\d+(?:\.\d+)?)deg\)/)
         const rotation = Number(match?.[1])
         return Number.isFinite(rotation) ? rotation : 0
@@ -42,7 +42,7 @@
 
     function readLiveRotation() {
         if (!moveboxElem) return null
-        const itemElem = moveboxElem.closest(".item") as HTMLElement | null
+        const itemElem = (moveboxElem.closest(".stage_item") || moveboxElem.closest(".item")) as HTMLElement | null
         if (!itemElem) return null
 
         const inlineRotation = getRotationDeg(itemElem.getAttribute("style") || "")
@@ -102,7 +102,7 @@
         {/if}
     {/each}
     <div class="rotate" style="width: {8 / ratio}px;--line-width: {3 / ratio}px;" class:active></div>
-    <div class="radius" style="width: {6 / ratio}px;left: {(Number(styles['border-radius']) || 0) * radiusSliderRatio + radiusSliderOffset}px;" class:active></div>
+    <div class="radius" style="width: {radiusHandleSize / ratio}px;left: {(Number(styles['border-radius']) || 0) * radiusSliderRatio + radiusSliderOffset}px;" class:active></div>
 </section>
 
 <style>

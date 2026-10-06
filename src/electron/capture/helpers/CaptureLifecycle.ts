@@ -1,205 +1,279 @@
+import { isAudioEnabled } from "../../audio/processAudio"
 import { BlackmagicSender } from "../../blackmagic/BlackmagicSender"
 import { OutputHelper } from "../../output/OutputHelper"
+import { getRtmpEncoderSetting } from "../../streaming/encoderDetection"
+import { RtmpStreamer } from "../../streaming/RtmpStreamer"
+import { WebRtcHost } from "../../streaming/WebRtcHost"
 import { CaptureHelper } from "../CaptureHelper"
 import { CaptureTransmitter } from "./CaptureTransmitter"
 
 export class CaptureLifecycle {
+    private static readonly BACKPRESSURE_LOOKUP = [
+        { threshold: 6144, maxFps: 4 },
+        { threshold: 5120, maxFps: 6 },
+        { threshold: 4096, maxFps: 8 },
+        { threshold: 3072, maxFps: 10 }
+    ]
+    private static readonly FALLBACK_FPS = 60
+    private static readonly MIN_DELAY_MS = 1
+    private static readonly WEBRTC_START_DELAY_MS = 1000
+    private static readonly BYTES_PER_MB = 1048576
+    // reduce capture rate when output content has not changed for a while (static slide/idle)
+    private static readonly IDLE_AFTER_MS = 2000
+    private static readonly IDLE_FPS = 3
+
     private static captureLoopToken: { [key: string]: number } = {}
     private static activeCaptures: Set<string> = new Set()
 
     static startCapture(id: string, toggle: { [key: string]: boolean } = {}) {
         const output = OutputHelper.getOutput(id)
-        if (!output) return
-
-        // CRITICAL FIX: If capture is already active, just update toggles without restarting
-        // Restarting the loop causes performance issues and potential memory leaks
-        const isAlreadyActive = this.activeCaptures.has(id)
-        const hasToggleChanges = Object.keys(toggle).length > 0
-
-        if (isAlreadyActive) {
-            if (!hasToggleChanges) {
-                return
-            }
-
-            // Just update the toggle options without stopping the capture loop
-            if (output.captureOptions) {
-                const captureOpts = output.captureOptions.options || {}
-                for (const key of Object.keys(toggle)) {
-                    // turn off capture
-                    if (captureOpts[key] && !toggle[key]) CaptureTransmitter.stopChannel(id, key)
-                    // set capture on/off
-                    captureOpts[key] = toggle[key]
-                }
-                output.captureOptions.options = captureOpts
-                CaptureHelper.Transmitter.startTransmitting(id)
-            }
+        if (!output || !output.window || output.window.isDestroyed()) {
+            this.stopCapture(id)
             return
         }
 
-        const window = output.window
-        const windowIsRemoved = !window || window.isDestroyed()
-        if (windowIsRemoved) {
-            this.activeCaptures.delete(id)
-            delete output.captureOptions
+        if (!output.captureOptions) output.captureOptions = CaptureHelper.getDefaultCapture(output.window, id)
+        const captureOptions = output.captureOptions
+
+        // toggle values
+        if (captureOptions && Object.keys(toggle).length > 0) this.updateCaptureToggles(id, captureOptions, toggle)
+
+        const hasEnabledCapture = captureOptions.options && Object.values(captureOptions.options).some(Boolean)
+        if (!hasEnabledCapture) {
+            this.stopCapture(id)
             return
         }
 
-        if (!output.captureOptions) output.captureOptions = CaptureHelper.getDefaultCapture(window, id)
-
-        if (output.captureOptions) {
-            const captureOpts = output.captureOptions?.options || {}
-            for (const key of Object.keys(toggle)) {
-                // turn off capture
-                if (captureOpts[key] && !toggle[key]) CaptureTransmitter.stopChannel(id, key)
-                // set capture on/off
-                captureOpts[key] = toggle[key]
-            }
-            output.captureOptions.options = captureOpts
-        }
-
-        const hasEnabledCapture = !!output.captureOptions?.options && Object.values(output.captureOptions.options).some(Boolean)
-        if (!output.captureOptions?.options || !hasEnabledCapture || output.captureOptions.window.isDestroyed()) {
-            // Ensure any existing capture loop is stopped when capture is disabled.
-            if (output.captureOptions?.frameSubscription) {
-                clearTimeout(output.captureOptions.frameSubscription)
-                output.captureOptions.frameSubscription = null
-            }
-            return
-        }
-
+        this.activeCaptures.add(id)
         CaptureHelper.updateFramerate(id)
         CaptureHelper.Transmitter.startTransmitting(id)
+        this.updateWebRtcHostState()
+        this.updateRtmpState()
 
-        if (output.captureOptions.frameSubscription) {
-            clearTimeout(output.captureOptions.frameSubscription)
+        // OSR outputs are driven by paint events; non-OSR runs the capture loop if not already running
+        if (!output.osr && !captureOptions.frameSubscription) {
+            const token = (this.captureLoopToken[id] || 0) + 1
+            this.captureLoopToken[id] = token
+            this.runCaptureLoop(id, token, output)
         }
+    }
 
-        const token = (this.captureLoopToken[id] || 0) + 1
-        this.captureLoopToken[id] = token
+    private static updateCaptureToggles(id: string, captureOptions: any, toggle: { [key: string]: boolean }) {
+        const captureOpts = captureOptions.options || {}
+        for (const key of Object.keys(toggle)) {
+            if (captureOpts[key] && !toggle[key]) CaptureTransmitter.stopChannel(id, key)
+            captureOpts[key] = toggle[key]
+        }
+        captureOptions.options = captureOpts
+    }
 
-        // IMPORTANT: Only add to activeCaptures right before starting the actual loop
-        // This prevents false positives from early returns
-        this.activeCaptures.add(id)
+    private static runCaptureLoop(id: string, token: number, output: any) {
+        console.info("Capture - starting: " + id)
 
-        captureFrame()
+        const captureFrame = async () => {
+            const captureOpts = output.captureOptions
 
-        async function captureFrame() {
-            const loopStartedAt = Date.now()
-
-            if (CaptureLifecycle.captureLoopToken[id] !== token) {
-                CaptureLifecycle.activeCaptures.delete(id)
+            if (!this.shouldContinueCapture(id, token, captureOpts)) {
+                this.activeCaptures.delete(id)
                 return
             }
-            if (!output?.captureOptions?.window || output.captureOptions.window.isDestroyed()) {
-                CaptureLifecycle.activeCaptures.delete(id)
-                return
-            }
 
-            // If Blackmagic is active but can't accept frames, skip capture entirely
-            // This includes checking if previous frame is still being processed
-            const isBMD = output.captureOptions?.options?.blackmagic
-            if (isBMD && !BlackmagicSender.canAcceptFrame(id)) {
-                // Skip this frame - Blackmagic is still processing previous frame or queue is full
-                const ms = Math.max(1, Math.round(1000 / 60))
-                output.captureOptions.frameSubscription = setTimeout(captureFrame, ms)
+            // Blackmagic only - skip frames
+            if (captureOpts.options?.blackmagic && !BlackmagicSender.canAcceptFrame(id)) {
+                captureOpts.frameSubscription = setTimeout(captureFrame, 1000 / this.FALLBACK_FPS)
                 return
             }
 
             try {
-                let image = await output.captureOptions.window.webContents.capturePage()
+                const image = await this.captureAndProcessFrame(id, captureOpts)
 
-                // Resize to target resolution for Blackmagic outputs (if screen scaling is not 100%)
-                let finalImage = image
-
-                if (isBMD) {
-                    const targetSize = BlackmagicSender.getTargetDimensions(id)
-                    const currentSize = image.getSize()
-                    if (currentSize.width !== targetSize.width || currentSize.height !== targetSize.height) {
-                        // Resize and immediately replace original to release it
-                        finalImage = image.resize({ width: targetSize.width, height: targetSize.height })
-                        image = null as any // Release original large frame
-                    }
-                }
-
-                // Send frame to all active channels immediately
-                CaptureTransmitter.transmitFrame(id, finalImage)
-
-                // CRITICAL: Release the NativeImage after transmission to prevent memory accumulation
-                finalImage = null as any
+                // transmit frame (CaptureTransmitter handles skipping unchanged frames with keepalive)
+                this.transmitFrame(id, image)
             } catch (error) {
                 console.warn(`Capture failed for output ${id}:`, error)
             }
 
-            if (CaptureLifecycle.captureLoopToken[id] !== token) {
-                CaptureLifecycle.activeCaptures.delete(id)
+            if (!this.shouldContinueCapture(id, token, captureOpts)) {
+                this.activeCaptures.delete(id)
                 return
             }
-            if (!output.captureOptions) {
-                CaptureLifecycle.activeCaptures.delete(id)
-                return
-            }
-            // Use highest frame rate among active channels.
-            const frameRates = output.captureOptions.framerates || {}
-            const maxOutputRate = Math.max(frameRates.ndi || 1, frameRates.blackmagic || 1, frameRates.server || 1, frameRates.stage || 1)
-            const baseCaptureFrameRate = Math.max(1, maxOutputRate)
 
-            // Adaptive backpressure: reduce capture FPS only at high memory levels.
-            const externalMB = process.memoryUsage().external / (1024 * 1024)
-            let captureFrameRate = baseCaptureFrameRate
-            if (isBMD) {
-                if (externalMB > 6144) captureFrameRate = Math.min(baseCaptureFrameRate, 4)
-                else if (externalMB > 5120) captureFrameRate = Math.min(baseCaptureFrameRate, 6)
-                else if (externalMB > 4096) captureFrameRate = Math.min(baseCaptureFrameRate, 8)
-                else if (externalMB > 3072) captureFrameRate = Math.min(baseCaptureFrameRate, 10)
-            }
-
-            const targetIntervalMs = Math.max(1, Math.round(1000 / Math.max(1, captureFrameRate)))
-            const loopElapsedMs = Date.now() - loopStartedAt
-            const ms = Math.max(1, targetIntervalMs - loopElapsedMs)
-            output.captureOptions.frameSubscription = setTimeout(captureFrame, ms)
+            const delay = this.calculateFrameDelay(id, captureOpts)
+            captureOpts.frameSubscription = setTimeout(captureFrame, delay)
         }
+
+        captureFrame()
     }
 
-    // STOP
-    static stopAllCaptures() {
-        OutputHelper.getAllOutputs().forEach((output) => {
-            if (output.captureOptions) this.stopCapture(output.id)
-        })
+    private static shouldContinueCapture(id: string, token: number, captureOpts: any): boolean {
+        if (!captureOpts) return false
+        if (this.captureLoopToken[id] !== token) return false
+        if (!captureOpts.window || captureOpts.window.isDestroyed()) return false
+        if (!captureOpts.window.webContents || captureOpts.window.webContents.isDestroyed?.()) return false
+        // stop the loop when every channel has been toggled off
+        if (!captureOpts.options || !Object.values(captureOpts.options).some(Boolean)) return false
+        return true
+    }
+
+    private static async captureAndProcessFrame(id: string, captureOpts: any) {
+        let image = await captureOpts.window.webContents.capturePage()
+
+        // const output = OutputHelper.getOutput(id)
+        // const targetBounds = output.intendedBounds
+
+        // Blackmagic only - resize if needed
+        if (captureOpts.options?.blackmagic) {
+            const targetSize = BlackmagicSender.getTargetDimensions(id)
+            const currentSize = image.getSize()
+            if (currentSize.width !== targetSize.width || currentSize.height !== targetSize.height) {
+                image = image.resize({ width: targetSize.width, height: targetSize.height, quality: "good" })
+            }
+            // } else if (targetBounds?.width && targetBounds?.height) {
+            //     const currentSize = image.getSize()
+            //     if (currentSize.width !== targetBounds.width || currentSize.height !== targetBounds.height) {
+            //         image = image.resize({ width: targetBounds.width, height: targetBounds.height, quality: "good" })
+            //     }
+        }
+
+        return image
+    }
+
+    private static transmitFrame(id: string, image: any) {
+        CaptureTransmitter.transmitFrame(id, image, performance.now())
+    }
+
+    private static calculateFrameDelay(id: string, captureOpts: any): number {
+        const output = OutputHelper.getOutput(id)
+        if (!output?.captureOptions) return this.MIN_DELAY_MS
+
+        const captureFrameRate = this.getAdaptiveFrameRate(id, captureOpts)
+        const targetIntervalMs = 1000 / captureFrameRate
+
+        return Math.max(this.MIN_DELAY_MS, Math.round(targetIntervalMs))
+    }
+
+    private static getAdaptiveFrameRate(id: string, captureOpts: any): number {
+        const output = OutputHelper.getOutput(id)
+        const frameRates = output?.captureOptions?.framerates || {}
+        const options = captureOpts.options || {}
+
+        const baseCaptureFrameRate = CaptureHelper.getMaxActiveFramerate(frameRates, options)
+
+        // Blackmagic only - reduce frame rate if memory exceeds thresholds
+        if (captureOpts.options?.blackmagic) {
+            const externalMB = process.memoryUsage().external / this.BYTES_PER_MB
+            for (const { threshold, maxFps } of this.BACKPRESSURE_LOOKUP) {
+                if (externalMB > threshold) {
+                    return Math.min(baseCaptureFrameRate, maxFps)
+                }
+            }
+        }
+
+        // static content - capture at a low rate until a change is detected
+        // (Blackmagic and NDI frames bypass change detection / idle backoff to maintain video stream clocks)
+        const timeSinceChange = CaptureTransmitter.getTimeSinceLastChange(id)
+        if (!options.blackmagic && !options.ndi && timeSinceChange > this.IDLE_AFTER_MS) {
+            return Math.min(baseCaptureFrameRate, this.IDLE_FPS)
+        }
+
+        return baseCaptureFrameRate
     }
 
     static stopCapture(id: string) {
+        this.captureLoopToken[id] = (this.captureLoopToken[id] || 0) + 1
+        this.activeCaptures.delete(id)
+
         const output = OutputHelper.getOutput(id)
         const capture = output?.captureOptions
         if (!capture) return
 
-        this.captureLoopToken[id] = (this.captureLoopToken[id] || 0) + 1
-        this.activeCaptures.delete(id)
-
-        endSubscription()
-
-        CaptureHelper.Transmitter.stopChannel(id, "ndi")
-        CaptureHelper.Transmitter.stopChannel(id, "blackmagic")
-        CaptureHelper.Transmitter.stopChannel(id, "server")
-        CaptureHelper.Transmitter.stopChannel(id, "stage")
-        const windowIsRemoved = !capture.window || capture.window.isDestroyed()
-        if (windowIsRemoved) {
-            delete output.captureOptions
-            return
-        }
-
-        console.info("Capture - stopping: " + id)
-
-        // remove listeners
-        capture?.window.removeAllListeners()
-        capture?.window.webContents.removeAllListeners()
-
-        delete output.captureOptions
-
-        function endSubscription() {
-            if (!capture?.frameSubscription) return
-
+        if (capture.frameSubscription) {
             clearTimeout(capture.frameSubscription)
             capture.frameSubscription = null
         }
+
+        const channels = ["ndi", "omt", "blackmagic", "server", "stage", "webrtc", "rtmp", "recorder"]
+        channels.forEach((channel) => CaptureHelper.Transmitter.stopChannel(id, channel))
+
+        console.info("Capture - stopping: " + id)
+
+        OutputHelper.Lifecycle.releaseOsrCaptureTextures(id)
+        if (!(output as any).follower) this.cleanupListeners(capture.window)
+        delete output.captureOptions
+        this.updateWebRtcHostState()
+        this.updateRtmpState()
+    }
+
+    private static cleanupListeners(window: any) {
+        if (!window || window.isDestroyed()) return
+
+        window.removeAllListeners()
+        if (window.webContents && !window.webContents.isDestroyed?.()) {
+            window.webContents.removeAllListeners()
+        }
+    }
+
+    private static updateWebRtcHostState() {
+        const allOutputs = OutputHelper.getAllOutputs()
+        const webrtcActive = allOutputs.some((o) => o.webrtcData?.streaming)
+
+        if (webrtcActive) {
+            const wasRunning = WebRtcHost.isRunning()
+            WebRtcHost.start()
+
+            const sendStartSignals = () => {
+                allOutputs.forEach((o) => {
+                    if (!o.id) return
+
+                    if (o.webrtcData?.streaming) {
+                        const url = o.webrtcData?.url || ""
+                        const token = o.webrtcData?.token || ""
+                        const fps = o.webrtcData?.fps ? Number(o.webrtcData.fps) : 30
+                        const bitrate = o.webrtcData?.bitrate ? Number(o.webrtcData.bitrate) : 2500
+                        if (o.captureOptions?.framerates) o.captureOptions.framerates.webrtc = fps
+                        if (url) WebRtcHost.startWhip(o.id, url, token, { fps, bitrate })
+                    } else {
+                        WebRtcHost.stopWhip(o.id)
+                    }
+                })
+            }
+
+            if (wasRunning) {
+                sendStartSignals()
+            } else {
+                setTimeout(sendStartSignals, this.WEBRTC_START_DELAY_MS)
+            }
+        } else {
+            WebRtcHost.stop()
+        }
+    }
+
+    /** Public so a settings change (e.g. the encoder) can be applied without waiting for a capture event. */
+    static updateRtmpState() {
+        const allOutputs = OutputHelper.getAllOutputs()
+        allOutputs.forEach((o) => {
+            if (!o.id) return
+
+            if (!o.rtmpData?.streaming) {
+                if (RtmpStreamer.isRunning(o.id)) RtmpStreamer.stop(o.id)
+                return
+            }
+
+            const destinations = (o.rtmpData.destinations || []).filter((d) => d.enabled && d.url)
+            if (!destinations.length) {
+                if (RtmpStreamer.isRunning(o.id)) RtmpStreamer.stop(o.id)
+                return
+            }
+
+            // getBounds() is the DPI-corrected render size (halved on HiDPI for capture-only outputs),
+            // so broadcast at the configured resolution instead
+            const bounds = o.intendedBounds || o.window?.getBounds() || { width: 1920, height: 1080 }
+            const fps = o.rtmpData.fps ? Number(o.rtmpData.fps) : 30
+            const bitrate = o.rtmpData.bitrate ? Number(o.rtmpData.bitrate) : 4000
+            if (o.captureOptions?.framerates) o.captureOptions.framerates.rtmp = fps
+
+            // destination changes only touch relays; the encode keeps running
+            RtmpStreamer.update(o.id, { width: bounds.width, height: bounds.height, fps, bitrate, enableAudio: isAudioEnabled(), encoder: getRtmpEncoderSetting(o.id) }, destinations)
+        })
     }
 }

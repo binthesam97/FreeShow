@@ -1,11 +1,12 @@
 <script lang="ts">
-    import { onMount } from "svelte"
+    import { onDestroy } from "svelte"
     import type { Template } from "../../../../types/Show"
     import { activeEdit, activePage, activePopup, activeShow, alertMessage, categories, labelsDisabled, mediaOptions, outputs, selected, showsCache, special, styles, templateApplied, templateCategories, templates } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { getAccess } from "../../../utils/profile"
     import { clone, keysToID, sortByName } from "../../helpers/array"
     import { history } from "../../helpers/history"
+    import Icon from "../../helpers/Icon.svelte"
     import { getFirstActiveOutput, getResolution } from "../../helpers/output"
     import { deselect } from "../../helpers/select"
     import { getLayoutRef } from "../../helpers/show"
@@ -13,7 +14,6 @@
     import T from "../../helpers/T.svelte"
     import FloatingInputs from "../../input/FloatingInputs.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
-    import Loader from "../../main/Loader.svelte"
     import Actions from "../../slide/Actions.svelte"
     import Center from "../../system/Center.svelte"
     import DropArea from "../../system/DropArea.svelte"
@@ -63,9 +63,34 @@
         }, 500)
     }
 
-    // open drawer tab instantly before content has loaded
-    let preloader = true
-    onMount(() => setTimeout(() => (preloader = false), 20))
+    // lazy loader
+    let lazyLoader = 0
+    let timeout: NodeJS.Timeout | null = null
+    let loaded = false
+
+    onDestroy(() => {
+        if (timeout) clearTimeout(timeout)
+    })
+
+    $: if (active || searchValue !== undefined) {
+        loaded = false
+        lazyLoader = 0
+    }
+
+    $: if (!loaded && fullFilteredTemplates?.length) {
+        if (lazyLoader >= fullFilteredTemplates.length) {
+            loaded = true
+        } else {
+            if (timeout) clearTimeout(timeout)
+            timeout = setTimeout(
+                () => {
+                    const batch = lazyLoader === 0 ? 4 : Math.min(32, lazyLoader * 2)
+                    lazyLoader += batch
+                },
+                lazyLoader === 0 ? 60 : 30
+            )
+        }
+    }
 
     $: templateWithNonExistentCategory = active === "unlabeled" && filteredTemplates.some((s) => s.category)
     function createNonExistentCategories() {
@@ -80,12 +105,11 @@
         })
     }
 
-    // WIP take off on click if already applied? - it's auto removed when slide is edited & you can remove it in the bottom right menu
     $: isShowActive = !!($activeShow && ($activeShow?.type || "show") === "show")
     let alerted = false
-    function templateClick(e: MouseEvent, templateId: string) {
-        if (e.target?.closest(".edit") || e.target?.closest(".icons")) return
-        if (!$activeShow || !isShowActive || e.ctrlKey || e.metaKey) return
+    function templateClick(e: MouseEvent | null = null, templateId: string) {
+        if (e?.target?.closest?.(".edit") || e?.target?.closest?.(".icons")) return
+        if (!$activeShow || !isShowActive || e?.ctrlKey || e?.metaKey) return
 
         if ($showsCache[$activeShow.id]?.locked) {
             alertMessage.set("show.locked")
@@ -148,7 +172,7 @@
         templateApplied.set(true)
         setTimeout(() => templateApplied.set(false), 500)
 
-        history({ id: "TEMPLATE", newData: { id: templateId, data: { createItems: true, shiftItems: e.shiftKey } }, location: { page: "none", override: "show#" + $activeShow.id } })
+        history({ id: "TEMPLATE", newData: { id: templateId, data: { createItems: true, shiftItems: e?.shiftKey } }, location: { page: "none", override: "show#" + $activeShow.id } })
 
         // alert if first output has a style template
         if ($special.styleTemplatePreview !== false) {
@@ -161,28 +185,42 @@
             }
         }
     }
+
+    function keydown(e: KeyboardEvent) {
+        if (e.key === "Enter" && searchValue.length > 1 && e.target?.closest(".search")) {
+            let template = fullFilteredTemplates[0]
+            if (!template) return
+
+            // play
+            if (e.ctrlKey || e.metaKey) {
+                templateClick(null, template.id)
+                return
+            }
+
+            // add to project (no need)
+        }
+    }
 </script>
+
+<svelte:window on:keydown={keydown} />
 
 <div style="position: relative;height: 100%;overflow-y: auto;" class="context #drawer_templates" on:wheel={wheel}>
     <DropArea id="templates">
-        <!-- WIP lazy loading with skeleton instead -->
-        {#if preloader && fullFilteredTemplates.length > 10}
-            <Center>
-                <Loader />
-            </Center>
-        {:else if fullFilteredTemplates.length}
+        {#if fullFilteredTemplates.length}
             <div class="grid" style="--width: {100 / $mediaOptions.columns}%;">
-                {#each fullFilteredTemplates as template}
+                {#each fullFilteredTemplates as template, i (template.id)}
                     {@const isReadOnly = readOnly || profile[template.category || ""] === "read"}
 
                     <SelectElem id="template" data={template.id} class="context #template_card{template.isDefault && !isReadOnly ? '_default' : ''}{isReadOnly ? '_readonly' : ''}" draggable fill>
                         <Card width={100} preview={$activePage === "edit" && $activeEdit.type === "template" && $activeEdit.id === template.id} active={template.id === activeTemplate} label={template.name} renameId="template_{template.id}" icon={template.isDefault ? "protected" : null} color={template.color} {resolution} showApplyOnHover={isShowActive} on:click={(e) => templateClick(e, template.id)}>
-                            <!-- icons -->
-                            {#if template.settings?.actions?.length}
-                                <Actions columns={$mediaOptions.columns} templateId={template.id} actions={{ slideActions: template.settings?.actions }} />
-                            {/if}
+                            {#if loaded || i < lazyLoader}
+                                <!-- icons -->
+                                {#if template.settings?.actions?.length}
+                                    <Actions columns={$mediaOptions.columns} templateId={template.id} actions={{ slideActions: template.settings?.actions }} />
+                                {/if}
 
-                            <TemplateSlide templateId={template.id} {template} preview />
+                                <TemplateSlide templateId={template.id} {template} preview />
+                            {/if}
                         </Card>
                     </SelectElem>
                 {/each}
@@ -201,7 +239,8 @@
 
 {#if templateWithNonExistentCategory}
     <FloatingInputs side="left" onlyOne>
-        <MaterialButton icon="autofill" on:click={createNonExistentCategories}>
+        <MaterialButton on:click={createNonExistentCategories}>
+            <Icon id="autofill" gradient />
             <T id="category.create_nonexistent" />
         </MaterialButton>
     </FloatingInputs>

@@ -6,16 +6,22 @@
     import MaterialTextInput from "../../inputs/MaterialTextInput.svelte"
     import { mediaRecorderIsPaused, stopMediaRecorder, toggleMediaRecorder } from "./recorder"
 
-    $: active = $drawerTabsData.media?.openedSubSubTab?.screens || "screens"
+    export let optionsOpen: boolean
 
-    let videoElem
-    $: if ($currentRecordingStream && videoElem) {
-        videoElem.srcObject = $currentRecordingStream
-        paused = mediaRecorderIsPaused() || false
+    $: active = $drawerTabsData.media?.openedSubSubTab?.inputs || "cameras"
+
+    let videoElem: HTMLVideoElement | undefined
+    $: if (videoElem) {
+        if (videoElem.srcObject !== $currentRecordingStream) {
+            videoElem.srcObject = $currentRecordingStream
+        }
+        if ($currentRecordingStream) {
+            paused = mediaRecorderIsPaused() || false
+        }
     }
 
     let paused = false
-    $: paused ? videoElem?.pause() : videoElem?.play()
+    $: paused ? videoElem?.pause() : videoElem?.play()?.catch(() => {})
 
     function updateSpecial(key: string, value: any) {
         special.update((a) => {
@@ -28,7 +34,7 @@
 
 {#if $activeRecording}
     <div class="scroll">
-        <video bind:this={videoElem}>
+        <video bind:this={videoElem} muted playsinline>
             <track kind="captions" />
         </video>
 
@@ -58,9 +64,11 @@
         <T id="empty.recording" />
     </div>
 {:else if active === "ndi"}
-    <div class="scroll" style="padding: 10px;">
-        <MaterialTextInput label="inputs.group" title="settings.comma_seperated" value={$special?.ndiInputGroups || ""} placeholder="public" on:change={(e) => updateSpecial("ndiInputGroups", e.detail)} />
-    </div>
+    {#if optionsOpen}
+        <div class="scroll" style="padding: 10px;">
+            <MaterialTextInput label="inputs.group" title="settings.comma_seperated" value={$special?.ndiInputGroups || ""} placeholder="public" on:change={(e) => updateSpecial("ndiInputGroups", e.detail)} />
+        </div>
+    {/if}
 {/if}
 
 <style>

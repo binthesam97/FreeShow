@@ -14,7 +14,7 @@ import { runAction } from "./actions"
 export function midiInListen() {
     Object.entries(get(actions)).forEach(([id, action]) => {
         action = convertOldMidiToNewAction(action)
-        if (!action.midi) return
+        if (!action.midi || action.enabled === false) return
 
         if (!action.shows?.length) {
             console.info("MIDI INPUT LISTENER: ", action.midi)
@@ -123,7 +123,7 @@ export function receivedMidi(msg) {
     // 0 & 1 = 0
     if (index > 0) index--
 
-    runAction(action, { midiIndex: index })
+    runAction(action, { midiIndex: index, source: "midi" })
 
     const actionShows = action?.shows || []
     if (!actionShows?.length) return

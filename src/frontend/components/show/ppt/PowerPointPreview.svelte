@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import { Main } from "../../../../types/IPC/Main"
-    import { ShowRef } from "../../../../types/Projects"
+    import type { ShowRef } from "../../../../types/Projects"
     import { requestMain, sendMain } from "../../../IPC/main"
     import { activeShow, os, outLocked, outputs, presentationApps, presentationData, special } from "../../../stores"
     import { translateText } from "../../../utils/language"
@@ -20,7 +20,7 @@
     // WIP use savedScreen = $projects[$activeProject || ""].shows.find((a) => a.id === path)?.data?.screenName to determine if it is active or not
 
     onMount(() => {
-        requestMain(Main.SLIDESHOW_GET_APPS, undefined, (a) => presentationApps.set(a))
+        requestMain(Main.SLIDESHOW_GET_APPS, undefined, (a) => presentationApps.set(a || []))
     })
 
     let opening = false

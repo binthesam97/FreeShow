@@ -3,16 +3,16 @@
 import { get } from "svelte/store"
 import { Main } from "../../types/IPC/Main"
 import { customActionActivation } from "../components/actions/actions"
-import { encodeFilePath, getFileName, locateMediaFile, removeExtension } from "../components/helpers/media"
+import { encodeFilePath, getFileName, isLocalFile, locateMediaFile, removeExtension } from "../components/helpers/media"
 import { checkNextAfterMedia } from "../components/helpers/showActions"
-import { sendMain } from "../IPC/main"
-import { audioChannelsData, dictionary, media, outLocked, playingAudio, playingAudioPaths, special, volume } from "../stores"
+import { requestMain, sendMain } from "../IPC/main"
+import { activePlaylist, dictionary, media, outLocked, playingAudio, playingAudioPaths, special } from "../stores"
+import { addToMediaFolder } from "../utils/cloudSync"
 import { AudioAnalyser } from "./audioAnalyser"
-import { AudioAnalyserMerger } from "./audioAnalyserMerger"
-import { clearAudio, clearing, fadeInAudio, fadeOutAudio } from "./audioFading"
+import { clearAudio, clearing, currentlyCrossfadingIn, fadeInAudio, fadeOutAudio } from "./audioFading"
 import { AudioMultichannel } from "./audioMultichannel"
 import { AudioPlaylist } from "./audioPlaylist"
-import { addToMediaFolder } from "../utils/cloudSync"
+import { AudioRoutingManager } from "./routing/audioRoutingManager"
 
 type AudioMetadata = {
     name: string
@@ -25,7 +25,10 @@ type AudioOptions = {
     startAt?: number
     crossfade?: number // playlist
     playlistCrossfade?: boolean // playlist
+    startPaused?: boolean // playlist
     volume?: number // playlist
+    playlistId?: string
+    playlistIndex?: number
 }
 export type AudioData = {
     name: string
@@ -33,106 +36,169 @@ export type AudioData = {
     isMic: boolean
     audio: HTMLAudioElement
     stream?: MediaStream
+    replayGainMultiplier?: number
+    playlistId?: string
+    path?: string
+    index?: number
 }
 
 export class AudioPlayer {
     static channelCount = AudioMultichannel.DEFAULT_CHANNELS // default, will be updated dynamically
     static maxChannels = AudioMultichannel.MAX_CHANNELS // support up to 8 channels (7.1 surround)
     static sampleRate = 48000 // Hz
+    static replayGainCache: Map<string, number> = new Map()
 
     // static playing: { [key: string]: AudioData } = {}
 
+    static getPath(id: string): string {
+        if (!id) return ""
+        const indexSep = id.lastIndexOf("::")
+        if (indexSep !== -1) return id.slice(0, indexSep)
+        return id
+    }
+
+    static getKey(path: string, index?: number): string {
+        if (index !== undefined && index > -1) return `${path}::${index}`
+        return path
+    }
+
     // LOADING
 
-    private static currentlyLoading: string[] = []
+    private static currentlyLoading = new Set<string>()
     private static isLoading(path: string) {
-        return this.currentlyLoading.includes(path)
+        return this.currentlyLoading.has(path)
     }
     private static setLoading(path: string) {
-        if (!this.isLoading(path)) this.currentlyLoading.push(path)
+        this.currentlyLoading.add(path)
     }
     private static clearLoading(path: string) {
-        const index = AudioPlayer.currentlyLoading.indexOf(path)
-        if (index !== -1) AudioPlayer.currentlyLoading.splice(index, 1)
+        this.currentlyLoading.delete(path)
     }
 
     // INIT
 
-    static async start(path: string, metadata: AudioMetadata, options: AudioOptions = {}) {
-        if (get(outLocked) || clearing.includes(path) || this.isLoading(path)) return
-        this.setLoading(path)
+    // returns false when the audio file can't be found or loaded
+    static async start(path: string, metadata: AudioMetadata, options: AudioOptions = {}): Promise<boolean> {
+        if (typeof path !== "string") return false
+        const key = AudioPlayer.getKey(path, options.playlistIndex)
+        if (get(outLocked) || clearing.includes(key) || clearing.includes(path) || this.isLoading(key)) return true
+        this.setLoading(key)
+
+        const isOnline = path.startsWith("http")
 
         const located = await locateMediaFile(path)
         if (!located) {
-            this.clearLoading(path)
-            return
+            this.clearLoading(key)
+            return false
         }
 
-        path = located.path
-        if (!located.hasChanged) addToMediaFolder(path)
+        const resolvedPath = located.path
+        const resolvedKey = AudioPlayer.getKey(resolvedPath, options.playlistIndex)
+
+        // update active playlist file if it's located to a new path
+        if (located.path !== path && get(activePlaylist)?.active === path) {
+            activePlaylist.update((a) => {
+                if (a) {
+                    a.active = resolvedPath
+                    a.activeKey = resolvedKey
+                }
+                return a
+            })
+        }
+
+        path = resolvedPath
+        if (!located.hasChanged && !isOnline) addToMediaFolder(path)
 
         // get type
         const duration = await this.getDuration(path)
         const type = this.getAudioType(path, duration)
         if (type === "effect") options = { ...options, playMultiple: true }
 
-        if (this.audioExists(path)) {
+        if (get(playingAudio)[resolvedKey]) {
             if (options.pauseIfPlaying === false) {
-                updateAudioStore(path, "currentTime", 0)
-                this.clearLoading(path)
-                return
+                updateAudioStore(resolvedKey, "currentTime", 0)
+                this.clearLoading(key)
+                return true
             }
             if (options.stopIfPlaying) {
-                if (options.clearTime) clearAudio(path, { clearTime: options.clearTime })
-                else AudioPlayer.stop(path)
-                this.clearLoading(path)
-                return
+                if (options.clearTime) clearAudio(resolvedKey, { clearTime: options.clearTime })
+                else AudioPlayer.stop(resolvedKey)
+                this.clearLoading(key)
+                return true
             }
 
-            this.togglePausedState(path)
-            this.clearLoading(path)
-            return
+            this.togglePausedState(resolvedKey)
+            this.clearLoading(key)
+            return true
         }
 
         const audioPlaying = Object.keys(get(playingAudio)).length
         if (options.crossfade) fadeOutAudio(options.crossfade)
-        else if (!options.playMultiple) clearAudio("", { playlistCrossfade: options.playlistCrossfade, isPlayingNew: true })
+        else if (!options.playMultiple) clearAudio("", { playlistCrossfade: options.playlistCrossfade, isPlayingNew: true, clearMicrophones: false, clearPlaylist: !options.playlistId && !options.playlistCrossfade })
 
-        const audio = await this.createAudio(path)
+        const audio = await this.createAudio(resolvedKey, path)
+        if (!audio) {
+            this.clearLoading(key)
+            return false
+        }
         // another audio might have been started while awaiting (if played rapidly)
-        if (!audio || this.audioExists(path)) {
-            this.clearLoading(path)
-            return
+        if (get(playingAudio)[resolvedKey]) {
+            this.clearLoading(key)
+            return true
         }
 
-        const newVolume = AudioPlayer.getVolume() * (options.volume || 1)
-        audio.volume = newVolume
+        const newVolume = AudioPlayer.getVolume(path) * (options.volume || 1)
+        audio.volume = Math.min(1, Math.max(0, newVolume))
 
         options.startAt = AudioPlayer.getStartTime(path, options.startAt)
         if (options.startAt > 0) audio.currentTime = options.startAt
 
         playingAudio.update((a) => {
-            a[path] = {
+            a[resolvedKey] = {
                 name: removeExtension(metadata.name || getFileName(path)),
-                paused: false,
+                paused: !!options.startPaused,
                 isMic: false,
-                audio
+                audio,
+                playlistId: options.playlistId,
+                path,
+                index: options.playlistIndex
             }
             return a
         })
 
+        this.getReplayGainMultiplier(path)
+            .then((mult) => {
+                const gain = mult || 1
+                if (gain === 1) return
+
+                playingAudio.update((a) => {
+                    if (!a[resolvedKey]) return a
+                    a[resolvedKey].replayGainMultiplier = gain
+                    return a
+                })
+
+                try {
+                    const updatedVolume = AudioPlayer.getVolume(path) * (options.volume || 1) * gain
+                    audio.volume = Math.min(1, Math.max(0, updatedVolume))
+                    AudioAnalyser.setSourceVolume(resolvedKey, audio.volume)
+                } catch (e) {}
+            })
+            .catch(() => {})
+
         let waitToPlay = 0
         if (audioPlaying && options.crossfade) {
             audio.volume = 0
+            AudioAnalyser.setSourceVolume(resolvedKey, 0)
             waitToPlay = options.crossfade * 0.6
-            fadeInAudio(path, options.crossfade, !!waitToPlay, newVolume)
+            fadeInAudio(resolvedKey, options.crossfade, !!waitToPlay, newVolume)
         }
 
-        this.initAudio(path, waitToPlay)
+        this.initAudio(resolvedKey, waitToPlay, !!options.startPaused)
 
         const name = removeExtension(metadata.name || getFileName(path))
-        this.nowPlaying(path, name)
-        this.clearLoading(path)
+        if (type !== "effect") this.nowPlaying(path, name)
+        this.clearLoading(key)
+        return true
     }
 
     static async playStream(id: string, stream: MediaStream, metadata: AudioMetadata) {
@@ -158,15 +224,64 @@ export class AudioPlayer {
         this.initAudio(id)
     }
 
-    private static async createAudio(path: string): Promise<HTMLAudioElement | null> {
+    private static async createAudio(id: string, path: string): Promise<HTMLAudioElement | null> {
         const audio = new Audio(encodeFilePath(path))
-        return await this.waitForAudio(path, audio)
+        const onPlay = () => {
+            updatePlayingStore(id, "paused", false)
+            this.initCheckLoop()
+        }
+        const onPause = () => {
+            updatePlayingStore(id, "paused", true)
+            if (!AudioAnalyser.shouldAnalyse()) {
+                this.stopCheckLoop()
+            }
+        }
+        const onEnded = () => {
+            AudioPlayer.checkIfEnding(id, true)
+        }
+        audio.addEventListener("play", onPlay)
+        audio.addEventListener("pause", onPause)
+        audio.addEventListener("ended", onEnded)
+        ;(audio as any)._cleanupListeners = () => {
+            audio.removeEventListener("play", onPlay)
+            audio.removeEventListener("pause", onPause)
+            audio.removeEventListener("ended", onEnded)
+        }
+
+        return await this.waitForAudio(id, audio)
     }
 
     private static async createAudioFromStream(id: string, stream: MediaStream): Promise<HTMLAudioElement | null> {
         const audio = new Audio()
+        // The audio element should be muted for streams, as we are routing the stream directly
+        // through AudioContext.createMediaStreamSource. If not muted, the element plays
+        // directly to the system output, bypassing our routing graph.
+        audio.muted = true
         audio.srcObject = stream
-        return await this.waitForAudio(id, audio)
+        const onPlay = () => {
+            updatePlayingStore(id, "paused", false)
+            this.initCheckLoop()
+        }
+        const onPause = () => {
+            updatePlayingStore(id, "paused", true)
+            if (!AudioAnalyser.shouldAnalyse()) {
+                this.stopCheckLoop()
+            }
+        }
+        audio.addEventListener("play", onPlay)
+        audio.addEventListener("pause", onPause)
+        ;(audio as any)._cleanupListeners = () => {
+            audio.removeEventListener("play", onPlay)
+            audio.removeEventListener("pause", onPause)
+        }
+
+        // For streams, we don't necessarily need to wait for 'canplay'
+        // as the stream is already active, but we'll try to load it.
+        try {
+            await audio.play().catch(() => {})
+        } catch {}
+
+        return audio
     }
 
     private static waitForAudio(pathOrId: string, audio: HTMLAudioElement): Promise<HTMLAudioElement | null> {
@@ -191,19 +306,62 @@ export class AudioPlayer {
     // private static init(id: string, audio: HTMLAudioElement, metadata: AudioMetadata) {
     // }
 
-    private static initAudio(id: string, waitToPlay = 0) {
-        setTimeout(() => {
-            // audio might have been cleared
-            const audio = this.getAudio(id)
-            if (!audio) return
+    private static initAudio(id: string, waitToPlay = 0, startPaused = false) {
+        const runInit = async () => {
+            const playing = get(playingAudio)[id]
+            if (!playing) return
+            const audio = playing.audio
 
-            this.play(id)
+            if (!startPaused) this.play(id)
             customActionActivation("audio_start")
 
-            // WIP get microphone input stream (audio will have to be muted in that case)
-            // let stream = this.getPlaying(id)?.stream || audio
-            AudioAnalyser.attach(id, audio)
-        }, waitToPlay * 1000)
+            await AudioAnalyser.attach(id, playing.stream || audio)
+            AudioRoutingManager.getInstance().updateRoutingNodes()
+            this.applyProcessing(id)
+        }
+
+        if (waitToPlay > 0) {
+            setTimeout(runInit, waitToPlay * 1000)
+        } else {
+            runInit()
+        }
+    }
+
+    static applyProcessing(id: string) {
+        const path = AudioPlayer.getPath(id)
+        const mediaData = get(media)[path] || get(media)[id]
+        if (!mediaData) return
+
+        this.setPitch(id, mediaData.pitch ?? 0)
+        this.setTempo(id, mediaData.tempo ?? 1)
+    }
+
+    //
+
+    private static checkInterval: NodeJS.Timeout | null = null
+    static initCheckLoop() {
+        if (this.checkInterval) return
+
+        this.checkAudioTime()
+        this.checkInterval = setInterval(() => {
+            this.checkAudioTime()
+        }, 1000)
+    }
+
+    static stopCheckLoop() {
+        if (this.checkInterval) {
+            clearInterval(this.checkInterval)
+            this.checkInterval = null
+        }
+    }
+
+    private static checkAudioTime() {
+        AudioPlaylist.checkCrossfade()
+
+        const playing = AudioPlayer.getAllPlaying()
+        playing.forEach((id) => {
+            AudioPlayer.checkIfEnding(id)
+        })
     }
 
     //
@@ -211,10 +369,15 @@ export class AudioPlayer {
     static play(id: string) {
         if (!this.audioExists(id)) return
 
-        updatePlayingStore(id, "paused", false)
-        this.getAudio(id)?.play()
+        const audio = this.getAudio(id)
 
-        AudioAnalyserMerger.init()
+        // reset volume in case it's played again while "Mute when video plays" is active (unless it's fading in)
+        if (audio && audio.volume === 0 && !currentlyCrossfadingIn.includes(id)) this.updateVolume(id)
+
+        updatePlayingStore(id, "paused", false)
+        audio?.play()
+
+        this.initCheckLoop()
     }
 
     static pause(id: string) {
@@ -224,7 +387,7 @@ export class AudioPlayer {
         this.getAudio(id)?.pause()
 
         if (!AudioAnalyser.shouldAnalyse()) {
-            AudioAnalyserMerger.stop()
+            this.stopCheckLoop()
         }
     }
 
@@ -232,17 +395,41 @@ export class AudioPlayer {
         if (!this.audioExists(id)) return
 
         this.pause(id)
+        AudioAnalyser.detach(id)
+
         playingAudio.update((a) => {
-            // reset
-            a[id].audio.src = ""
-            this.stopStream(a[id].stream)
+            const item = a[id]
+            if (item?.audio) {
+                try {
+                    ;(item.audio as any)._cleanupListeners?.()
+                    item.audio.pause()
+                    item.audio.src = ""
+                    item.audio.removeAttribute("src")
+                    item.audio.load()
+                } catch {}
+            }
+            this.stopStream(item?.stream)
 
             delete a[id]
             return a
         })
 
-        AudioAnalyser.detach(id)
-        if (!AudioPlayer.getAllPlaying().length) sendMain(Main.NOW_PLAYING_UNSET)
+        this.updateNowPlaying()
+    }
+
+    static updateNowPlaying() {
+        const playingMusic = Object.values(get(playingAudio)).filter((item) => {
+            if (!item.audio || item.isMic || !item.path) return false
+
+            const path = AudioPlayer.getPath(item.path)
+            const duration = item.audio.duration || this.getDurationSync(path)
+            return this.getAudioType(path, duration) !== "effect"
+        })
+        const playing = playingMusic.filter((item) => !item.paused)
+        const lastActive = playing.length ? playing[playing.length - 1] : playingMusic[playingMusic.length - 1]
+
+        if (lastActive?.path) this.nowPlaying(lastActive.path, lastActive.name)
+        else sendMain(Main.NOW_PLAYING_UNSET)
     }
 
     private static stopStream(stream: MediaStream | undefined) {
@@ -262,18 +449,28 @@ export class AudioPlayer {
             let newVolume = this.getVolume(id)
 
             // check playlist volume
-            if (AudioPlaylist.getPlayingPath() === id) {
+            if (AudioPlaylist.getPlayingKey() === id) {
                 newVolume *= AudioPlaylist.getActivePlaylist()?.volume || 1
             }
 
+            const gainMultiplier = get(playingAudio)[id]?.replayGainMultiplier || 1
+            newVolume *= gainMultiplier
+
             updateAudioStore(id, "volume", newVolume)
         })
-
-        AudioAnalyser.setGain(this.getGain())
     }
 
-    static setGain(value: number) {
-        AudioAnalyser.setGain(value)
+    static setPitch(id: string, value: number) {
+        AudioAnalyser.setPitch(id, value)
+    }
+
+    static setTempo(id: string, value: number) {
+        const audio = this.getAudio(id)
+        if (!audio) return
+
+        audio.playbackRate = value
+        if ("preservesPitch" in audio) audio.preservesPitch = true
+        AudioAnalyser.setTempo(id, 1)
     }
 
     static setTime(id: string, time: number) {
@@ -282,26 +479,31 @@ export class AudioPlayer {
         return true
     }
 
-    static checkIfEnding(id: string) {
+    static checkIfEnding(id: string, force = false) {
         const playing = this.getPlaying(id)
-        if (!playing || playing.paused) return
+        if (!playing || (playing.paused && !force)) return
 
         const audio = this.getAudio(id)
         if (!audio) return
 
-        const endingTime = AudioPlayer.getEndTime(id, audio.duration)
-        if (audio.currentTime < endingTime) return
+        const path = AudioPlayer.getPath(id)
+        const endingTime = AudioPlayer.getEndTime(path, audio.duration)
+        if (audio.currentTime < endingTime && !force) return
 
         // loop single audio
-        if (get(media)[id]?.loop) {
-            get(playingAudio)[id].audio.currentTime = 0
-            get(playingAudio)[id].audio.play()
+        if (get(media)[path]?.loop) {
+            const startTime = AudioPlayer.getStartTime(path)
+            const audioObj = get(playingAudio)[id]?.audio
+            if (audioObj) {
+                audioObj.currentTime = startTime
+                if (audioObj.paused) audioObj.play().catch(() => {})
+            }
             return
         }
 
-        if (AudioPlaylist.getPlayingPath() === id) {
+        if (AudioPlaylist.getPlayingKey() === id) {
             this.stop(id) // stop existing
-            AudioPlaylist.next()
+            AudioPlaylist.next(true)
             return
         }
 
@@ -309,22 +511,25 @@ export class AudioPlayer {
         this.stop(id)
 
         const stillPlaying = this.getAllPlaying()
-        if (!stillPlaying.length) checkNextAfterMedia(id, "audio")
+        if (!stillPlaying.length) checkNextAfterMedia(path, "audio")
     }
 
     // NowPlaying.txt
     static nowPlaying(filePath: string, name: string) {
+        const path = AudioPlayer.getPath(filePath)
         const audioLang = get(dictionary).audio || {}
         const unknownLang = [audioLang.unknown_artist || "", audioLang.unknown_title || "", audioLang.unknown_album || ""]
         const format: string = get(special).nowPlayingFormat || ""
-        const duration = this.getDurationSync(filePath)
-        sendMain(Main.NOW_PLAYING, { filePath, name, unknownLang, format, duration })
+        const duration = this.getDurationSync(path)
+        sendMain(Main.NOW_PLAYING, { filePath: path, name, unknownLang, format, duration })
     }
 
     // GET
 
     static getPlaying(id: string): AudioData | null {
-        return get(playingAudio)[id] || null
+        if (get(playingAudio)[id]) return get(playingAudio)[id]
+        const matchingKey = Object.keys(get(playingAudio)).find((k) => AudioPlayer.getPath(k) === id)
+        return matchingKey ? get(playingAudio)[matchingKey] : null
     }
 
     static getAllPlaying(removePaused = true) {
@@ -337,7 +542,7 @@ export class AudioPlayer {
     }
 
     static getAudio(id: string): HTMLAudioElement | null {
-        return get(playingAudio)[id]?.audio || null
+        return this.getPlaying(id)?.audio || null
     }
 
     static getTime(id: string) {
@@ -346,37 +551,52 @@ export class AudioPlayer {
 
     private static storedDurations: Map<string, number> = new Map()
     static async getDuration(id: string) {
-        if (this.storedDurations.has(id)) return this.storedDurations.get(id)!
+        const path = AudioPlayer.getPath(id)
+        if (this.storedDurations.has(path)) return this.storedDurations.get(path)!
 
-        const audio = this.getAudio(id) || (await loadAudioFile(id))
+        const activeAudio = this.getAudio(id)
+        let audio = activeAudio || (await loadAudioFile(path))
         let duration = audio?.duration || 0
         // audio streams does not end and have Infinite duration
         if (duration === Infinity) duration = 0
 
-        this.storedDurations.set(id, duration)
+        this.storedDurations.set(path, duration)
+
+        // Clean up temporary audio element created solely for duration inspection
+        if (!activeAudio && audio) {
+            try {
+                audio.pause()
+                audio.src = ""
+                audio.removeAttribute("src")
+                audio.load()
+            } catch {}
+            audio = null
+        }
+
         return duration
     }
     static getDurationSync(id: string) {
-        return this.storedDurations.get(id) || 0
+        return this.storedDurations.get(AudioPlayer.getPath(id)) || 0
     }
 
-    static getVolume(id: string | null = null, _updater = get(volume)) {
-        const mainVolume = get(audioChannelsData).main?.isMuted ? 0 : _updater
-        if (!id) return mainVolume
-        return mainVolume * (get(media)[id]?.volume || 1)
-    }
-
-    static getGain() {
-        return 1
-        // return get(special).allowGaining ? get(gain) || 1 : 1
+    static getVolume(id: string) {
+        const path = AudioPlayer.getPath(id)
+        return get(media)[path]?.volume ?? get(media)[id]?.volume ?? 1
     }
 
     static getGlobalOptions(path: string) {
-        return get(media)[path] || {}
+        const p = AudioPlayer.getPath(path)
+        return get(media)[p] || get(media)[path] || {}
     }
 
     static getAudioType(path: string, duration: number) {
-        return AudioPlayer.getGlobalOptions(path).audioType || (duration < 30 ? "effect" : "music")
+        const type = AudioPlayer.getGlobalOptions(path).audioType
+        if (type) return type
+
+        // likely an Audio stream
+        if (!duration || !isLocalFile(path)) return "music"
+
+        return duration < 30 ? "effect" : "music"
     }
 
     static getStartTime(path: string, startAt?: number | undefined) {
@@ -390,14 +610,25 @@ export class AudioPlayer {
         return globalEnd > 0 ? Math.min(duration, globalEnd) : duration
     }
 
-    static getOutputs(): Promise<{ value: string; label: string }[]> {
+    static getOutputs(): Promise<{ value: string; label: string; channels: number }[]> {
         return new Promise((resolve) => {
             navigator.mediaDevices
                 .enumerateDevices()
-                .then((devices) => {
-                    // only get audio outputs & not "default" becuase that does not work
+                .then(async (devices) => {
                     const outputDevices = devices.filter((device) => device.kind === "audiooutput" && device.deviceId !== "default")
-                    const audioOutputs = outputDevices.map((a) => ({ value: a.deviceId, label: a.label }))
+
+                    let defaultMaxChannels = 2
+                    try {
+                        const tempCtx = new AudioContext()
+                        defaultMaxChannels = tempCtx.destination.maxChannelCount || 2
+                        tempCtx.close()
+                    } catch {}
+
+                    const audioOutputs = outputDevices.map((a) => {
+                        const cap = (a as any).getCapabilities ? (a as any).getCapabilities() : null
+                        const channels = cap?.channelCount?.max || defaultMaxChannels || 2
+                        return { value: a.deviceId, label: a.label || "Speaker Output", channels }
+                    })
                     resolve(audioOutputs)
                 })
                 .catch((err) => {
@@ -416,6 +647,19 @@ export class AudioPlayer {
     static isPaused(id: string) {
         return !!this.getPlaying(id)?.paused
     }
+
+    static async getReplayGainMultiplier(path: string): Promise<number> {
+        if (this.replayGainCache.has(path)) return this.replayGainCache.get(path) || 1
+        try {
+            const audioMetadata = await requestMain(Main.READ_AUDIO_METADATA, { filePath: path })
+            const mult = audioMetadata?.replayGainMultiplier || 1
+            this.replayGainCache.set(path, mult)
+            return mult
+        } catch (e) {
+            console.error("Failed to read ReplayGain metadata", e)
+            return 1
+        }
+    }
 }
 
 function updatePlayingStore(id: string, key: string, value: any) {
@@ -429,7 +673,8 @@ function updatePlayingStore(id: string, key: string, value: any) {
 function updateAudioStore(id: string, key: string, value: any) {
     playingAudio.update((a) => {
         if (!a[id]?.audio) return a
-        a[id].audio[key] = value
+        a[id].audio[key] = key === "volume" ? Math.min(1, Math.max(0, value)) : value
+        if (key === "volume") AudioAnalyser.setSourceVolume(id, value)
         return a
     })
 }
@@ -438,7 +683,7 @@ export async function loadAudioFile(path: string): Promise<HTMLAudioElement | nu
     return new Promise((resolve) => {
         const audio = new Audio(encodeFilePath(path))
 
-        audio.addEventListener("canplaythrough", loaded, { once: true })
+        audio.addEventListener("loadedmetadata", loaded, { once: true })
         audio.addEventListener("error", error, { once: true })
 
         let resolved = false

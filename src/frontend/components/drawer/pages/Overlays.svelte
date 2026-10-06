@@ -1,17 +1,18 @@
 <script lang="ts">
-    import { onMount } from "svelte"
+    import { onDestroy } from "svelte"
     import type { Overlay } from "../../../../types/Show"
     import { addProjectItem } from "../../../converters/project"
     import { activeEdit, activePage, activeShow, labelsDisabled, mediaOptions, outLocked, outputs, overlayCategories, overlays, styles, timelineRecordingAction } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { getAccess } from "../../../utils/profile"
+    import { runAction } from "../../actions/actions"
     import { clone, keysToID, sortByName } from "../../helpers/array"
     import { history } from "../../helpers/history"
+    import Icon from "../../helpers/Icon.svelte"
     import { findMatchingOut, getResolution, setOutput } from "../../helpers/output"
     import T from "../../helpers/T.svelte"
     import FloatingInputs from "../../input/FloatingInputs.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
-    import Loader from "../../main/Loader.svelte"
     import Textbox from "../../slide/Textbox.svelte"
     import Zoomed from "../../slide/Zoomed.svelte"
     import Center from "../../system/Center.svelte"
@@ -20,7 +21,6 @@
     import Card from "../Card.svelte"
     import Effects from "../effects/Effects.svelte"
     import OverlayActions from "./OverlayActions.svelte"
-    import { runAction } from "../../actions/actions"
 
     export let active: string | null
     export let searchValue = ""
@@ -56,9 +56,34 @@
         }, 500)
     }
 
-    // open drawer tab instantly before content has loaded
-    let preloader = true
-    onMount(() => setTimeout(() => (preloader = false), 20))
+    // lazy loader
+    let lazyLoader = 0
+    let timeout: NodeJS.Timeout | null = null
+    let loaded = false
+
+    onDestroy(() => {
+        if (timeout) clearTimeout(timeout)
+    })
+
+    $: if (active || searchValue !== undefined) {
+        loaded = false
+        lazyLoader = 0
+    }
+
+    $: if (!loaded && fullFilteredOverlays?.length) {
+        if (lazyLoader >= fullFilteredOverlays.length) {
+            loaded = true
+        } else {
+            if (timeout) clearTimeout(timeout)
+            timeout = setTimeout(
+                () => {
+                    const batch = lazyLoader === 0 ? 4 : Math.min(32, lazyLoader * 2)
+                    lazyLoader += batch
+                },
+                lazyLoader === 0 ? 60 : 30
+            )
+        }
+    }
 
     $: overlayWithNonExistentCategory = active === "unlabeled" && filteredOverlays.some((s) => s.category)
     function createNonExistentCategories() {
@@ -75,13 +100,13 @@
 
     function overlayClick(e: any, id: string) {
         if ($outLocked || e.ctrlKey || e.metaKey) return
-        if (e.target?.closest(".edit") || e.target?.closest(".icons")) return
+        if (e.target?.closest?.(".edit") || e.target?.closest?.(".icons")) return
 
         const isActive = findMatchingOut(id, $outputs) !== null
 
         if (!isActive) {
             // run actions - before starting overlay
-            $overlays[id]?.actions?.forEach((a) => runAction(a))
+            if (Array.isArray($overlays[id]?.actions)) $overlays[id].actions.forEach((a) => runAction(a, { source: "overlay" }))
         }
 
         setOutput("overlays", id, true)
@@ -89,20 +114,35 @@
         if (isActive) timelineRecordingAction.set({ id: "clear_overlay", data: { id } })
         else timelineRecordingAction.set({ id: "id_select_overlay", data: { id } })
     }
+
+    function keydown(e: KeyboardEvent) {
+        if (e.key === "Enter" && searchValue.length > 1 && e.target?.closest?.(".search")) {
+            let overlay = fullFilteredOverlays[0]
+            if (!overlay) return
+
+            // play
+            if (e.ctrlKey || e.metaKey) {
+                overlayClick({}, overlay.id)
+                return
+            }
+
+            // add to project
+            const data = { id: overlay.id, name: overlay.name, type: "overlay" as const }
+            addProjectItem(data)
+        }
+    }
 </script>
+
+<svelte:window on:keydown={keydown} />
 
 <div style="position: relative;height: 100%;overflow-y: auto;" class="context #drawer_overlays" on:wheel={wheel}>
     {#if active === "effects"}
         <Effects {searchValue} />
     {:else}
         <DropArea id="overlays">
-            {#if preloader && fullFilteredOverlays.length > 10}
-                <Center>
-                    <Loader />
-                </Center>
-            {:else if fullFilteredOverlays.length}
+            {#if fullFilteredOverlays.length}
                 <div class="grid" style="--width: {100 / $mediaOptions.columns}%;">
-                    {#each fullFilteredOverlays as overlay}
+                    {#each fullFilteredOverlays as overlay, i (overlay.id)}
                         {@const isReadOnly = readOnly || profile[overlay.category || ""] === "read"}
                         {@const isActive = findMatchingOut(overlay.id, $outputs) !== null}
 
@@ -121,19 +161,21 @@
                                 on:click={(e) => overlayClick(e, overlay.id)}
                                 on:dblclick={(e) => {
                                     if (e.ctrlKey || e.metaKey) return
-                                    if (e.target?.closest(".edit") || e.target?.closest(".icons")) return
+                                    if (e.target?.closest?.(".edit") || e.target?.closest?.(".icons")) return
 
                                     addProjectItem({ id: overlay.id, name: overlay.name || "", type: "overlay" })
                                 }}
                             >
-                                <!-- icons -->
-                                <OverlayActions columns={$mediaOptions.columns} overlayId={overlay.id} />
+                                {#if loaded || i < lazyLoader}
+                                    <!-- icons -->
+                                    <OverlayActions columns={$mediaOptions.columns} overlayId={overlay.id} />
 
-                                <Zoomed {resolution} background={overlay.items.length ? "var(--primary);" : overlay.color || "var(--primary);"} checkered={!!overlay.items.length}>
-                                    {#each overlay.items as item}
-                                        <Textbox {item} ref={{ type: "overlay", id: overlay.id }} />
-                                    {/each}
-                                </Zoomed>
+                                    <Zoomed {resolution} background={overlay.items.length ? "var(--primary);" : overlay.color || "var(--primary);"} checkered={!!overlay.items.length}>
+                                        {#each overlay.items as item}
+                                            <Textbox {item} ref={{ type: "overlay", id: overlay.id }} preview miniPreview />
+                                        {/each}
+                                    </Zoomed>
+                                {/if}
                             </Card>
                         </SelectElem>
                     {/each}
@@ -153,7 +195,8 @@
 
 {#if overlayWithNonExistentCategory}
     <FloatingInputs side="left" onlyOne>
-        <MaterialButton icon="autofill" on:click={createNonExistentCategories}>
+        <MaterialButton on:click={createNonExistentCategories}>
+            <Icon id="autofill" gradient />
             <T id="category.create_nonexistent" />
         </MaterialButton>
     </FloatingInputs>

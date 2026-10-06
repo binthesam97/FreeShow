@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
-    import { activeEdit, activeFocus, activePage, activePopup, alertMessage, cachedShowsData, categories, focusMode, lessonsLoaded, notFound, outLocked, outputs, outputSlideCache, showsCache, slidesOptions, special, templates } from "../../stores"
+    import { activeEdit, activeFocus, activePage, activePopup, alertMessage, cachedShowsData, categories, focusMode, groups, lessonsLoaded, notFound, outLocked, outputs, outputSlideCache, showsCache, slidesOptions, special, templates } from "../../stores"
     import { hasNewerUpdate, wait } from "../../utils/common"
     import { getAccess } from "../../utils/profile"
     import { videoExtensions } from "../../values/extensions"
@@ -31,17 +31,21 @@
     $: layoutSlides = currentShow ? getCachedShow(showId, activeLayout, $cachedShowsData)?.layout || [] : []
 
     let hasMounted = false
+    let isDestroyed = false
     onMount(() => {
         // don't double render all slides on first load because of cachedShowsData update
         setTimeout(() => (hasMounted = true), 80)
 
         // custom fonts
-        if (currentShow?.settings?.customFonts) loadCustomFonts(currentShow.settings.customFonts)
+        loadCustomFonts(currentShow?.settings?.customFonts || [])
     })
 
     onDestroy(() => {
+        isDestroyed = true
         if (timeout && typeof timeout !== "boolean") clearTimeout(timeout)
         if (loadingTimeout) clearTimeout(loadingTimeout)
+        if (lessonsTimeout) clearTimeout(lessonsTimeout)
+        if (nextScrollTimeout) clearTimeout(nextScrollTimeout)
     })
 
     // fix broken media
@@ -49,13 +53,18 @@
     function fixBrokenMedia() {
         if (!currentShow) return
         showsCache.update((a) => {
+            if (!a[showId]) return a
             Object.entries(currentShow.layouts || {}).forEach(([layoutId, layout]) => {
-                layout.slides.forEach((slide, i) => {
-                    let backgroundId = slide.background
-                    if (backgroundId && !currentShow.media[backgroundId]) {
-                        delete a[showId].layouts[layoutId].slides[i].background
-                    }
-                })
+                if (Array.isArray(layout.slides)) {
+                    layout.slides.forEach((slide, i) => {
+                        let backgroundId = slide.background
+                        if (backgroundId && !currentShow.media[backgroundId]) {
+                            if (a[showId].layouts?.[layoutId]?.slides?.[i]) {
+                                delete a[showId].layouts[layoutId].slides[i].background
+                            }
+                        }
+                    })
+                }
             })
             return a
         })
@@ -74,8 +83,8 @@
         if (!scrollElem) return
         if (await hasNewerUpdate("SHOWS_SCROLL_OFFSET", 10)) return
 
-        let output = $outputs[activeOutputs[0]] || {}
-        if (showId === output.out?.slide?.id && activeLayout === output.out?.slide?.layout) {
+        let output = $outputs[activeOutputs[0]]
+        if (output?.out?.slide && showId === output.out.slide.id && activeLayout === output.out.slide.layout) {
             let columns = mode === "grid" ? ($slidesOptions.columns > 2 ? $slidesOptions.columns : 0) : 1
             let index = Math.max(0, (output.out.slide.index || 0) - columns)
             offset = ((scrollElem?.querySelector(".grid")?.children[index] as HTMLElement)?.offsetTop || 5) - 5
@@ -112,7 +121,7 @@
             }
 
             // get item click reveal
-            const clickRevealItems = (showSlide?.items || []).filter((a) => a.clickReveal)
+            const clickRevealItems = Array.isArray(showSlide?.items) ? showSlide.items.filter((a) => a?.clickReveal) : []
             const isRevealed = clickRevealItems.length ? !!outSlide?.itemClickReveal : true
             let itemClickReveal = false
             if (outSlide && outSlide.id === showId && outSlide.layout === activeLayout && outSlide.index === index && clickRevealItems.length) {
@@ -121,7 +130,7 @@
             }
 
             // get lines reveal
-            const linesRevealItems = (showSlide?.items || []).filter((a) => a?.lineReveal)
+            const linesRevealItems = Array.isArray(showSlide?.items) ? showSlide.items.filter((a) => a?.lineReveal) : []
             let revealCount = outSlide?.revealCount ?? 0
             if (outSlide && outSlide.id === showId && outSlide.layout === activeLayout && outSlide.index === index && linesRevealItems.length && isRevealed) {
                 revealCount++
@@ -165,6 +174,22 @@
 
     $: gridMode = mode === "grid" || mode === "simple" || mode === "groups"
 
+    // apply any group templates whenever a new slide group is added/updated
+    let previousTemplateSignature = ""
+    $: if (showId && loaded) {
+        const templateSignature = layoutSlides
+            .map((layoutSlide) => {
+                const slide = currentShow?.slides?.[layoutSlide.id]
+                const slideTemplate = slide?.settings?.template
+                const groupTemplate = slide?.globalGroup && $groups[slide.globalGroup]?.template
+                return slideTemplate || groupTemplate || ""
+            })
+            .join("|")
+
+        if (templateSignature && templateSignature !== previousTemplateSignature) setTimeout(updateTemplate, 100)
+        previousTemplateSignature = templateSignature
+    }
+
     // update show by its template
     $: if (showId && loaded) setTimeout(updateTemplate, 100)
     function updateTemplate() {
@@ -185,6 +210,7 @@
 
     $: if (showId && $special.capitalize_words) capitalizeWords()
     function capitalizeWords() {
+        if (isDestroyed || !showId) return
         // keep letters and spaces
         // const regEx = /[^a-zA-Z\s]+/
 
@@ -192,9 +218,10 @@
         let slides = _show(showId).get("slides") || {}
         Object.keys(slides).forEach((slideId) => {
             let slide = slides[slideId]
+            if (!Array.isArray(slide?.items)) return
 
-            slide?.items?.forEach((item) => {
-                if (!item?.lines) return
+            slide.items.forEach((item) => {
+                if (!Array.isArray(item?.lines)) return
 
                 item.lines.forEach((line) => {
                     if (!Array.isArray(line?.text)) return
@@ -275,6 +302,7 @@
             let outSlide = currentOutput.out?.slide || $outputSlideCache[a] || {}
 
             if (activeSlides[outSlide.index] || outSlide.id !== showId || outSlide.layout !== activeLayout) return
+            if (projectIndex !== -1 && outSlide.projectIndex !== undefined && outSlide.projectIndex !== projectIndex) return
 
             let ref = outSlide?.id === "temp" ? [{ temp: true, items: outSlide.tempItems, id: "" }] : _show(outSlide.id).layouts([outSlide.layout]).ref()[0] || []
             let showSlide = outSlide.index !== undefined ? _show(outSlide.id).slides([ref[outSlide.index]?.id]).get()?.[0] : null
@@ -349,7 +377,7 @@
 
     let lazyLoading = false
     function startLazyLoader() {
-        if (!layoutSlides || timeout) return
+        if (isDestroyed || !layoutSlides || timeout) return
 
         if (lazyLoader >= layoutSlides.length) {
             loaded = true
@@ -415,11 +443,15 @@
             return
         }
 
-        timeout = setTimeout(next, 10)
+        timeout = setTimeout(next, 50)
 
         function next() {
-            lazyLoader += $focusMode ? 20 : 4
-            clearTimeout(timeout as NodeJS.Timeout)
+            if (isDestroyed) return
+
+            // start small (e.g. 4) and double each step up to a max batch size of 32 (or 128 in focusMode)
+            const currentBatch = lazyLoader === 0 ? 4 : Math.min($focusMode ? 128 : 32, lazyLoader * 2)
+            lazyLoader += currentBatch
+            if (timeout && typeof timeout !== "boolean") clearTimeout(timeout)
             timeout = null
             startLazyLoader()
         }
@@ -488,7 +520,8 @@
                     <div class="grid" style={$focusMode ? "" : "padding-bottom: 60px;"}>
                         {#if layoutSlides.length}
                             {#each layoutSlides as slide, i}
-                                {@const currentSlide = currentShow?.slides?.[slide.id]}
+                                {@const currentSlide = currentShow?.slides?.[slide.id] || (slide.id === "fake_empty" ? { group: null, color: null, settings: {}, notes: "", items: [] } : undefined)}
+
                                 {#if hasMounted && (loaded || i < lazyLoader)}
                                     {#if currentSlide && (mode === "grid" || mode === "groups" || !slide.disabled) && (mode !== "groups" || currentSlide.group !== null || activeSlides[i] !== undefined)}
                                         <Slide {showId} slide={currentSlide} show={currentShow} {layoutSlides} layoutSlide={slide} index={i} color={slide.color} output={activeSlides[i]} active={activeSlides[i] !== undefined} {endIndex} list={!gridMode} columns={$slidesOptions.columns} icons {altKeyPressed} disableThumbnails={isLessons && !loaded} centerPreview on:click={(e) => slideClick(e, i)} />

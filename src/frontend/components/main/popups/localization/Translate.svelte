@@ -9,6 +9,9 @@
     import MaterialDropdown from "../../../inputs/MaterialDropdown.svelte"
     import { isoLanguages } from "./isoLanguages"
     import { getIsoLanguages, removeTranslationFromShow, translateShow } from "./translation"
+    import { registerPopupSubmit } from "../../../../utils/popup"
+
+    registerPopupSubmit(convert)
 
     let languageList = getIsoLanguages()
 
@@ -46,16 +49,15 @@
     onMount(() => {
         let currentShow = $showsCache[showId] || {}
         let activeLayout = currentShow.settings?.activeLayout
-        let layoutSlides = currentShow.layouts?.[activeLayout]?.slides
+        let layoutSlides = currentShow.layouts?.[activeLayout]?.slides || []
 
         layoutSlides.forEach((a) => {
-            _show()
-                .slides([a.id])
-                .get("items")
-                .flat()
-                .forEach((a) => {
-                    if (a.language) translatedLangs.push(a.language)
-                })
+            if (!a?.id) return
+
+            let items = _show().slides([a.id]).get("items") || []
+            items.flat().forEach((item) => {
+                if (item?.language) translatedLangs.push(item.language)
+            })
         })
 
         translatedLangs = [...new Set(translatedLangs)]

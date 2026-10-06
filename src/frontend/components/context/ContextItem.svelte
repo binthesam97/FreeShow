@@ -1,15 +1,16 @@
 <script lang="ts">
+    import { AudioPlayer } from "../../audio/audioPlayer"
     import { cameraManager } from "../../media/cameraManager"
-    import { actions, activeEdit, activeProject, activeRecording, activeShow, categories, colorbars, dictionary, disabledServers, drawerTabsData, effects, effectsLibrary, events, forceClock, globalTags, livePrepare, media, mediaFolders, os, outputs, overlayCategories, overlays, projects, redoHistory, scriptures, selected, shows, showsCache, slidesOptions, special, stageShows, styles, templateCategories, timers, topContextActive, undoHistory } from "../../stores"
+    import { actions, activeEdit, activeProject, activeRecording, activeShow, categories, colorbars, dictionary, disabledServers, drawerTabsData, effects, effectsLibrary, events, forceClock, globalTags, livePrepare, media, mediaFolders, os, outputs, overlayCategories, overlays, projects, redoHistory, scenes, scriptures, selected, shows, showsCache, slideDeleteHighlight, slidesOptions, special, spellcheck, stageShows, styles, templateCategories, timers, topContextActive, undoHistory } from "../../stores"
     import { translateText } from "../../utils/language"
     import { closeContextMenu } from "../../utils/shortcuts"
     import { keysToID } from "../helpers/array"
     import Icon from "../helpers/Icon.svelte"
     import { getExtension, getMediaType } from "../helpers/media"
-    import { getLayoutRef } from "../helpers/show"
+    import { getLayoutRef, getSlideHighlightIndexes } from "../helpers/show"
     import { _show } from "../helpers/shows"
     import T from "../helpers/T.svelte"
-    import { ContextMenuItem, contextMenuItems } from "./contextMenus"
+    import { type ContextMenuItem, contextMenuItems } from "./contextMenus"
     import { menuClick } from "./menuClick"
 
     export let contextElem: HTMLDivElement | null = null
@@ -32,10 +33,14 @@
         view_list: () => ($slidesOptions.mode === "list" ? (enabled = true) : ""),
         view_lyrics: () => ($slidesOptions.mode === "lyrics" ? (enabled = true) : ""),
         rename: () => {
-            disabled = !!$shows[$selected.data[0]?.id]?.locked // hide
+            if ($selected.id === "show" || $selected.id === "show_drawer") {
+                disabled = !!$shows[$selected.data[0]?.id]?.locked // hide
+            }
         },
         delete: () => {
-            hide = !!$shows[$selected.data[0]?.id]?.locked
+            if ($selected.id === "show" || $selected.id === "show_drawer") {
+                hide = !!$selected.data?.length && $selected.data?.every((a) => !!$shows[a?.id]?.locked)
+            }
         },
         private: () => {
             let show = $shows[$selected.data[0]?.id]
@@ -63,7 +68,7 @@
             if ($selected.id !== "show_drawer" || !$shows[$selected.data[0]?.id]?.locked) return
             disabled = !!$shows[$selected.data[0].id].locked
         },
-        edit_style: () => {
+        change_style: () => {
             let outputId = contextElem?.id || ""
             const styleId = $outputs[outputId]?.style || ""
             const stageId = $outputs[outputId]?.stageOutput || ""
@@ -72,14 +77,30 @@
                 menu.label = "stage.stage_layout"
                 menu.icon = "stage"
                 if (!$stageShows[stageId]) disabled = true
-                menu.label += `: ${stageId ? $stageShows[stageId]?.name || "error.not_found" : "main.none"}`
+                menu.label += `: ${stageId ? ($stageShows[stageId] ? $stageShows[stageId].name || "main.unnamed" : "error.not_found") : "main.none"}`
                 return
             }
 
             menu.label = "edit.style"
             menu.icon = "styles"
+            // if (!$styles[styleId]) disabled = true
+            menu.label += `: ${styleId ? ($styles[styleId] ? $styles[styleId].name || "main.unnamed" : "error.not_found") : "main.none"}`
+        },
+        edit_style: () => {
+            let outputId = contextElem?.id || ""
+            const styleId = $outputs[outputId]?.style || ""
+            const stageId = $outputs[outputId]?.stageOutput || ""
+
+            if (stageId) {
+                menu.label = "menu.edit"
+                if (!$stageShows[stageId]) disabled = true
+                menu.label += `: ${stageId ? ($stageShows[stageId] ? $stageShows[stageId].name || "main.unnamed" : "error.not_found") : "main.none"}`
+                return
+            }
+
+            menu.label = "menu.edit"
             if (!$styles[styleId]) disabled = true
-            menu.label += `: ${styleId ? $styles[styleId]?.name || "error.not_found" : "main.none"}`
+            menu.label += `: ${styleId ? ($styles[styleId] ? $styles[styleId].name || "main.unnamed" : "error.not_found") : "main.none"}`
         },
         lock_group: () => {
             if ($selected.id !== "group") return
@@ -95,7 +116,7 @@
                 let ref = getLayoutRef()
                 isEnabled = ref[$selected.data[0]?.index]?.data?.disabled || false
             } else if ($selected.id === "stage") {
-                isEnabled = $stageShows[$selected.data[0]?.id]?.disabled
+                isEnabled = $stageShows[$selected.data[0]?.id]?.disabled || false
             } else if ($selected.id === "action") {
                 let action = $actions[$selected.data[0]?.id] || {}
                 if (!action.customActivation) hide = true
@@ -104,6 +125,24 @@
 
             enabled = isEnabled
             menu.label = isEnabled ? "actions.enable" : "actions.disable"
+        },
+        hide: () => {
+            let isHidden = false
+            if (contextElem?.classList.value.includes("#effect_item")) {
+                const effectId = $activeEdit.id || ""
+                const effect = $effects[effectId]
+                const idxStr = contextElem.dataset.index ?? contextElem.id?.replace(/^#/, "")
+                const index = idxStr !== undefined ? Number(idxStr) : -1
+                if (index >= 0 && effect?.items?.[index]?.hidden) isHidden = true
+            } else if (contextElem?.classList.value.includes("#scene_overlay")) {
+                const sceneId = $activeEdit.id || ""
+                const scene = $scenes[sceneId]
+                const overlayId = contextElem.dataset.overlayId || $selected.data?.[0]?.id || ""
+                if (overlayId && scene?.content?.hiddenOverlays?.includes(overlayId)) isHidden = true
+            }
+
+            enabled = isHidden
+            if (menu) menu.label = isHidden ? "profile.show" : "profile.hide"
         },
         display_tags: () => {
             enabled = $special.displayTags
@@ -132,31 +171,15 @@
                 // enabled = ref[$selected.data[0]?.index]?.data?.transition || false
             }
         },
+        make_unique: () => {
+            if ($selected.id !== "slide" || !$selected.data?.length) return
+
+            hide = isNotMultiGroupSlide($selected.data, true)
+        },
         remove_group: () => {
             if ($selected.id !== "slide" || !$selected.data?.length) return
 
-            hide = $selected.data.every(({ index }) => {
-                const ref = getLayoutRef()
-                const currentSlideId = ref[index]?.parent?.id || ref[index]?.id
-                if (!currentSlideId) return true
-
-                const show = $showsCache[$activeShow?.id || ""]
-
-                // if parent slide and has children, don't hide
-                const isParent = ref[index]?.type === "parent"
-                if (isParent && (show.slides[currentSlideId]?.children || []).length) {
-                    // hide if group is set to "None"
-                    return show.slides[currentSlideId].group === "."
-                }
-
-                const currentSlideInstances = Object.values(show.layouts)
-                    .map((a) => a.slides)
-                    .flat()
-                    .filter((b) => b.id === currentSlideId)
-
-                // hide if there is just one instance of the slide group across all layouts
-                return currentSlideInstances.length < 2
-            })
+            hide = isNotMultiGroupSlide($selected.data)
         },
         remove: () => {
             if ($selected.id !== "show" || _show($selected.data[0]?.id).get("private") !== true) return
@@ -167,6 +190,27 @@
         },
         redo: () => {
             if (!$redoHistory.length) disabled = true
+        },
+        text_copy: () => {
+            // $spellcheck?.suggestions ||
+            if (!window.getSelection()?.toString()) hide = true
+        },
+        text_cut: () => {
+            // $spellcheck?.suggestions ||
+            if (!window.getSelection()?.toString()) hide = true
+        },
+        text_paste: () => {
+            setTimeout(() => {
+                if ($spellcheck?.suggestions) hide = true
+            }, 20)
+        },
+        text_select_all: () => {
+            setTimeout(() => {
+                if ($spellcheck?.suggestions) hide = true
+            }, 20)
+        },
+        insert_virtual_break: () => {
+            if (window.getSelection()?.toString()) hide = true
         },
         createSlideshow: () => {
             hide = $selected.id !== "media" || $selected.data.length < 2
@@ -204,14 +248,22 @@
             }
         },
         effects_library_add: () => {
-            // WIP don't show this if not an effect
-            let isEnabled = false
             let path = $selected.data[0]?.path || $selected.data[0]?.id
-            let existing = $effectsLibrary.find((a) => a.path === path)
-            if (path && existing) isEnabled = true
+            if (path) {
+                const duration = AudioPlayer.getDurationSync(path)
+                const isEffect = AudioPlayer.getAudioType(path, duration) === "effect"
+                // don't show if not an effect
+                if (!isEffect) {
+                    hide = true
+                    return
+                }
+            }
 
-            enabled = isEnabled
-            menu.label = isEnabled ? "media.effects_library_remove" : "media.effects_library_add"
+            let existing = $effectsLibrary.find((a) => a.path === path)
+            if (path && existing) enabled = true
+            else enabled = false
+
+            menu.label = enabled ? "media.effects_library_remove" : "media.effects_library_add"
         },
         startup_activate: () => {
             const startupCameras = cameraManager.getStartupCameras()
@@ -340,10 +392,48 @@
         }
     }
 
+    function isNotMultiGroupSlide(data: { index: number }[], unique = false) {
+        if (!Array.isArray(data)) return false
+
+        const ref = getLayoutRef()
+        const getParentId = (index: number) => ref[index]?.parent?.id || ref[index]?.id
+
+        // check that only one group is selected
+        if (unique && data.length > 1) {
+            const firstGroupId = getParentId(data[0].index)
+            if (!data.every(({ index }) => getParentId(index) === firstGroupId)) return true
+            // same group might be selected multiple places (check by index instead?)
+        }
+
+        return data.every(({ index }) => {
+            const currentSlideId = getParentId(index)
+            if (!currentSlideId) return true
+
+            const show = $showsCache[$activeShow?.id || ""]
+
+            // if parent slide and has children, don't hide
+            const isParent = ref[index]?.type === "parent"
+            if (!unique && isParent && (show.slides[currentSlideId]?.children || []).length) {
+                // hide if group is set to "None"
+                return show.slides[currentSlideId].group === "."
+            }
+
+            const currentSlideInstances = Object.values(show.layouts)
+                .map((a) => a.slides)
+                .flat()
+                .filter((b) => b.id === currentSlideId)
+
+            // hide if there is just one instance of the slide group across all layouts
+            return currentSlideInstances.length < 2
+        })
+    }
+
     if (conditions[id]) conditions[id]()
 
     function contextItemClick() {
         if (disabled) return
+
+        slideDeleteHighlight.set(null)
 
         let actionItem: HTMLElement | null = contextElem?.classList.contains("_" + id) ? contextElem : contextElem?.querySelector("._" + id) || null
         let sel = $selected
@@ -353,7 +443,7 @@
         // don't hide context menu
         const keepOpen = ["uppercase", "lowercase", "capitalize", "trim"] // "dynamic_values" (caret position is lost)
         if (keepOpen.includes(id)) return
-        const keepOpenToggle = ["enabled_drawer_tabs", "tag_set", "tag_filter", "media_tag_set", "media_tag_filter", "player_tag_set", "player_tag_filter", "action_tag_set", "action_tag_filter", "variable_tag_set", "variable_tag_filter", "bind_slide", "bind_item"]
+        const keepOpenToggle = ["enabled_drawer_tabs", "tag_set", "tag_filter", "media_tag_set", "media_tag_filter", "player_tag_set", "player_tag_filter", "action_tag_set", "action_tag_filter", "variable_tag_set", "variable_tag_filter", "timer_tag_set", "timer_tag_filter", "bind_slide", "bind_item", "bind_scene"]
         if (keepOpenToggle.includes(id)) {
             enabled = !enabled
             return
@@ -363,6 +453,25 @@
         else closeContextMenu()
     }
 
+    // highlight interactable content (in this case what slides are being deleted/removed)
+    function updateHighlight(active = true) {
+        if (!active || disabled || hide) {
+            if (id === "remove_group" || id === "delete_slide" || id === "delete_group" || id === "delete") {
+                slideDeleteHighlight.set(null)
+            }
+            return
+        }
+
+        if (id === "remove_group" || id === "delete_slide" || id === "delete_group" || (id === "delete" && $selected.id === "slide")) {
+            const indexes = getSlideHighlightIndexes(id, $selected)
+            const color = menu?.iconColor || menu?.color || "#ff5454"
+            const icon = id.includes("remove") ? "remove" : menu?.icon || "delete"
+
+            slideDeleteHighlight.set(indexes.length ? { indexes, color: color, icon: icon } : null)
+        }
+    }
+    $: if (highlighted) updateHighlight(true)
+
     function keydown(e: KeyboardEvent) {
         if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
@@ -371,18 +480,20 @@
     }
 
     let shortcut = ""
-    $: if (menu?.shortcuts) getShortcuts()
-    function getShortcuts() {
-        // WIP multiple
-        let s = menu.shortcuts![0]
-        if ($os.platform === "darwin") s = s.replaceAll("Ctrl", "Cmd") // .replaceAll("Alt", "Option")
-        shortcut = s
+    $: shortcut = getShortcuts(menu?.shortcuts)
+    function getShortcuts(shortcuts: string[] | undefined) {
+        if (!shortcuts?.length) return ""
+
+        let s = shortcuts[0]
+        if ($os.platform === "darwin") s = s.replaceAll("Ctrl", "Cmd").replaceAll("Alt", "Option")
+
+        return s
     }
 
     $: customStyle = id === "uppercase" ? "text-transform: uppercase;" : id === "lowercase" ? "text-transform: lowercase;" : ""
 </script>
 
-<div on:click={contextItemClick} class:enabled class:disabled class:hide class:highlighted class:group data-title={translateText(menu?.tooltip || "")} style="color: {menu?.color || 'unset'};font-weight: {menu?.color ? '500' : 'normal'};{menu?.style || ''}" tabindex={0} on:keydown={keydown} role="menuitem">
+<div on:click={contextItemClick} on:mouseenter={() => updateHighlight(true)} on:mouseleave={() => updateHighlight(false)} class:enabled class:disabled class:hide class:highlighted class:group data-title={translateText(menu?.tooltip || "")} style="color: {menu?.color || 'unset'};font-weight: {menu?.color ? '500' : 'normal'};{menu?.style || ''}" tabindex={0} on:keydown={keydown} role="menuitem">
     <span class="item" data-title={group && !menu?.tooltip ? `${shortcut}` : customTitle || ""}>
         <!-- white={menu.icon !== "edit"} -->
         {#if menu?.icon}<Icon style="opacity: 0.7;color: {(topBar ? '' : menu.iconColor) || 'var(--text)'};" id={menu.icon} size={group ? 1.4 : 1} white />{/if}

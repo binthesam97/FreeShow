@@ -12,6 +12,8 @@ type AudioPlaylistOptions = {
 type PlaylistData = {
     crossfade?: number
     loop?: boolean
+    autoNext?: boolean
+    cannotPlay?: number // songs skipped in a row because their file could not be played
 }
 
 export class AudioPlaylist {
@@ -19,12 +21,15 @@ export class AudioPlaylist {
         const playlist = get(audioPlaylists)[playlistId]
         if (!playlist) return
 
+        const active = get(activePlaylist)
         // don't restart if already playing
-        if (!options.pauseIfPlaying && get(activePlaylist)?.id === playlistId) return
+        if (!options.pauseIfPlaying && active?.id === playlistId) return
+
+        const currentKey = AudioPlaylist.getPlayingKey()
 
         // pause if already playing
-        if (options.pauseIfPlaying && audioPath && get(activePlaylist)?.id === playlistId && get(playingAudio)[audioPath]) {
-            AudioPlayer.start(audioPath, { name: "" }, { pauseIfPlaying: true })
+        if (options.pauseIfPlaying && active?.id === playlistId && active?.index === index && get(playingAudio)[currentKey]) {
+            AudioPlayer.start(audioPath || AudioPlaylist.getPlayingPath(), { name: "" }, { pauseIfPlaying: true, playlistIndex: index, playlistId })
             return
         }
 
@@ -36,7 +41,7 @@ export class AudioPlaylist {
 
     static stop() {
         activePlaylist.set(null)
-        const activeAudio = AudioPlaylist.getPlayingPath()
+        const activeAudio = AudioPlaylist.getPlayingKey() || AudioPlaylist.getPlayingPath()
         clearAudio(activeAudio)
     }
 
@@ -51,16 +56,22 @@ export class AudioPlaylist {
         if (key === "volume") AudioPlayer.updateVolume()
     }
 
-    static next() {
+    static next(isEnding: boolean = false) {
         const playlist = AudioPlaylist.getActivePlaylist()
         if (get(outLocked) || !playlist) return
 
         const crossfade = Number(playlist.crossfade) || 0
-        AudioPlaylist.nextInternal("", -1, { crossfade, loop: playlist.loop !== false })
+        AudioPlaylist.nextInternal("", -1, { crossfade, loop: playlist.loop !== false, autoNext: isEnding ? playlist.autoNext !== false : true })
     }
 
+    // the file path as stored in the playlist (used to find the position in the song list)
     static getPlayingPath(): string {
         return get(activePlaylist)?.active || ""
+    }
+
+    // the actually playing file key (including index)
+    static getPlayingKey(): string {
+        return get(activePlaylist)?.activeKey || (get(activePlaylist)?.index !== undefined && get(activePlaylist)?.active ? AudioPlayer.getKey(get(activePlaylist).active, get(activePlaylist).index) : AudioPlaylist.getPlayingPath())
     }
 
     static getActivePlaylist() {
@@ -72,8 +83,9 @@ export class AudioPlaylist {
 
     private static isCrossfading = false
     static checkCrossfade() {
+        const audioKey = AudioPlaylist.getPlayingKey()
         const audioPath = AudioPlaylist.getPlayingPath()
-        if (isAllAudioFading || !audioPath || get(media)[audioPath]?.loop) {
+        if (isAllAudioFading || !audioKey || get(media)[audioPath]?.loop) {
             this.isCrossfading = false
             return
         }
@@ -83,7 +95,7 @@ export class AudioPlaylist {
         if (!crossfadeDuration) return
 
         this.isCrossfading = true
-        setTimeout(() => (this.isCrossfading = false), crossfadeDuration)
+        setTimeout(() => (this.isCrossfading = false), crossfadeDuration * 1000)
     }
 
     private static extraMargin = 0.1 // s
@@ -92,9 +104,10 @@ export class AudioPlaylist {
         if (!playlist) return 0
 
         const crossfade = Number(playlist.crossfade) || 0
+        const audioKey = AudioPlaylist.getPlayingKey()
         const audioPath = AudioPlaylist.getPlayingPath()
-        const playing = AudioPlayer.getAudio(audioPath)
-        if (!crossfade || !audioPath || !playing) return 0
+        const playing = AudioPlayer.getAudio(audioKey)
+        if (!crossfade || !audioKey || !playing) return 0
 
         const customCrossfade = crossfade > 3 ? crossfade * 0.6 : crossfade
         const endTime = AudioPlayer.getEndTime(audioPath, playing.duration)
@@ -105,52 +118,72 @@ export class AudioPlaylist {
         return crossfade
     }
 
-    protected static nextInternal(audioPath = "", startIndex = -1, data: PlaylistData) {
+    protected static async nextInternal(audioPath = "", startIndex = -1, data: PlaylistData) {
         const playlist = clone(AudioPlaylist.getActivePlaylist())
         if (!playlist) return
 
-        const previousPath = AudioPlaylist.getPlayingPath()
         const songs = getSongs()
         if (!songs.length) return
 
-        const currentSongIndex = songs.findIndex((a) => a === (audioPath || previousPath))
-        let nextSong = songs[currentSongIndex + (audioPath ? 0 : 1)]
+        let nextIndex: number
+        if (startIndex > -1) {
+            nextIndex = startIndex
+        } else {
+            const currentIndex = get(activePlaylist)?.index ?? -1
+            nextIndex = currentIndex + 1
+        }
 
-        if (!nextSong && data.loop) nextSong = songs[0]
+        let nextSong = songs[nextIndex] || audioPath
+        if (!nextSong && data.loop) {
+            nextIndex = 0
+            nextSong = songs[0]
+        }
+
         if (!nextSong) {
             if (!data.loop && !audioIsFading()) {
                 if (data.crossfade) fadeOutAudio(data.crossfade)
                 else clearAudio("", { playlistCrossfade: true, clearPlaylist: true })
 
                 setTimeout(() => {
-                    if (!get(playingAudio)[previousPath]) customActionActivation("audio_playlist_ended")
+                    const previousKey = AudioPlaylist.getPlayingKey()
+                    if (!get(playingAudio)[previousKey]) customActionActivation("audio_playlist_ended")
                 }, 100)
             }
             return
         }
 
-        // prevent playing the same song twice (while it's fading) to stop duplicate audio
-        if (Object.keys(playingAudio).includes(nextSong)) return
+        const nextKey = AudioPlayer.getKey(nextSong, nextIndex)
 
-        let nextIndex = startIndex > -1 ? startIndex : (get(activePlaylist)?.index ?? -1) + 1
-        if (playlist.songs[nextIndex] !== nextSong) nextIndex = songs.findIndex((a) => a === nextSong)
+        // prevent playing the exact same key twice (while it's fading) to stop duplicate audio
+        if (get(playingAudio)[nextKey]) return
 
         activePlaylist.update((a) => {
             if (!a) a = {}
             a.active = nextSong
+            a.activeKey = nextKey // might be changed into an auto located path
             a.index = nextIndex
             return a
         })
 
         // if (crossfade) isCrossfading = true
-        AudioPlayer.start(nextSong, { name: "" }, { pauseIfPlaying: false, crossfade: data.crossfade, playlistCrossfade: true, volume: playlist.volume || 1 })
+        const playlistId = get(activePlaylist)?.id || ""
+        const started = await AudioPlayer.start(nextSong, { name: "" }, { pauseIfPlaying: false, crossfade: data.crossfade, playlistCrossfade: true, startPaused: data.autoNext === false, volume: playlist.volume || 1, playlistId, playlistIndex: nextIndex })
+
+        // skip songs that can't be played (e.g. moved/deleted files), so one missing file does not stop the playlist
+        if (!started) {
+            const cannotPlay = (data.cannotPlay || 0) + 1
+            if (cannotPlay >= songs.length) return
+
+            console.error("Could not play playlist audio, skipping:", nextSong)
+            AudioPlaylist.nextInternal("", -1, { ...data, cannotPlay: cannotPlay })
+        }
 
         function getSongs(): string[] {
-            if (previousPath && get(activePlaylist)?.songs) return get(activePlaylist).songs
+            if (get(activePlaylist)?.songs?.length) return get(activePlaylist).songs
 
             // generate list
             if (!playlist) return []
-            let songsList = playlist.songs
+            let songsList = playlist.songs || []
 
             const mode = playlist.mode
             if (mode === "shuffle") songsList = shuffleArray(songsList)

@@ -4,18 +4,22 @@ import type { TimelineAction } from "../../../types/Show"
 import { sendMain } from "../../IPC/main"
 import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
-import { activeEdit, activeShow, isTimelinePlaying, outputs, playingAudio, showsCache, timecode } from "../../stores"
+import { activeEdit, activeShow, isTimelinePlaying, outputs, playingAudio, playingVideoState, showsCache, special, timecode } from "../../stores"
 import { triggerFunction } from "../../utils/common"
 import { runAction } from "../actions/actions"
 import { clone } from "../helpers/array"
-import { getFirstActiveOutput } from "../helpers/output"
+import { locateMediaFile } from "../helpers/media"
+import { getAllActiveOutputIds, getFirstActiveOutput, setOutput } from "../helpers/output"
 import { loadShows } from "../helpers/setShow"
 import { _show } from "../helpers/shows"
+import { VideoPlayer } from "../media/video/videoPlayer"
+import { clearBackground } from "../output/clear"
 import { ShowTimeline } from "./ShowTimeline"
 import { SlideTimeline } from "./SlideTimeline"
 import { TimelineType } from "./TimelineActions"
 import { startListeningLTC, stopListeningLTC } from "./timecode"
 import { getProjectShowDurations } from "./timeline"
+import { tick } from "svelte"
 
 let activePlayback: TimelinePlayback | null = null
 export function getActiveTimelinePlayback(type: TimelineType | null = null) {
@@ -31,9 +35,15 @@ export function getActiveTimelinePlayback(type: TimelineType | null = null) {
 // }
 
 // API ACTIONS
-export function startTimeline(type: TimelineType) {
+export async function startTimeline(type: TimelineType) {
+    // open timeline if not already opened (temporary fix until the timeline can played without needing to be opened)
+    special.update((a) => ({ ...a, timelineActive: true }))
+    // wait until opened and mounted before starting
+    await tick()
+
     // const timeline = getOrCreateTimeline(type)
     // timeline.play()
+
     triggerFunction(`start_${type}_timeline`)
 }
 export function pauseTimeline(type: TimelineType) {
@@ -98,7 +108,9 @@ export class TimelinePlayback {
         if (isListener) return
 
         this.playingAudio = []
+        this.playingVideoPaths = []
 
+        this.lastSentFrame = -1
         this.setAsPlayer()
         isTimelinePlaying.set(true)
         this.initTimecode()
@@ -113,7 +125,7 @@ export class TimelinePlayback {
     pause(isListener: boolean = false) {
         if (isListener) {
             this.listenerPaused = true
-            this.checkAudioPause(this.actions)
+            this.checkMediaPause(this.actions)
             return
         }
         if (!this.isPlaying) return
@@ -130,12 +142,13 @@ export class TimelinePlayback {
         this.stopLoop()
         this.stopListeners()
 
-        this.checkAudioPause(this.actions)
+        this.checkMediaPause(this.actions)
 
         this.runCallbacks(this.onPauseCallbacks)
     }
 
     stop() {
+        this.lastSentFrame = -1
         if (activePlayback === this) {
             activePlayback = null
             isTimelinePlaying.set(false)
@@ -150,7 +163,7 @@ export class TimelinePlayback {
         this.stopLoop()
         this.stopListeners()
 
-        this.checkAudioStop(this.actions)
+        this.checkMediaStop(this.actions)
 
         this.runCallbacks(this.onStopCallbacks)
 
@@ -172,6 +185,7 @@ export class TimelinePlayback {
     }
 
     reset() {
+        this.lastSentFrame = -1
         this.updateDuration()
         this.setTime(0)
         this.stop()
@@ -183,6 +197,18 @@ export class TimelinePlayback {
     setActions(actions: TimelineAction[]) {
         this.actions = actions
         this.updateDuration()
+        this.resolveMediaPaths(actions)
+    }
+
+    private async resolveMediaPaths(actions: TimelineAction[]) {
+        for (const action of actions) {
+            if (action.data?.path && (action.type === "audio" || action.type === "video")) {
+                const located = await locateMediaFile(action.data.path)
+                if (located?.path) {
+                    action.data.path = located.path
+                }
+            }
+        }
     }
 
     private shouldLoop: boolean = false
@@ -291,6 +317,11 @@ export class TimelinePlayback {
                 continue
             }
 
+            if (action.type === "video") {
+                this.checkVideo(action)
+                continue
+            }
+
             if (action.type === "show") {
                 this.checkShow(action, previousTime)
                 continue
@@ -329,15 +360,15 @@ export class TimelinePlayback {
         if (this.onTimeCallback) this.onTimeCallback(this.currentTime)
     }
 
-    private previousSlide: { id?: string; index?: number } = {}
+    private previousSlide: { id?: string; index?: number; line?: number } = {}
     private playAction(action: TimelineAction, ref: typeof this.ref) {
         if (action.type === "action") {
-            runAction({ id: action.id, ...action.data })
+            runAction({ id: action.id, ...action.data }, { source: "timeline" })
         } else if (action.type === "slide") {
             this.previousSlide = action.data
             ShowTimeline.playSlide(action.data, ref)
 
-            const triggerId = `${action.data.id}-${action.data.index}`
+            const triggerId = `${action.data.id}-${action.data.index}-${action.data.line || 0}`
             this.lastSlideTrigger = triggerId
         } else {
             console.log("Unknown Timeline Action:", action)
@@ -345,6 +376,7 @@ export class TimelinePlayback {
     }
 
     private playingAudio: string[] = []
+    private playingVideoPaths: string[] = []
     private hasPlayed: string[] = []
     private checkAudio(action: TimelineAction) {
         const path = action.data?.path
@@ -383,8 +415,61 @@ export class TimelinePlayback {
         if (diff > tolerance) AudioPlayer.setTime(path, seekPos)
     }
 
-    // check if any audio is playing and pause it
-    private checkAudioPause(actions: TimelineAction[]) {
+    private checkVideo(action: TimelineAction) {
+        const path = action.data?.path
+        if (!path || this.hasPlayed.includes(path)) return
+        this.hasPlayed.push(path)
+
+        const videoStart = action.time
+        const videoEnd = action.time + (action.duration || 0) * 1000
+        const shouldPlay = this.getTimeWithOffset(this.currentTime) >= videoStart && this.getTimeWithOffset(this.currentTime) < videoEnd
+
+        if (!shouldPlay) {
+            const activeOutputIds = getAllActiveOutputIds()
+            let clearedAny = false
+            activeOutputIds.forEach((outputId) => {
+                const currentBackground = get(outputs)[outputId]?.out?.background
+                if (currentBackground?.path === path) {
+                    clearBackground(outputId)
+                    clearedAny = true
+                }
+            })
+            if (clearedAny) {
+                const idx = this.playingVideoPaths.indexOf(path)
+                if (idx > -1) this.playingVideoPaths.splice(idx, 1)
+            }
+            return
+        }
+
+        const activeOutputIds = getAllActiveOutputIds()
+        const hasBeenPlaying = this.playingVideoPaths.includes(path)
+
+        activeOutputIds.forEach((outputId) => {
+            const currentBackground = get(outputs)[outputId]?.out?.background
+            if (currentBackground?.path !== path) {
+                if (hasBeenPlaying) return // was playing but cleared manually
+                setOutput("background", { name: action.name, path, type: "video" }, false, outputId)
+            }
+
+            const key = `${path}_${outputId}`
+            const videoData = get(playingVideoState)[key]
+            if (!videoData || (videoData.type && videoData.type !== "background")) return
+
+            // play the video if paused and timeline is playing
+            if (videoData.paused && this.isPlaying) VideoPlayer.play(path, outputId)
+
+            // seek to correct position (with tolerance)
+            const seekPos = (this.getTimeWithOffset(this.currentTime) - videoStart) / 1000
+            const diff = Math.abs(videoData.currentTime - seekPos)
+            const tolerance = this.isPlaying ? 0.5 : 0.05 // seconds
+            if (diff > tolerance) VideoPlayer.seekTo(path, outputId, seekPos)
+        })
+
+        if (!hasBeenPlaying) this.playingVideoPaths.push(path)
+    }
+
+    // check if any audio/video is playing and pause it
+    private checkMediaPause(actions: TimelineAction[]) {
         for (const action of actions) {
             if (action.type === "audio") {
                 const a = action.data
@@ -393,16 +478,30 @@ export class TimelinePlayback {
                 }
             }
 
+            if (action.type === "video") {
+                const a = action.data
+                if (a && a.path) {
+                    const activeOutputIds = getAllActiveOutputIds()
+                    activeOutputIds.forEach((outputId) => {
+                        const currentBackground = get(outputs)[outputId]?.out?.background
+                        if (a.path && currentBackground?.path === a.path) {
+                            // if (!videoData.paused) ...
+                            VideoPlayer.pause(a.path, outputId)
+                        }
+                    })
+                }
+            }
+
             if (action.type === "show") {
                 const data = this.getShowLayoutFromRef(action.data)
                 const showTimelineActions = data?.layout?.timeline?.actions || []
-                if (showTimelineActions.length) this.checkAudioPause(showTimelineActions)
+                if (showTimelineActions.length) this.checkMediaPause(showTimelineActions)
             }
         }
     }
 
-    // check if any audio is playing and stop it
-    private checkAudioStop(actions: TimelineAction[]) {
+    // check if any audio/video is playing and stop it
+    private checkMediaStop(actions: TimelineAction[]) {
         for (const action of actions) {
             if (action.type === "audio") {
                 const a = action.data
@@ -411,10 +510,23 @@ export class TimelinePlayback {
                 }
             }
 
+            if (action.type === "video") {
+                const a = action.data
+                if (a && a.path) {
+                    const activeOutputIds = getAllActiveOutputIds()
+                    activeOutputIds.forEach((outputId) => {
+                        const currentBackground = get(outputs)[outputId]?.out?.background
+                        if (currentBackground?.path === a.path) {
+                            clearBackground(outputId)
+                        }
+                    })
+                }
+            }
+
             if (action.type === "show") {
                 const data = this.getShowLayoutFromRef(action.data)
                 const showTimelineActions = data?.layout?.timeline?.actions || []
-                if (showTimelineActions.length) this.checkAudioStop(showTimelineActions)
+                if (showTimelineActions.length) this.checkMediaStop(showTimelineActions)
             }
         }
     }
@@ -470,6 +582,11 @@ export class TimelinePlayback {
                 continue
             }
 
+            if (action.type === "video") {
+                this.checkVideo(action)
+                continue
+            }
+
             const shouldPlay = action.time >= this.getTimeWithOffset(previousTime) && action.time < this.getTimeWithOffset(this.currentTime)
             if (shouldPlay) {
                 this.playAction(action, data.ref)
@@ -500,7 +617,7 @@ export class TimelinePlayback {
         const isLastAction = lastAction?.id === closestSlide.id
         if (isLastAction) return
 
-        const triggerId = `${closestSlide.data.id}-${closestSlide.data.index}`
+        const triggerId = `${closestSlide.data.id}-${closestSlide.data.index}-${closestSlide.data.line || 0}`
         if (this.lastSlideTrigger === triggerId) return
 
         this.playAction(closestSlide, this.ref)
@@ -510,14 +627,17 @@ export class TimelinePlayback {
         const itemStyleActions = actions.filter((a) => a.type === "style")
         if (!itemStyleActions.length) return
 
-        // group by style key
+        // group by style key & indexes
         const groupedActions = new Map<string, TimelineAction[]>()
         for (const action of itemStyleActions) {
             const key = action.data?.key
             if (!key) continue
 
-            if (!groupedActions.has(key)) groupedActions.set(key, [])
-            groupedActions.get(key)?.push(action)
+            const indexes = action.data?.indexes ? action.data.indexes.join(",") : ""
+            const groupKey = `${key}-${indexes}`
+
+            if (!groupedActions.has(groupKey)) groupedActions.set(groupKey, [])
+            groupedActions.get(groupKey)?.push(action)
         }
 
         const currentTime = this.getTimeWithOffset(this.currentTime)
@@ -578,7 +698,7 @@ export class TimelinePlayback {
         const frameDuration = 1000 / framerate
         const currentFrame = Math.floor(this.currentTime / frameDuration)
 
-        if (currentFrame <= this.lastSentFrame) return
+        if (currentFrame === this.lastSentFrame) return
         this.lastSentFrame = currentFrame
 
         sendMain(Main.TIMECODE_VALUE, this.currentTime)
@@ -606,14 +726,14 @@ export class TimelinePlayback {
                 const layoutRef = _show(outSlide.id).layouts([outSlide.layout]).ref()[0] || []
                 let layoutSlide = layoutRef[outSlide.index]
                 if (!layoutSlide) return
-                if (this.previousSlide.id === layoutSlide.id && this.previousSlide.index === outSlide.index) return
+                if (this.previousSlide.id === layoutSlide.id && this.previousSlide.index === outSlide.index && (this.previousSlide.line || 0) === (outSlide.line || 0)) return
 
                 const slideActions = this.actions.filter((a) => a.type === "slide")
 
                 // find next matching
                 if (
                     slideActions.some((action) => {
-                        if (action.time >= this.currentTime && action.data.id === layoutSlide.id && action.data.index === outSlide.index) {
+                        if (action.time >= this.currentTime && action.data.id === layoutSlide.id && action.data.index === outSlide.index && (action.data.line || 0) === (outSlide.line || 0)) {
                             this.setTime(action.time)
                             return true
                         }
@@ -624,7 +744,7 @@ export class TimelinePlayback {
 
                 // find any matching
                 slideActions.some((action) => {
-                    if (action.data.id === layoutSlide.id && action.data.index === outSlide.index) {
+                    if (action.data.id === layoutSlide.id && action.data.index === outSlide.index && (action.data.line || 0) === (outSlide.line || 0)) {
                         this.setTime(action.time)
                         return true
                     }

@@ -1,7 +1,5 @@
 <script lang="ts">
     import { createEventDispatcher, onMount } from "svelte"
-    import { cubicOut } from "svelte/easing"
-    import { fade, fly } from "svelte/transition"
     import type { DropdownOptions } from "../../../types/Input"
     import { dictionary } from "../../stores"
     import { translateText } from "../../utils/language"
@@ -234,24 +232,6 @@
         }
     })
 
-    function flyFade(node: Element, params = {}) {
-        const flyParams = { y: -8, duration: 80, easing: cubicOut, ...params }
-        const fadeParams = { duration: 80, ...params }
-
-        const flyConfig = fly(node, flyParams)
-        const fadeConfig = fade(node, fadeParams)
-
-        return {
-            delay: 0,
-            duration: Math.max(flyConfig.duration ?? 0, fadeConfig.duration ?? 0),
-            css: (t: number, u: number) => {
-                const flyStyle = flyConfig.css?.(t, u) ?? ""
-                const fadeStyle = fadeConfig.css?.(t, u) ?? ""
-                return `${flyStyle}; ${fadeStyle}`
-            }
-        }
-    }
-
     $: selected = options.find((o) => o.value === value)
     $: useVirtualList = options.length > 100
 
@@ -317,6 +297,7 @@
     >
         {#if !onlyArrow}
             <span class="selected-text" style={selected?.style ?? null}>
+                {#if selected?.icon}<Icon id={selected.icon} style="margin-right: 5px;" color={selected?.iconColor} boxed={!!selected?.iconColor} white />{/if}
                 {#if selected?.prefix}<span class="prefix">{selected.prefix}</span>{/if}
                 <!-- show value if options list has not loaded yet (e.g. fonts) -->
                 {#if selected?.value !== undefined}{selected?.label || "—"}{:else if value}{value}{/if}
@@ -355,9 +336,11 @@
 
     {#if open}
         {#if useVirtualList}
-            <div class="dropdown virtual" style="max-height: {maxHeight}px" transition:flyFade>
+            <div class="dropdown virtual" style="max-height: {maxHeight}px">
                 <VirtualList items={options} height="{maxHeight}px" activeIndex={highlightedIndex} let:item={option}>
                     <li style="{option.data ? 'justify-content: space-between;' : ''}{option.style || ''}" role="option" aria-selected={option.value === value} class:selected={option.value === value} class:highlighted={options.indexOf(option) === highlightedIndex} on:click={(e) => selectOption(e, option.value)}>
+                        {#if option.icon}<Icon id={option.icon} style="margin-right: 5px;" color={option.iconColor} boxed={!!option.iconColor} white />{/if}
+
                         {#if option.prefix}<span class="prefix">{option.prefix}</span>{/if}
                         {option.label || "—"}
 
@@ -390,7 +373,7 @@
                 {/if}
             </div>
         {:else}
-            <ul style="max-height: {maxHeight}px" class="dropdown" role="listbox" tabindex="-1" bind:this={scrollElem} transition:flyFade>
+            <ul style="max-height: {maxHeight}px" class="dropdown" role="listbox" tabindex="-1" bind:this={scrollElem}>
                 {#if allowEmpty}
                     <li style="opacity: 0.5;font-style: italic;" role="option" aria-selected={!value} class:selected={!value} class:highlighted={highlightedIndex < 0} on:click={() => selectOption(null, "")}>
                         {translateText("main.none")}
@@ -399,6 +382,8 @@
 
                 {#each options as option, i}
                     <li style="{option.data ? 'justify-content: space-between;' : ''}{option.style || ''}" role="option" aria-selected={option.value === value} class:selected={option.value === value} class:highlighted={i === highlightedIndex} on:click={(e) => selectOption(e, option.value)}>
+                        {#if option.icon}<Icon id={option.icon} style="margin-right: 5px;" color={option.iconColor} boxed={!!option.iconColor} white />{/if}
+
                         {#if option.prefix}<span class="prefix">{option.prefix}</span>{/if}
                         {option.label || "—"}
 
@@ -522,6 +507,9 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+
+        display: flex;
+        align-items: center;
     }
 
     .arrow {
@@ -600,6 +588,19 @@
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.25);
 
         border-bottom: 1px solid var(--primary-lighter);
+
+        animation: dropdownFlyFade 80ms cubic-bezier(0.33, 1, 0.68, 1);
+    }
+
+    @keyframes dropdownFlyFade {
+        from {
+            opacity: 0;
+            transform: translateY(-8px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 
     /* virtual */

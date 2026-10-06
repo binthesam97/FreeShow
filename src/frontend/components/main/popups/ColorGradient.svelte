@@ -10,6 +10,9 @@
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
     import MaterialNumberInput from "../../inputs/MaterialNumberInput.svelte"
     import MaterialRadialPicker from "../../inputs/MaterialRadialPicker.svelte"
+    import { registerPopupSubmit } from "../../../utils/popup"
+
+    registerPopupSubmit(change)
 
     const DEFAULT = "linear-gradient(120deg, rgb(255 128 212) 0%, rgb(193 47 106) 62%, rgb(167 19 45) 100%)"
 
@@ -28,7 +31,7 @@
     $: if (activeType || activeShape || parsedValue) setNewValue()
 
     function change() {
-        $popupData.trigger(newValue)
+        if ($popupData.trigger) $popupData.trigger(newValue)
         popupData.set({})
         activePopup.set(null)
     }
@@ -78,7 +81,6 @@
 
         <InputRow>
             <MaterialColorInput style="min-width: 50%;" label="edit.color" value={colorPart.color} on:input={(e) => (colorPart.color = e.detail)} allowOpacity />
-            <!-- WIP also change background opacity -->
             <MaterialNumberInput label="settings.position" value={pos} min={prevPos} max={nextPos} on:change={(e) => (colorPart.pos = e.detail)} currentProgress={pos} showSlider />
             {#if i > 0}
                 <MaterialButton icon="up" on:click={() => moveUp(i)} />

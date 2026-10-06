@@ -7,7 +7,7 @@
     const dispatch = createEventDispatcher()
 
     const handleScriptureSearchClear = () => dispatch("search-clear")
-    
+
     // Track which tabs have been loaded (session cache)
     let loaded: string[] = []
     $: if (!loaded.includes(id)) loaded = [...loaded, id]
@@ -25,28 +25,28 @@
 
     // Lazy load components on first access
     $: if (loaded.includes("shows") && !TabletDrawerShows) {
-        import("./pages/TabletDrawerShows.svelte").then(m => TabletDrawerShows = m.default)
+        import("./pages/TabletDrawerShows.svelte").then((m) => (TabletDrawerShows = m.default))
     }
     $: if (loaded.includes("media") && !TabletDrawerMedia) {
-        import("./pages/TabletDrawerMedia.svelte").then(m => TabletDrawerMedia = m.default)
+        import("./pages/TabletDrawerMedia.svelte").then((m) => (TabletDrawerMedia = m.default))
     }
     $: if (loaded.includes("audio") && !TabletDrawerAudio) {
-        import("./pages/TabletDrawerAudio.svelte").then(m => TabletDrawerAudio = m.default)
+        import("./pages/TabletDrawerAudio.svelte").then((m) => (TabletDrawerAudio = m.default))
     }
     $: if (loaded.includes("overlays") && !TabletDrawerOverlays) {
-        import("./pages/TabletDrawerOverlays.svelte").then(m => TabletDrawerOverlays = m.default)
+        import("./pages/TabletDrawerOverlays.svelte").then((m) => (TabletDrawerOverlays = m.default))
     }
     $: if (loaded.includes("templates") && !TabletDrawerTemplates) {
-        import("./pages/TabletDrawerTemplates.svelte").then(m => TabletDrawerTemplates = m.default)
+        import("./pages/TabletDrawerTemplates.svelte").then((m) => (TabletDrawerTemplates = m.default))
     }
     $: if (loaded.includes("calendar") && !TabletDrawerCalendar) {
-        import("./pages/TabletDrawerCalendar.svelte").then(m => TabletDrawerCalendar = m.default)
+        import("./pages/TabletDrawerCalendar.svelte").then((m) => (TabletDrawerCalendar = m.default))
     }
     $: if (loaded.includes("functions") && !TabletDrawerFunctions) {
-        import("./pages/TabletDrawerFunctions.svelte").then(m => TabletDrawerFunctions = m.default)
+        import("./pages/TabletDrawerFunctions.svelte").then((m) => (TabletDrawerFunctions = m.default))
     }
     $: if (loaded.includes("scripture") && !Scripture) {
-        import("../../../pages/Scripture.svelte").then(m => Scripture = m.default)
+        import("../../../pages/Scripture.svelte").then((m) => (Scripture = m.default))
     }
     $: if (loaded.includes("songbooks") && !Songbooks) {
         import("../../../pages/Songbooks.svelte").then(m => Songbooks = m.default)
@@ -134,6 +134,6 @@
         display: flex;
         flex-direction: column;
         flex: 1;
-        background-color: var(--primary-darkest);
+        background-color: var(--primary-darker);
     }
 </style>

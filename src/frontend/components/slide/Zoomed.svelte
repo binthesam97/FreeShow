@@ -1,7 +1,39 @@
+<script context="module" lang="ts">
+    const sharedCallbacks = new WeakMap<Element, (rect: DOMRectReadOnly) => void>()
+    let sharedObserver: ResizeObserver | null = null
+
+    function observeResize(node: Element, cb: (rect: DOMRectReadOnly) => void) {
+        let prevWidth = 0
+        let prevHeight = 0
+
+        if (!sharedObserver && typeof ResizeObserver !== "undefined") {
+            sharedObserver = new ResizeObserver((entries) => {
+                for (const entry of entries) {
+                    sharedCallbacks.get(entry.target)?.(entry.contentRect)
+                }
+            })
+        }
+
+        sharedCallbacks.set(node, (rect) => {
+            if (prevWidth !== rect.width || prevHeight !== rect.height) {
+                prevWidth = rect.width
+                prevHeight = rect.height
+                cb(rect)
+            }
+        })
+        sharedObserver?.observe(node)
+        return {
+            destroy() {
+                sharedCallbacks.delete(node)
+                sharedObserver?.unobserve(node)
+            }
+        }
+    }
+</script>
+
 <script lang="ts">
-    import { onDestroy, onMount } from "svelte"
     import type { Cropping, Resolution } from "../../../types/Settings"
-    import { draw, outputs, styles } from "../../stores"
+    import { currentWindow, draw, outputs, styles } from "../../stores"
     import { DEFAULT_BOUNDS, getActiveOutputs, getOutputResolution, getResolution } from "../helpers/output"
 
     export let id = ""
@@ -12,7 +44,6 @@
     export let center = false
     export let zoom = true
     export let mirror = false
-    export let showMirror = false
     export let disableStyle = false
     export let isStage = false
     export let checkered = false
@@ -28,66 +59,70 @@
     export let hideOverflow = true
     export let customZoom = 1
     export let cropping: Cropping | undefined = { top: 0, right: 0, bottom: 0, left: 0 }
-    export let resolution: Resolution = getResolution(null, { $outputs, $styles }, false, outputId)
-    $: if (!isStage) resolution = getResolution(resolution, { $outputs, $styles }, false, outputId)
+    export let styleIdOverride = ""
+    export let resolution: Resolution = getResolution(null, { $outputs, $styles }, false, outputId, styleIdOverride)
+    $: if (!isStage) resolution = getResolution(resolution, { $outputs, $styles }, false, outputId, styleIdOverride)
     $: outputRes = isStage ? resolution : getOutputResolution(outputId, $outputs)
 
-    $: stylesRatio = getResolution(null, $styles, false, outputId)
+    $: stylesRatio = getResolution(null, $styles, false, outputId, styleIdOverride)
     $: styleAspectRatio = stylesRatio.width / stylesRatio.height
     const defaultRatio = DEFAULT_BOUNDS.width / DEFAULT_BOUNDS.height
 
+    // WIP when outputResolutionAsRatio is set slide should fills output 1:1, but only remaining after cropping
+    // $: currentStyleId = styleIdOverride || $outputs[outputId]?.style || ""
+    // $: styleRatioData = ($styles[currentStyleId]?.aspectRatio || $styles[currentStyleId]?.resolution) as any
+    // $: outputResolutionAsRatio = !!styleRatioData?.outputResolutionAsRatio
+
     let elemWidth = 0
     let elemHeight = 0
-
     let slideWidth = 0
     let slideHeight = 0
-    let slideElem: HTMLDivElement | null = null
-
-    let resizeObserver: ResizeObserver | null = null
-    onMount(() => {
-        if (!slideElem) return
-
-        resizeObserver = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                const { width, height } = entry.contentRect
-                if (slideWidth !== width || slideHeight !== height) {
-                    slideWidth = width
-                    slideHeight = height
-                }
-            }
-        })
-        resizeObserver.observe(slideElem)
-    })
-    onDestroy(() => {
-        if (resizeObserver && slideElem) resizeObserver.unobserve(slideElem)
-    })
 
     export let ratio = 1
     $: shouldUseHeightRatio = outputRes.width < outputRes.height && stylesRatio.width > stylesRatio.height && styleAspectRatio === defaultRatio
     $: ratio = Math.max(0.01, shouldUseHeightRatio ? slideHeight / outputRes.height : slideWidth / outputRes.width) / customZoom
 
-    $: croppedStyle = getCropping(cropping)
-    function getCropping(cropping) {
+    $: croppedStyle = getCropping(cropping, resolution, outputRes)
+    function getCropping(cropping, res, outRes) {
+        if ($currentWindow !== "output") return ""
+
         let style = ""
         if (!cropping || mirror) return ""
 
-        let minusHeight = cropping.top + cropping.bottom
-        let minusWidth = cropping.right + cropping.left
+        // values may be stored as strings — parse to numbers to avoid string concatenation
+        let top = Number(cropping.top) || 0
+        let bottom = Number(cropping.bottom) || 0
+        let left = Number(cropping.left) || 0
+        let right = Number(cropping.right) || 0
 
-        let newHeight = outputRes.height - minusHeight
-        let newWidth = outputRes.width - minusWidth
-        let heightRatio = newHeight / outputRes.height
-        let widthRatio = newWidth / outputRes.width
-        let paddingSides = (outputRes.width - minusWidth - outputRes.width * heightRatio) / 2
-        let paddingTops = (outputRes.height - minusHeight - outputRes.height * widthRatio) / 2
+        let minusHeight = top + bottom
+        let minusWidth = right + left
 
-        // if (minusHeight) style += `height: calc(100% - ${minusHeight}px);`
-        style += `margin-top: ${cropping.top + paddingTops}px;`
-        style += `margin-bottom: ${cropping.bottom + paddingTops}px;`
+        let paddingSides = 0
+        let paddingTops = 0
+        let slideAR = res.width / res.height
+        let availableWidth = outRes.width - minusWidth
+        let availableHeight = outRes.height - minusHeight
+        let availableAR = availableWidth / availableHeight
 
-        if (minusWidth) style += `width: calc(100% - ${minusWidth}px);`
-        style += `margin-inline-end: ${cropping.right + paddingSides}px;`
-        style += `margin-inline-start: ${cropping.left + paddingSides}px;`
+        if (availableAR >= slideAR) {
+            // slide is constrained by available height — compute leftover horizontal space on each side
+            paddingSides = (availableWidth - availableHeight * slideAR) / 2
+        } else {
+            // slide is constrained by available width — compute leftover vertical space on each side
+            paddingTops = (availableHeight - availableWidth / slideAR) / 2
+        }
+
+        // nothing to apply
+        if (!minusHeight && !minusWidth && !paddingSides && !paddingTops) return ""
+
+        style += `margin-top: ${top + paddingTops}px;`
+        style += `margin-bottom: ${bottom + paddingTops}px;`
+
+        let totalHorizontalMargin = minusWidth + paddingSides * 2
+        if (totalHorizontalMargin) style += `width: calc(100% - ${totalHorizontalMargin}px);`
+        style += `margin-inline-end: ${right + paddingSides}px;`
+        style += `margin-inline-start: ${left + paddingSides}px;`
 
         return style
     }
@@ -99,28 +134,30 @@
     $: drawX = $draw ? ($draw.x / outputRes.width - 0.5) * (drawZoom - 1) * -1 * 100 : 0
     $: drawY = $draw ? ($draw.y / outputRes.height - 0.5) * (drawZoom - 1) * -1 * 100 : 0
 
-    // base draw on 1920x1080 or %, and not on the output resolution
-    // $: originalAspectRatio = 1920 / 1080
-    // $: currentAspectRatio = resolution.width / resolution.height
-    // $: isTaller = originalAspectRatio > currentAspectRatio
-    // $: isWider = originalAspectRatio < currentAspectRatio
-    // $: widthRatio = isWider ? originalAspectRatio / currentAspectRatio : 1
-    // $: heightRatio = isTaller ? currentAspectRatio / originalAspectRatio : 1 // ?
-    // $: drawX = $draw ? (($draw.x / 1920 - 0.5) * (drawZoom - 1) * -1 * 100) * widthRatio : 0
-    // $: drawY = $draw ? (($draw.y / 1080 - 0.5) * (drawZoom - 1) * -1 * 100) * heightRatio : 0
-
     $: canOverflow = false // $special.textCanOverflow !== false
 </script>
 
-<div id={outputId} class:center class:disabled class="zoomed" style="width: 100%;height: 100%;{outline ? `border: 2px solid ${outline};` : ''}{alignStyle}" bind:offsetWidth={elemWidth} bind:offsetHeight={elemHeight}>
+<div
+    id={outputId}
+    class:center
+    class:disabled
+    class="zoomed"
+    style="width: 100%;height: 100%;{outline ? `border: 2px solid ${outline};` : ''}{alignStyle}{center ? 'display: flex;justify-content: safe center;align-items: safe center;overflow: visible;' : ''}"
+    use:observeResize={(r) => {
+        elemWidth = r.width
+        elemHeight = r.height
+    }}
+>
     <div
-        bind:this={slideElem}
+        use:observeResize={(r) => {
+            slideWidth = r.width
+            slideHeight = r.height
+        }}
         class="slide"
         class:landscape={resolution.width / resolution.height > elemWidth / elemHeight}
         class:hideOverflow
         class:canOverflow
         class:disableStyle
-        class:showMirror
         class:relative
         class:checkered
         class:border
@@ -181,31 +218,14 @@
         height: 150px;
         width: 400px;
     }
-    /* enable styling for stage mirrors */
-    .slide.showMirror :global(.item) {
-        color: unset;
-        font-size: unset;
-        font-family: unset;
-        line-height: unset;
-        -webkit-text-stroke-color: unset;
-        text-shadow: unset;
-
-        border-style: unset;
-        border-width: unset;
-        border-color: unset;
-
-        height: 100%;
-        width: 100%;
-    }
 
     .hideOverflow {
         overflow: hidden;
     }
 
-    .center {
-        display: flex;
-        justify-content: center;
-        align-items: center;
+    .center .slide {
+        margin: auto;
+        flex: 0 0 auto;
     }
 
     /* .zoom {

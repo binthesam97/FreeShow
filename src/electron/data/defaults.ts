@@ -1,6 +1,6 @@
 import type { SaveListSettings, SaveListSyncedSettings } from "../../types/Save"
 
-export const defaultConfig = { loaded: false, maximized: true, bounds: { width: 800, height: 600, x: 0, y: 0 }, dataPath: null, disableHardwareAcceleration: null }
+export const defaultConfig = { loaded: false, maximized: true, bounds: { width: 800, height: 600, x: 0, y: 0 }, dataPath: null, disableHardwareAcceleration: null, graphicsDevice: null }
 
 export const defaultGroups = {
     break: { name: "break", default: true, color: "#f5255e" },
@@ -53,28 +53,27 @@ export const defaultSettings: { [key in SaveListSettings]: any } = {
     drawerTabsData: {},
     drawer: { height: 300, stored: null },
     language: null,
+    customFonts: [],
     labelsDisabled: false,
     groupNumbers: true,
     fullColors: false,
     formatNewShow: false,
-    showsPath: null, // DEPRECATED
-    dataPath: "", // DEPRECATED
-    lockedOverlays: [],
+    lockedOverlays: {},
+    activeScenes: {},
     splitLines: 0,
     theme: "default",
     transitionData: {
         text: { type: "fade", duration: 500, easing: "sine" },
         media: { type: "fade", duration: 800, easing: "sine" }
     },
-    volume: 1,
-    gain: 1,
+    audioRouting: {},
     audioChannelsData: {},
     cloudSyncData: {},
     driveData: { mainFolderId: null, disabled: false, initializeMethod: null, disableUpload: false },
     calendarAddShow: "",
     metronome: {},
-    equalizerConfig: { enabled: false, bands: [] },
-    eqPresets: {},
+    audioEffects: {},
+    audioEffectPresets: {},
     effectsLibrary: [],
     special: {},
     timeline: {},
@@ -86,7 +85,9 @@ export const defaultSettings: { [key in SaveListSettings]: any } = {
         churchApps: {
             syncCategories: ["song"]
         }
-    }
+    },
+    obsData: {},
+    ai: {}
 }
 
 export const defaultSyncedSettings: { [key in SaveListSyncedSettings]: any } = {
@@ -113,7 +114,8 @@ export const defaultSyncedSettings: { [key in SaveListSyncedSettings]: any } = {
     variables: {
         default: { name: "Counter", type: "number" }
     },
-    triggers: {},
+    scenes: {},
+    interactions: {},
     audioStreams: {},
     audioPlaylists: {},
     scriptures: {
@@ -153,15 +155,18 @@ export const defaultSyncedSettings: { [key in SaveListSyncedSettings]: any } = {
         messiah: { name: "Messiah", type: "vimeo", id: "144160599" }
     },
     videoMarkers: {},
+    calendars: {},
     mediaTags: {},
     playerTags: {},
     actionTags: {},
     variableTags: {},
+    timerTags: {},
     customizedIcons: { disabled: [], svg: [] },
     companion: {},
     globalTags: {},
     globalRegexes: {},
     customMetadata: { disabled: [], custom: [] },
     effects: {},
-    deletedDefaults: {}
+    deletedDefaults: {},
+    syncedOutputs: {}
 }

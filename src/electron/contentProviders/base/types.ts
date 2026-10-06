@@ -1,4 +1,4 @@
-export type ContentProviderId = "planningcenter" | "churchApps" | "amazinglife" | "canva"
+export type ContentProviderId = "planningcenter" | "churchApps" | "amazinglife" | "onstage" | "canva"
 
 /**
  * Common types and interfaces for content providers
@@ -94,6 +94,15 @@ export interface ContentLibraryCategory {
     thumbnail?: string
     children?: ContentLibraryCategory[]
     key?: string
+}
+
+/**
+ * Result of a provider license check. `null` from checkMediaLicense means
+ * the item is not licensed or the check failed.
+ */
+export interface MediaLicense {
+    pingbackUrl: string
+    expiresAt: number // unix ms; license is valid while Date.now() < expiresAt
 }
 
 /**

@@ -1,7 +1,8 @@
 import { get } from "svelte/store"
 import type { Media } from "../../../types/Show"
-import { actions, actionTags, activeActionTagFilter, activeEdit, activeMediaTagFilter, activePlayerTagFilter, activeTagFilter, activeVariableTagFilter, contextData, drawerTabsData, globalTags, groups, media, mediaTags, outputs, overlays, playerTags, playerVideos, selected, shows, sorted, variables, variableTags } from "../../stores"
+import { actions, actionTags, activeActionTagFilter, activeEdit, activeMediaTagFilter, activePlayerTagFilter, activeTagFilter, activeTimerTagFilter, activeVariableTagFilter, contextData, drawerTabsData, globalTags, groups, media, mediaOptions, mediaTags, outputs, overlays, playerTags, playerVideos, scenes, selected, shows, sorted, timers, timerTags, variables, variableTags } from "../../stores"
 import { translateText } from "../../utils/language"
+import { isGroupHidden } from "../../utils/profile"
 import { drawerTabs } from "../../values/tabs"
 import { actionData } from "../actions/actionData"
 import { getActionName, getActionTriggerId } from "../actions/actions"
@@ -10,10 +11,11 @@ import { getSlideText } from "../edit/scripts/textStyle"
 import { chordTypes, keys } from "../edit/values/chords"
 import { clone, keysToID, sortByName } from "../helpers/array"
 import { removeExtension } from "../helpers/media"
+import { isOutputBound } from "../helpers/output"
 import { getLayoutRef } from "../helpers/show"
 import { _show } from "../helpers/shows"
 import { createTagItems, getSelectedTagIds } from "../helpers/tags"
-import type { ContextMenuItem } from "./contextMenus"
+import { type ContextMenuItem } from "./contextMenus"
 
 const loadActions = {
     enabled_drawer_tabs: (items: ContextMenuItem[]) => {
@@ -78,10 +80,28 @@ const loadActions = {
         setContextData("variable_tags", sortedTags.length)
         return sortedTags
     },
+    timer_tag_set: () => {
+        const selectedTags = getSelectedTagIds<{ id?: string }>(get(selected), (item) => get(timers)[item.id || ""]?.tags)
+        return createTagItems(timerTags, selectedTags, true)
+    },
+    timer_tag_filter: () => {
+        let sortedTags = createTagItems(timerTags, get(activeTimerTagFilter))
+        sortedTags = sortedTags.filter((a) => typeof a === "string" || a.id !== get(drawerTabsData).functions?.activeSubmenu)
+        setContextData("timer_tags", sortedTags.length)
+        return sortedTags
+    },
 
     sort_shows: (items: ContextMenuItem[]) => sortItems(items, "shows"),
     sort_projects: (items: ContextMenuItem[]) => sortItems(items, "projects"),
     sort_media: (items: ContextMenuItem[]) => sortItems(items, "media"),
+    media_view: () => {
+        const view = get(mediaOptions).view || "all"
+        return [
+            { label: "media.all", icon: "media", id: "all", enabled: view === "all" },
+            { label: "media.image", icon: "image", id: "image", enabled: view === "image" },
+            { label: "media.video", icon: "video", id: "video", enabled: view === "video" }
+        ]
+    },
     slide_groups: (items: ContextMenuItem[]) => {
         const selectedIndex = get(selected).data[0]?.index
         const ref = getLayoutRef()
@@ -93,12 +113,14 @@ const loadActions = {
         const noGroup = currentSlide.group === "." || currentGroup === "none"
         const isParent = slideRef.type === "parent"
 
-        items = Object.entries(get(groups)).map(([id, a]) => {
-            // strange bug, where name is { "isTrusted": true }, maybe an old issue
-            // https://www.reddit.com/r/freeshowapp/comments/1j0w6mt/freeshow_keeps_on_freezing
-            if (typeof a.name !== "string") a.name = ""
-            return { id, color: a.color, label: a.default ? "groups." + a.name : a.name, translate: !!a.default, enabled: id === currentGroup }
-        })
+        items = Object.entries(get(groups))
+            .filter(([id]) => !isGroupHidden(id))
+            .map(([id, a]) => {
+                // strange bug, where name is { "isTrusted": true }, maybe an old issue
+                // https://www.reddit.com/r/freeshowapp/comments/1j0w6mt/freeshow_keeps_on_freezing
+                if (typeof a.name !== "string") a.name = ""
+                return { id, color: a.color, label: a.default ? "groups." + a.name : a.name, translate: !!a.default, enabled: id === currentGroup }
+            })
 
         if (!isParent && !items.length) return [{ label: "empty.general", disabled: true }]
 
@@ -164,9 +186,7 @@ const loadActions = {
             "SEPARATOR",
             { id: "nextTimer", label: "preview.nextTimer", icon: "clock", iconColor: "#fca4ff", enabled: Number(slideRef?.data?.nextTimer || 0) || false },
             { id: "loop", label: "preview.to_start", icon: "restart", iconColor: "#fca4ff", enabled: slideRef?.data?.end || false },
-            { id: "nextAfterMedia", label: "actions.next_after_media", iconColor: "#fca4ff", icon: "forward", enabled: currentActions?.nextAfterMedia || false },
-            "SEPARATOR",
-            { id: "animate", label: "popup.animate", icon: "stars", iconColor: "#fff1ad", enabled: currentActions?.animate || false }
+            { id: "nextAfterMedia", label: "actions.next_after_media", iconColor: "#fca4ff", icon: "forward", enabled: currentActions?.nextAfterMedia || false }
         ]
 
         return slideActions
@@ -333,7 +353,7 @@ const loadActions = {
         }
 
         contextOutputList = contextOutputList.map((a) => {
-            if (typeof a !== "string" && currentBindings.includes(a.id!)) a.enabled = true
+            if (typeof a !== "string" && currentBindings.length && (a.id === "stage" ? currentBindings.includes("stage") : isOutputBound(currentBindings, a.id!))) a.enabled = true
             return a
         })
 
@@ -341,7 +361,23 @@ const loadActions = {
 
         return contextOutputList
     },
-    bind_item: () => loadActions.bind_slide([], true)
+    bind_item: () => loadActions.bind_slide([], true),
+    bind_scene: () => {
+        const outputList: any[] = sortByName(keysToID(get(outputs)).filter((a) => !a.stageOutput))
+        let contextOutputList: (ContextMenuItem | "SEPARATOR")[] = outputList.map((a) => ({ id: a.id, label: a.name, translate: false }))
+
+        const sceneId = get(selected).data[0]
+        const currentBindings = get(scenes)[sceneId]?.bindings || []
+
+        contextOutputList = contextOutputList.map((a) => {
+            if (typeof a !== "string" && currentBindings.length && isOutputBound(currentBindings, a.id!)) a.enabled = true
+            return a
+        })
+
+        setContextData("outputList", contextOutputList?.length > 0)
+
+        return contextOutputList
+    }
 }
 
 function setContextData(key: string, data: boolean | string | number) {
@@ -362,8 +398,6 @@ function sortItems(items: ContextMenuItem[], id: "shows" | "projects" | "media")
     ]
     if (id === "shows") {
         items.push({ id: "used", label: "info.used", icon: "calendar", enabled: type === "used" })
-
-        // WIP load used metadata values...
     }
 
     return items

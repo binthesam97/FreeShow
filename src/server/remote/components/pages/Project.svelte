@@ -1,6 +1,5 @@
 <script lang="ts">
     import Button from "../../../common/components/Button.svelte"
-    import Center from "../../../common/components/Center.svelte"
     import Icon from "../../../common/components/Icon.svelte"
     import { getFileName, removeExtension } from "../../../common/util/media"
     import { translate } from "../../util/helpers"
@@ -215,7 +214,7 @@
                     {/if}
                 </div>
             {:else}
-                <Center faded>{translate("empty.general", $dictionary)}</Center>
+                <p class="empty-project-message">{translate("empty.general", $dictionary)}</p>
 
                 {#if canAddActiveShow}
                     <Button
@@ -321,6 +320,14 @@
         scrollbar-color: rgb(255 255 255 / 0.3) rgb(255 255 255 / 0.05);
     }
 
+    .empty-project-message {
+        margin: 12px 0;
+        color: var(--text);
+        opacity: 0.5;
+        text-align: center;
+        font-size: 0.95em;
+    }
+
     .project-shows-list::-webkit-scrollbar {
         width: 8px;
         height: 8px;
@@ -352,7 +359,7 @@
     }
 
     .section-card {
-        background-color: var(--primary-darkest);
+        background-color: var(--primary-darker);
         border: 1px solid var(--primary-lighter);
         border-left: 0;
         border-radius: 10px;
@@ -369,7 +376,7 @@
         letter-spacing: 0.05em;
         text-transform: uppercase;
         opacity: 0.85;
-        background: rgb(0 0 0 / 0.25);
+        background: var(--primary-darkest);
         border-bottom: 1px solid var(--primary-lighter);
     }
 
@@ -402,11 +409,11 @@
     }
 
     :global(.section-item-button:hover) {
-        background-color: rgb(255 255 255 / 0.05) !important;
+        background-color: var(--hover) !important;
     }
 
     :global(.section-item-button.active) {
-        background-color: rgb(255 255 255 / 0.08) !important;
+        background-color: var(--focus) !important;
         box-shadow: inset 4px 0 0 var(--secondary) !important;
     }
 
@@ -464,11 +471,11 @@
     }
 
     .show-button-wrapper:hover {
-        background-color: rgb(255 255 255 / 0.05);
+        background-color: var(--hover);
     }
 
     .show-button-wrapper.active {
-        background-color: rgb(255 255 255 / 0.08);
+        background-color: var(--focus);
         box-shadow: inset 4px 0 0 var(--secondary);
     }
 
@@ -600,10 +607,10 @@
         display: flex !important;
         align-items: center !important;
         gap: 0.45em;
-        background-color: rgba(25, 25, 35, 0.92) !important;
-        border: 2px solid rgba(255, 255, 255, 0.1) !important;
+        background-color: var(--primary-darker) !important;
+        border: 2px solid var(--primary-lighter) !important;
+        color: var(--text) !important;
         box-shadow: 1px 1px 6px rgb(0 0 0 / 0.4);
-        backdrop-filter: blur(3px);
     }
 
     :global(.floating-edit-input span) {
@@ -612,7 +619,7 @@
     }
 
     :global(.floating-edit-input:hover) {
-        background-color: rgba(35, 35, 55, 0.95) !important;
+        background-color: var(--hover) !important;
         transform: translateY(-1px);
     }
 

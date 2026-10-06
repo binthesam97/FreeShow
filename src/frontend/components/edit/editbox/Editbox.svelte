@@ -1,13 +1,19 @@
 <script lang="ts">
     import type { Item } from "../../../../types/Show"
     import { activeEdit, activeShow, openToolsTab, os, outputs, showsCache, special, templates, variables } from "../../../stores"
+    import { startResizing } from "../../../utils/cursor"
     import { translateText } from "../../../utils/language"
     import { getAccess } from "../../../utils/profile"
+    import { isComposing } from "../../../utils/shortcuts"
     import { deleteAction } from "../../helpers/clipboard"
+    import { isCroppedItem } from "../../helpers/cropping"
     import { history } from "../../helpers/history"
     import { getExtension, getFileName, getMediaType } from "../../helpers/media"
     import { getFirstActiveOutput, getOutputResolution, percentageStylePos } from "../../helpers/output"
-    import { getNumberVariables } from "../../helpers/showActions"
+    import { isSlideLocked } from "../../helpers/show"
+    import { createCSSVariables } from "../../helpers/showActions"
+    import { getItemStyle, getStyles } from "../../helpers/style"
+    import { getShapeGuideStyle } from "../scripts/shapeOutside"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import SlideItems from "../../slide/SlideItems.svelte"
     import EditboxCropping from "./EditboxCropping.svelte"
@@ -38,36 +44,49 @@
     export let mouse: any = {}
     function mousedown(e: any) {
         if (e.target.closest(".chords") || e.target.closest(".editTools")) return
-        if (!e.target.closest(".line") && !e.target.closest(".square") && !e.target.closest(".rotate") && !e.target.closest(".radius") && !e.target.closest(".cropHandle") && !e.target.closest(".cropOverlay")) openToolsTab.set("text")
+        if (!e.shiftKey && !e.target.closest(".line") && !e.target.closest(".square") && !e.target.closest(".rotate") && !e.target.closest(".radius") && !e.target.closest(".cropHandle") && !e.target.closest(".cropOverlay")) {
+            openToolsTab.set("text")
+
+            // Table shouldn't be draggable from the center
+            if (item?.type === "table") return
+        }
 
         const rightClick: boolean = e.button === 2 || e.buttons === 2 || ($os.platform === "darwin" && e.ctrlKey)
+        const isSelected = $activeEdit.items.includes(index)
 
-        activeEdit.update((ae) => {
-            if (rightClick) {
-                if (ae.items.includes(index)) return ae
-                ae.items = [index]
-
-                return ae
-            }
-
-            if (e.shiftKey) {
-                if (ae.items.includes(index)) {
-                    if (e.target.closest(".line")) ae.items.splice(ae.items.indexOf(index), 1)
-                } else {
-                    ae.items.push(index)
+        if (rightClick) {
+            if (!isSelected) activeEdit.update((ae) => { ae.items = [index]; return ae })
+        } else if (e.shiftKey) {
+            if (!isSelected) activeEdit.update((ae) => { ae.items.push(index); return ae })
+        } else if (!isSelected) {
+            activeEdit.update((ae) => { ae.items = [index]; return ae })
+        } else if ($activeEdit.items.length > 1) {
+            const startX = e.clientX, startY = e.clientY
+            window.addEventListener("mouseup", (upEvent) => {
+                if (Math.hypot(upEvent.clientX - startX, upEvent.clientY - startY) < 4) {
+                    activeEdit.update((ae) => { ae.items = [index]; return ae })
                 }
+            }, { once: true })
+        }
 
-                return ae
-            }
-
-            ae.items = [index]
-
-            return ae
-        })
+        // deselect selected text
+        if (e.shiftKey) {
+            isShiftPressed = true
+            e.preventDefault()
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+            window.getSelection()?.removeAllRanges()
+        }
 
         let target = e.target.closest(".item")
         if (!target) return
 
+        const square = e.target.closest(".square")
+        if (square) {
+            const cursor = window.getComputedStyle(square).cursor || "nwse-resize"
+            startResizing(cursor)
+        }
+
+        const slideElem = target.closest(".slide")
         mouse = {
             x: e.clientX,
             y: e.clientY,
@@ -76,8 +95,8 @@
             top: target.offsetTop,
             left: target.offsetLeft,
             offset: {
-                x: (e.clientX - e.target.closest(".slide").offsetLeft) / ratio - target.offsetLeft,
-                y: (e.clientY - e.target.closest(".slide").offsetTop) / ratio - target.offsetTop,
+                x: (e.clientX - (slideElem?.offsetLeft || 0)) / ratio - target.offsetLeft,
+                y: (e.clientY - (slideElem?.offsetTop || 0)) / ratio - target.offsetTop,
                 width: e.clientX / ratio - target.offsetWidth,
                 height: e.clientY / ratio - target.offsetHeight
             },
@@ -91,7 +110,14 @@
     $: layout = active && $showsCache[active]?.settings ? $showsCache[active].settings.activeLayout : ""
     // $: slide = layout && $activeEdit.slide !== null && $activeEdit.slide !== undefined ? [$showsCache, GetLayoutRef(active, layout)[$activeEdit.slide].id][1] : null
 
+    let isShiftPressed = false
+    function keyup(e: KeyboardEvent) {
+        if (e.key === "Shift") isShiftPressed = false
+    }
     function keydown(e: KeyboardEvent) {
+        if (e.key === "Shift") isShiftPressed = true
+
+        if (isComposing(e)) return
         if (cropElem?.handleKeydown(e)) return
 
         if (e.key === "Escape") {
@@ -141,21 +167,33 @@
             style = percentageStylePos(style, outputResolution)
         }
 
+        // minimum of 50% opacity on all items in the editor
+        if (style.includes("opacity:")) {
+            style = style.replace(/opacity:\s*([0-9.]+)/, (match, p1) => {
+                if (parseFloat(p1) < 0.5) return "opacity: 0.5"
+                return match
+            })
+        }
+
         return style
     }
 
     // check if media fills entire slide, if it does it might be intended as a background
-    $: if (item?.type === "media") checkMedia()
-    else mediaShouldBeBackground = false
     let mediaShouldBeBackground = false
+    $: if (item?.type === "media" && checkMedia()) mediaShouldBeBackground = true
+    else mediaShouldBeBackground = false
     function checkMedia() {
-        // WIP return if background exists
-        if (!item?.src || (ref?.type || "show") !== "show" || !item.style?.includes("width:1920") || !item.style?.includes("height:1080")) {
-            mediaShouldBeBackground = false
-            return
-        }
+        if (!item?.src) return false
+        if ((ref?.type || "show") !== "show") return false
 
-        mediaShouldBeBackground = true
+        // item fills entire width and height
+        if (!item.style?.includes("width:1920") || !item.style?.includes("height:1080")) return false
+
+        const currentLayoutSlide = $showsCache[active || ""]?.layouts?.[layout]?.slides?.[$activeEdit.slide ?? -1]
+        // background is already set
+        if (currentLayoutSlide?.background) return false
+
+        return true
     }
     function convertToBackground() {
         if (!item?.src) return
@@ -176,11 +214,11 @@
     $: isDisabledVariable = item?.type === "variable" && $variables[item.variable?.id]?.enabled === false
     // SHOW IS LOCKED FOR EDITING
     let profile = getAccess("shows")
-    $: currentSlide = (ref.type || "show") === "show" ? $showsCache[active || ""]?.slides?.[ref.id] : null // WIP get group slide
-    $: isLocked = (ref.type || "show") !== "show" ? false : $showsCache[active || ""]?.locked || currentSlide?.locked || profile.global === "read" || profile[$showsCache[active || ""]?.category || ""] === "read"
+    $: isGroupLocked = (ref.type || "show") === "show" ? isSlideLocked(active || "", ref.id, $showsCache) : false
+    $: isLocked = (ref.type || "show") !== "show" ? false : $showsCache[active || ""]?.locked || isGroupLocked || profile.global === "read" || profile[$showsCache[active || ""]?.category || ""] === "read"
 
-    // give CSS access to number variable values
-    $: cssVariables = getNumberVariables($variables)
+    // give CSS access to certain dynamic values
+    $: cssVariables = createCSSVariables($variables)
 
     const isOptimized = $special.optimizedMode
     let previewCropType: "clip" | "ppt" = "clip"
@@ -191,15 +229,14 @@
     $: fixedWidth = item?.type === "timer" || item?.type === "clock" ? "font-feature-settings: 'tnum' 1;" : ""
 
     $: noTextMode = ref?.type === "template" && $templates[ref?.id]?.settings?.mode === "item"
+
+    // Cutout Shape
+    $: shapeGuideStyle = getShapeGuideStyle(getStyles(item?.style)["shape-outside"])
 </script>
 
 <!-- on:mouseup={() => chordUp({ showRef: ref, itemIndex: index, item })} -->
-<svelte:window on:mousedown={deselect} on:keydown={keydown} />
+<svelte:window on:mousedown={deselect} on:keydown={keydown} on:keyup={keyup} />
 
-<!-- WIP item with opacity 0 is completely hidden! Even the align elements! -->
-
-<!-- bind:offsetHeight={height}
-bind:offsetWidth={width} -->
 <div
     bind:this={itemElem}
     class={plain ? "editItem" : `editItem item ${isLocked ? "" : "context #edit_box"}`}
@@ -208,7 +245,9 @@ bind:offsetWidth={width} -->
     class:isDisabledVariable
     class:chords={chordsMode}
     class:isOptimized
-    style="{plain ? 'width: 100%;' : `${getCustomStyle(item?.style || '', customOutputId)}; outline: ${3 / ratio}px solid rgb(255 255 255 / 0.2);z-index: ${index + 1 + ($activeEdit.items.includes(index) ? 100 : 0)};${filter ? 'filter: ' + filter + ';' : ''}${backdropFilter ? 'backdrop-filter: ' + backdropFilter + ';' : ''}`}{cssVariables}{fixedWidth}"
+    class:showOverflow={item?.type === "table" || cropActive}
+    class:isShiftPressed
+    style="{plain ? 'width: 100%;' : `${getCustomStyle(getItemStyle(item?.style, isCroppedItem(item)), customOutputId)}; outline: ${3 / ratio}px solid rgb(255 255 255 / 0.2);z-index: ${index + 1 + ($activeEdit.items.includes(index) ? 100 : 0)};${filter ? 'filter: ' + filter + ';' : ''}${backdropFilter ? 'backdrop-filter: ' + backdropFilter + ';' : ''}`}{cssVariables}{fixedWidth}"
     data-index={index}
     on:mousedown={mousedown}
     on:dblclick={dblclick}
@@ -219,16 +258,22 @@ bind:offsetWidth={width} -->
     {#if item?.lines && !noTextMode}
         <EditboxLines {item} {ref} {index} {editIndex} {plain} {chordsMode} {chordsAction} {isLocked} />
     {:else if previewItem}
-        {#if previewItem.type === "media"}
+        {#if previewItem.type === "media" || previewItem.type === "camera"}
             <div class="mediaFrame" class:showOverflow={cropActive}>
                 <SlideItems item={previewItem} {ratio} {ref} {itemElem} slideIndex={$activeEdit.slide || 0} edit cropPreviewMode={cropActive} />
             </div>
+        {:else if previewItem.type === "table"}
+            <SlideItems item={previewItem} {ratio} {ref} {itemElem} slideIndex={$activeEdit.slide || 0} {index} edit />
         {:else}
             <SlideItems item={previewItem} {ratio} {ref} {itemElem} slideIndex={$activeEdit.slide || 0} edit />
         {/if}
     {/if}
 
     <EditboxCropping bind:this={cropElem} {item} {index} {ref} {itemElem} {plain} {isLocked} selected={$activeEdit.items.includes(index)} bind:cropActive bind:cropPreview />
+
+    {#if shapeGuideStyle && !plain}
+        <div class="shapeOutsideGuide" style={shapeGuideStyle} />
+    {/if}
 
     {#if mediaShouldBeBackground}
         <div class="tip">
@@ -251,6 +296,9 @@ bind:offsetWidth={width} -->
     .item.selected {
         overflow: visible;
     }
+    .item.showOverflow {
+        overflow: visible !important;
+    }
     .item.selected :global(.align) {
         outline: 5px solid var(--secondary-opacity);
         overflow: visible !important;
@@ -268,6 +316,15 @@ bind:offsetWidth={width} -->
         /* .item:hover > .edit { */
         background-color: rgb(255 255 255 / 0.05);
         backdrop-filter: blur(20px);
+    }
+    .item.isShiftPressed,
+    .item.isShiftPressed :global(.edit),
+    .item.isShiftPressed :global(.line) {
+        cursor: move !important;
+    }
+    .item.isShiftPressed :global(.edit) {
+        pointer-events: none !important;
+        user-select: none !important;
     }
 
     .mediaFrame {
@@ -298,6 +355,7 @@ bind:offsetWidth={width} -->
         text-shadow: none;
 
         /* if parent is flipped, this will apply the same flip, so it's flipped back */
+        /* WIP rotate means this also rotates on top */
         transform: inherit;
     }
 </style>

@@ -1,23 +1,27 @@
-import type { ComponentType } from "svelte"
+import { onDestroy, type ComponentType } from "svelte"
 import { get } from "svelte/store"
 import type { Popups } from "../../types/Main"
+import AiModelManager from "../ai/components/popups/AiModelManager.svelte"
 import About from "../components/main/popups/About.svelte"
 import Action from "../components/main/popups/Action.svelte"
 import ActionHistory from "../components/main/popups/ActionHistory.svelte"
+import AddAudioEffect from "../components/main/popups/AddAudioEffect.svelte"
 import Alert from "../components/main/popups/Alert.svelte"
-import Animate from "../components/main/popups/Animate.svelte"
 import AspectRatio from "../components/main/popups/AspectRatio.svelte"
+import AudioEffect from "../components/main/popups/AudioEffect.svelte"
 import AudioStream from "../components/main/popups/AudioStream.svelte"
 import CategoryAction from "../components/main/popups/CategoryAction.svelte"
 import ChangeIcon from "../components/main/popups/ChangeIcon.svelte"
 import ChangeOutputValues from "../components/main/popups/ChangeOutputValues.svelte"
-import ChooseCamera from "../components/main/popups/ChooseCamera.svelte"
 import ChooseChord from "../components/main/popups/ChooseChord.svelte"
+import ChooseMediaInput from "../components/main/popups/ChooseMediaInput.svelte"
 import ChooseOutput from "../components/main/popups/ChooseOutput.svelte"
 import ChooseScreen from "../components/main/popups/ChooseScreen.svelte"
 import ChooseStyle from "../components/main/popups/ChooseStyle.svelte"
 import ChurchAppsSyncCategories from "../components/main/popups/ChurchAppsSyncCategories.svelte"
+import CleaningUtility from "../components/main/popups/CleaningUtility.svelte"
 import CloudMethod from "../components/main/popups/CloudMethod.svelte"
+import CloudSync from "../components/main/popups/CloudSync.svelte"
 import CloudUpdate from "../components/main/popups/CloudUpdate.svelte"
 import Color from "../components/main/popups/Color.svelte"
 import ColorGradient from "../components/main/popups/ColorGradient.svelte"
@@ -32,7 +36,9 @@ import CustomText from "../components/main/popups/CustomText.svelte"
 import DeleteDuplicatedShows from "../components/main/popups/DeleteDuplicatedShows.svelte"
 import DeleteShow from "../components/main/popups/DeleteShow.svelte"
 import DisplayDuration from "../components/main/popups/DisplayDuration.svelte"
+import DrawerSearchOptions from "../components/main/popups/DrawerSearchOptions.svelte"
 import DynamicValues from "../components/main/popups/DynamicValues.svelte"
+import EditChart from "../components/main/popups/EditChart.svelte"
 import EditEvent from "../components/main/popups/EditEvent.svelte"
 import EffectItems from "../components/main/popups/EffectItems.svelte"
 import Emitters from "../components/main/popups/Emitters.svelte"
@@ -40,11 +46,14 @@ import Export from "../components/main/popups/export/Export.svelte"
 import FindReplace from "../components/main/popups/FindReplace.svelte"
 import History from "../components/main/popups/History.svelte"
 import Import from "../components/main/popups/Import.svelte"
+import ImportCalendar from "../components/main/popups/ImportCalendar.svelte"
 import ImportScripture from "../components/main/popups/ImportScripture.svelte"
 import Initialize from "../components/main/popups/Initialize.svelte"
+import InteractionInput from "../components/main/popups/InteractionInput.svelte"
 import Translate from "../components/main/popups/localization/Translate.svelte"
 import ManageColors from "../components/main/popups/ManageColors.svelte"
 import ManageDynamicValues from "../components/main/popups/ManageDynamicValues.svelte"
+import ManageFonts from "../components/main/popups/ManageFonts.svelte"
 import ManageGroups from "../components/main/popups/ManageGroups.svelte"
 import ManageIcons from "../components/main/popups/ManageIcons.svelte"
 import ManageMetadata from "../components/main/popups/ManageMetadata.svelte"
@@ -52,11 +61,18 @@ import ManageTags from "../components/main/popups/ManageTags.svelte"
 import MaxLines from "../components/main/popups/MaxLines.svelte"
 import MediaFit from "../components/main/popups/MediaFit.svelte"
 import MetadataDisplay from "../components/main/popups/MetadataDisplay.svelte"
+import NewUpdate from "../components/main/popups/NewUpdate.svelte"
 import NextTimer from "../components/main/popups/NextTimer.svelte"
+import NodeOptions from "../components/main/popups/NodeOptions.svelte"
+import NowPlaying from "../components/main/popups/NowPlaying.svelte"
 import OutputSelector from "../components/main/popups/OutputSelector.svelte"
+import OutputSetup from "../components/main/popups/OutputSetup.svelte"
+import PcoServicePicker from "../components/main/popups/PcoServicePicker.svelte"
+import RegexManager from "../components/main/popups/RegexManager.svelte"
 import Rename from "../components/main/popups/Rename.svelte"
 import ResetAll from "../components/main/popups/ResetAll.svelte"
-import ScriptureShow from "../components/main/popups/ScriptureShow.svelte"
+import Restore from "../components/main/popups/Restore.svelte"
+import SelectOverlay from "../components/main/popups/SelectOverlay.svelte"
 import SelectShow from "../components/main/popups/SelectShow.svelte"
 import SelectStageLayout from "../components/main/popups/SelectStageLayout.svelte"
 import SelectStyle from "../components/main/popups/SelectStyle.svelte"
@@ -66,20 +82,17 @@ import Shortcuts from "../components/main/popups/Shortcuts.svelte"
 import SlideMidi from "../components/main/popups/SlideMidi.svelte"
 import SlideShortcut from "../components/main/popups/SlideShortcut.svelte"
 import SongbeamerImport from "../components/main/popups/SongbeamerImport.svelte"
+import SyncFolders from "../components/main/popups/SyncFolders.svelte"
+import TemplateInfo from "../components/main/popups/TemplateInfo.svelte"
 import TemplateStyleOverrides from "../components/main/popups/TemplateStyleOverrides.svelte"
-import Timer from "../components/main/popups/Timer.svelte"
-import Transition from "../components/main/popups/Transition.svelte"
-import Trigger from "../components/main/popups/Trigger.svelte"
-import Unsaved from "../components/main/popups/Unsaved.svelte"
-import Variable from "../components/main/popups/Variable.svelte"
-import { activePopup, popupData } from "../stores"
-import NowPlaying from "../components/main/popups/NowPlaying.svelte"
-import Restore from "../components/main/popups/Restore.svelte"
-import CloudSync from "../components/main/popups/CloudSync.svelte"
 import Timecode from "../components/main/popups/Timecode.svelte"
 import TimelineSettings from "../components/main/popups/TimelineSettings.svelte"
-import NewUpdate from "../components/main/popups/NewUpdate.svelte"
-import RegexManager from "../components/main/popups/RegexManager.svelte"
+import Timer from "../components/main/popups/Timer.svelte"
+import Transition from "../components/main/popups/Transition.svelte"
+import Unsaved from "../components/main/popups/Unsaved.svelte"
+import UpdateManager from "../components/main/popups/UpdateManager.svelte"
+import Variable from "../components/main/popups/Variable.svelte"
+import { activePopup, popupData } from "../stores"
 
 export const popups: { [key in Popups]: ComponentType } = {
     initialize: Initialize,
@@ -92,11 +105,13 @@ export const popups: { [key in Popups]: ComponentType } = {
     delete_show: DeleteShow,
     select_show: SelectShow,
     select_template: SelectTemplate,
+    select_overlay: SelectOverlay,
     select_style: SelectStyle,
     select_stage_layout: SelectStageLayout,
     delete_duplicated_shows: DeleteDuplicatedShows,
     icon: ChangeIcon,
     manage_groups: ManageGroups,
+    manage_fonts: ManageFonts,
     manage_icons: ManageIcons,
     manage_colors: ManageColors,
     manage_metadata: ManageMetadata,
@@ -104,7 +119,7 @@ export const popups: { [key in Popups]: ComponentType } = {
     template_style_overrides: TemplateStyleOverrides,
     regex_manager: RegexManager,
     choose_chord: ChooseChord,
-    choose_camera: ChooseCamera,
+    choose_media_input: ChooseMediaInput,
     player: CreatePlayer,
     rename: Rename,
     color: Color,
@@ -112,8 +127,10 @@ export const popups: { [key in Popups]: ComponentType } = {
     find_replace: FindReplace,
     timer: Timer,
     variable: Variable,
-    trigger: Trigger,
+    interaction_input: InteractionInput,
     audio_stream: AudioStream,
+    audio_effect: AudioEffect,
+    add_audio_effect: AddAudioEffect,
     now_playing: NowPlaying,
     aspect_ratio: AspectRatio,
     max_lines: MaxLines,
@@ -121,11 +138,13 @@ export const popups: { [key in Popups]: ComponentType } = {
     media_fit: MediaFit,
     metadata_display: MetadataDisplay,
     import_scripture: ImportScripture,
+    import_calendar: ImportCalendar,
     create_collection: CreateCollection,
-    scripture_show: ScriptureShow,
     edit_event: EditEvent,
+    edit_chart: EditChart,
     choose_screen: ChooseScreen,
-    choose_output: ChooseOutput,
+    choose_output_input: ChooseOutput,
+    choose_output_type: OutputSetup,
     choose_style: ChooseStyle,
     change_output_values: ChangeOutputValues,
     output_selector: OutputSelector,
@@ -133,12 +152,12 @@ export const popups: { [key in Popups]: ComponentType } = {
     assign_shortcut: SlideShortcut,
     dynamic_values: DynamicValues,
     conditions: Conditions,
-    animate: Animate,
     translate: Translate,
     next_timer: NextTimer,
     display_duration: DisplayDuration,
     manage_tags: ManageTags,
     about: About,
+    update_manager: UpdateManager,
     shortcuts: Shortcuts,
     unsaved: Unsaved,
     restore: Restore,
@@ -159,31 +178,44 @@ export const popups: { [key in Popups]: ComponentType } = {
     sync_categories: ChurchAppsSyncCategories,
     effect_items: EffectItems,
     timeline: TimelineSettings,
-    timecode: Timecode
+    timecode: Timecode,
+    drawer_search_options: DrawerSearchOptions,
+    template_info: TemplateInfo,
+    cleaning_utility: CleaningUtility,
+    pco_picker: PcoServicePicker,
+    sync_folders: SyncFolders,
+    node_options: NodeOptions,
+    ai_model_manager: AiModelManager
 }
 
 export function waitForPopupData(popupId: Popups): Promise<any> {
-    popupData.set({ ...get(popupData), id: "", value: "" })
-    activePopup.set(popupId)
+    const promise = new Promise((resolve) => {
+        let unsubscribe = () => {}
 
-    return new Promise((resolve) => {
         // check that popup is still active
         const interval = setInterval(() => {
             if (get(activePopup) !== popupId) finish(undefined)
-        }, 1000)
+        }, 300)
 
-        const unsubscribe = popupData.subscribe((a) => {
-            if (a.id !== popupId) return
+        unsubscribe = popupData.subscribe((a) => {
+            if (!a || a.id !== popupId) return
             activePopup.set(null)
             finish(a.value)
         })
 
         function finish(value) {
-            unsubscribe()
+            if (unsubscribe) unsubscribe()
             clearInterval(interval)
-            resolve(value)
+            setTimeout(() => {
+                resolve(value)
+            }, 50)
         }
     })
+
+    popupData.set({ ...get(popupData), id: "", value: "" })
+    activePopup.set(popupId)
+
+    return promise
 }
 
 export async function confirmCustom(prompt: string) {
@@ -192,8 +224,34 @@ export async function confirmCustom(prompt: string) {
     return !!data
 }
 
-export async function promptCustom(prompt: string, inputType: string = "text") {
-    popupData.set({ prompt, inputType })
+export async function promptCustom(prompt: string, inputType: string = "text", message: string = "") {
+    popupData.set({ prompt, inputType, message })
     const data = (await waitForPopupData("confirm")) || ""
     return data as string
+}
+
+// Enter to submit
+
+let activeSubmit: (() => void) | null = null
+
+export function registerPopupSubmit(submit: () => void) {
+    activeSubmit = submit
+
+    onDestroy(() => {
+        if (activeSubmit === submit) activeSubmit = null
+    })
+}
+
+export function triggerPopupSubmit(e?: KeyboardEvent): boolean {
+    if (!activeSubmit) return false
+
+    const target = e?.target as HTMLElement | null
+    if (target?.closest("textarea, [contenteditable='true'], button, [role], .editItem")) return false
+
+    activeSubmit()
+    return true
+}
+
+export function clearPopupSubmit() {
+    activeSubmit = null
 }

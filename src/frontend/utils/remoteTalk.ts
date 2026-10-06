@@ -2,23 +2,31 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Show } from "../../types/Show"
 import type { ClientMessage } from "../../types/Socket"
-import { AudioPlayer } from "../audio/audioPlayer"
+import { AudioRoutingManager } from "../audio/routing/audioRoutingManager"
 import { loadJsonBible } from "../components/drawer/bible/scripture"
 import { loadSongBooks, createSongShow } from "../components/drawer/songbooks/songbooks"
 import { clone, keysToID, removeDeleted } from "../components/helpers/array"
 import { getThumbnailPath, mediaSize } from "../components/helpers/media"
-import { getAllNormalOutputs, getFirstActiveOutput, setOutput } from "../components/helpers/output"
+import { getFirstActiveOutput, setOutput } from "../components/helpers/output"
 import { loadShows } from "../components/helpers/setShow"
 import { getLayoutRef } from "../components/helpers/show"
 import { updateOut } from "../components/helpers/showActions"
 import { _show } from "../components/helpers/shows"
 import { clearAll } from "../components/output/clear"
 import { REMOTE } from "./../../types/Channels"
-import { actions, actionTags, activePage, activeProject, activeShow, activeTimers, audioChannelsData, categories, connections, dictionary, folders, language, openedFolders, outLocked, outputs, overlayCategories, overlays, playerVideos, projects, remotePassword, runningActions, scriptures, shows, showsCache, styles, templateCategories, templates, timers, triggers, variables, variableTags, volume, songBooks, activeSongBookSong } from "./../stores"
+import { actions, actionTags, activePage, activeProject, activeShow, activeTimers, audioChannelsData, audioRouting, categories, connections, dictionary, folders, language, openedFolders, outLocked, outputs, overlayCategories, overlays, playerVideos, projects, remotePassword, runningActions, scriptures, shows, showsCache, styles, templateCategories, templates, theme, themes, timers, variables, variableTags, songBooks, activeSongBookSong } from "./../stores"
 import { lastClickTime } from "./common"
 import { translateText } from "./language"
 import { send } from "./request"
 import { sendData, setConnectedState } from "./sendData"
+
+export function getFilteredAudioChannels() {
+    const rawRouting = get(audioRouting) || { channels: [{ id: "main", name: translateText("audio.main") }], connections: [] }
+    const sortedConfig = AudioRoutingManager.sortChannels(rawRouting)
+    const inactiveOutputIds = keysToID(get(outputs) || {}).filter((a) => !a.enabled)
+    const filteredChannels = sortedConfig.channels.filter((ch) => !inactiveOutputIds.some((a) => `channel_${a.id}` === ch.id))
+    return { ...sortedConfig, channels: filteredChannels }
+}
 
 // REMOTE
 
@@ -26,6 +34,8 @@ let currentOut = ""
 let loadingShow = ""
 export const receiveREMOTE: any = {
     PASSWORD: (msg: any) => {
+        sendThemeToRemote()
+
         msg.data = {
             dictionary: get(dictionary),
             password: !!get(remotePassword).length
@@ -40,10 +50,6 @@ export const receiveREMOTE: any = {
 
         return msg
     },
-    GET_MIXER: (msg: any) => {
-        msg.data = getMixerPayload()
-        return msg
-    },
     GET_SONGBOOKS: async (msg: any) => {
         let books = get(songBooks)
         if (!Object.keys(books).length) {
@@ -52,45 +58,6 @@ export const receiveREMOTE: any = {
         }
         msg.channel = "SONGBOOKS"
         msg.data = books
-        return msg
-    },
-    SET_VOLUME: (msg: any) => {
-        const newVolume = clamp01(msg.data?.volume ?? msg.data ?? 1)
-        volume.set(newVolume)
-        AudioPlayer.updateVolume()
-
-        msg.channel = "GET_MIXER"
-        msg.data = getMixerPayload()
-        return msg
-    },
-    SET_OUTPUT_VOLUME: (msg: any) => {
-        const { id, volume: newVolumeRaw } = msg.data || {}
-        if (!id) return
-
-        const newVolume = clamp01(newVolumeRaw ?? 1)
-        updateAudioChannel(id, (a) => ({ ...a, volume: newVolume }))
-
-        msg.channel = "GET_MIXER"
-        msg.data = getMixerPayload()
-        return msg
-    },
-    TOGGLE_MUTE: (msg: any) => {
-        const muted = !!(msg.data?.muted ?? msg.data)
-        updateAudioChannel("main", (a) => ({ ...a, isMuted: muted }))
-        AudioPlayer.updateVolume()
-
-        msg.channel = "GET_MIXER"
-        msg.data = getMixerPayload()
-        return msg
-    },
-    TOGGLE_OUTPUT_MUTE: (msg: any) => {
-        const { id, muted } = msg.data || {}
-        if (!id) return
-
-        updateAudioChannel(id, (a) => ({ ...a, isMuted: !!muted }))
-
-        msg.channel = "GET_MIXER"
-        msg.data = getMixerPayload()
         return msg
     },
     GET_SHOW: async (msg: ClientMessage) => {
@@ -115,6 +82,8 @@ export const receiveREMOTE: any = {
     },
     ACCESS: (msg: any) => {
         if (get(remotePassword).length && msg.data !== get(remotePassword)) return { id: msg.id, channel: "ERROR", data: "wrongPass" }
+
+        sendThemeToRemote()
 
         send(REMOTE, ["LANGUAGE"], { lang: get(language), strings: get(dictionary) })
 
@@ -254,15 +223,6 @@ export const receiveREMOTE: any = {
             return project
         })
 
-        return msg
-    },
-    GET_SONGBOOKS: async (msg: ClientMessage) => {
-        let books = get(songBooks)
-        if (!Object.keys(books).length) {
-            books = await loadSongBooks()
-            songBooks.set(books)
-        }
-        msg.data = books
         return msg
     },
     START_SONG: async (msg: ClientMessage) => {
@@ -421,9 +381,15 @@ export const receiveREMOTE: any = {
             variables: get(variables),
             variableTags: get(variableTags),
             timers: get(timers),
-            triggers: get(triggers),
             activeTimers: get(activeTimers),
             runningActions: get(runningActions)
+        }
+        return msg
+    },
+    GET_AUDIO_MIXER: (msg: any) => {
+        msg.data = {
+            audioRouting: getFilteredAudioChannels(),
+            audioChannelsData: get(audioChannelsData)
         }
         return msg
     }
@@ -470,8 +436,11 @@ export async function initializeRemote(id: string) {
     sendData(REMOTE, { id, channel: "OUT_DATA" })
 
     // Send additional data
+    sendThemeToRemote()
     send(REMOTE, ["SCRIPTURE"], get(scriptures))
     send(REMOTE, ["CATEGORIES"], get(categories))
+    send(REMOTE, ["AUDIO_ROUTING"], getFilteredAudioChannels())
+    send(REMOTE, ["AUDIO_CHANNELS_DATA"], get(audioChannelsData))
 
     // Send songbooks — load them first if not yet in memory
     const currentBooks = get(songBooks)
@@ -487,6 +456,13 @@ export async function initializeRemote(id: string) {
     }
 }
 
+function sendThemeToRemote() {
+    const currentThemeObj = get(themes)[get(theme)]
+    if (currentThemeObj?.colors) {
+        window.api.send(REMOTE, { id: null, channel: "THEME_COLORS", data: currentThemeObj.colors })
+    }
+}
+
 export async function convertBackgrounds(show: Show, noLoad = false, init = false) {
     if (!show?.media) return {}
 
@@ -495,7 +471,7 @@ export async function convertBackgrounds(show: Show, noLoad = false, init = fals
     show.layouts[show.settings?.activeLayout]?.slides.forEach((a) => {
         if (a.background) mediaIds.add(a.background)
         Object.values(a.children || {}).forEach((child) => {
-            if (child.background) mediaIds.add(child.background)
+            if (child?.background) mediaIds.add(child.background)
         })
     })
     ;[...mediaIds].forEach((id) => {
@@ -517,39 +493,6 @@ export async function convertBackgrounds(show: Show, noLoad = false, init = fals
 
     return show
 }
-
-export function getMixerPayload() {
-    const audioData = get(audioChannelsData) || {}
-    const outputsStore = get(outputs) || {}
-
-    const mixerOutputs = getAllNormalOutputs().reduce((acc: any, out) => {
-        const channel = audioData[out.id] || {}
-        acc[out.id] = {
-            name: outputsStore[out.id]?.name || out.id,
-            volume: channel.volume ?? 1,
-            isMuted: !!channel.isMuted
-        }
-        return acc
-    }, {})
-
-    return {
-        main: {
-            volume: get(volume) ?? 1,
-            isMuted: !!audioData.main?.isMuted
-        },
-        outputs: mixerOutputs
-    }
-}
-
-function updateAudioChannel(id: string, updater: (a: any) => any) {
-    audioChannelsData.update((a) => {
-        const prev = a[id] || {}
-        a[id] = updater(prev) || prev
-        return a
-    })
-}
-
-const clamp01 = (value: number) => Math.min(1, Math.max(0, Number(value ?? 0)))
 
 // const toBase64 = file => new Promise((resolve, reject) => {
 //     const reader = new FileReader();

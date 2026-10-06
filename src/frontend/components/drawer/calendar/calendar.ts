@@ -3,19 +3,31 @@ import { uid } from "uid"
 import type { Show } from "../../../../types/Show"
 import { ShowObj } from "../../../classes/Show"
 import { createCategory } from "../../../converters/importHelpers"
-import { activeDays, calendarAddShow, events, showsCache } from "../../../stores"
+import { activeDays, calendarAddShow, calendars, events, showsCache, special } from "../../../stores"
 import { translateText } from "../../../utils/language"
 import { getItemText } from "../../edit/scripts/textStyle"
 import { clone, removeDuplicates, sortByTime } from "../../helpers/array"
 import { loadShows } from "../../helpers/setShow"
 import { checkName, getLayoutRef } from "../../helpers/show"
 import { _show } from "../../helpers/shows"
+import { isCalendarHidden } from "./calendars"
 
 export const MILLISECONDS_IN_A_DAY = 86400000
 
 export const copyDate = (date: Date, add = 0) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + add)
 export const isSameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-export const isBetween = (from: Date, to: Date, date: Date) => date >= copyDate(from) && date <= copyDate(to)
+export const isBetween = (from: Date, to: Date, date: Date) => {
+    if (isNaN(from.getTime())) return false
+    if (isNaN(to.getTime()) || to < from) to = from
+    let end = copyDate(to)
+
+    // ending at midnight of the next day, adjust the end date to the previous day
+    if (endsMidnight(from, to)) end = copyDate(to, -1)
+
+    return date >= copyDate(from) && date <= end
+}
+const endsMidnight = (from: Date, to: Date) => to.getTime() > from.getTime() && to.getHours() === 0 && to.getMinutes() === 0 && to.getSeconds() === 0 && to.getMilliseconds() === 0
+export const endsMidnightNextDay = (from: Date, to: Date) => endsMidnight(from, to) && isSameDay(copyDate(to, -1), from)
 export const getDaysInMonth = (year: number, month: number) => new Date(year, getMonthIndex(month), 0).getDate()
 const getMonthIndex = (month: number) => (month + 1 > 12 ? month + 1 : 0)
 
@@ -62,7 +74,7 @@ export async function createSlides(currentEvents: any[], showId = "") {
         day.events[0].from = from
         day.events[0].to = to
 
-        const isOverMultipleDays = !isSameDay(from, to)
+        const isOverMultipleDays = !isSameDay(from, to) && !endsMidnightNextDay(from, to)
         if (isOverMultipleDays) {
             textDay = getEventStringOverMultipleDays(textDay, [day.date, from, to])
             group = textDay
@@ -77,7 +89,7 @@ export async function createSlides(currentEvents: any[], showId = "") {
         let textLength = 0
         const values: any[][] = [[{ value: textDay, style: titleStyle }]]
 
-        day.events = day.events.sort((a: any, b: any) => a.from - b.from)
+        day.events = day.events.sort(sortByTime)
         day.events.forEach((event: any) => {
             if (!event.name) return
 
@@ -239,17 +251,23 @@ export function getSelectedEvents(selectedDays: number[] = get(activeDays)) {
 
     if (!selectedDays.length) return []
 
+    const currentSpecial = get(special)
+
     selectedDays.forEach((day: number) => {
         tempEvents.push({ date: day, events: [] })
         const thisDay = new Date(day)
 
         Object.entries(get(events)).forEach(([id, a]) => {
-            const startingAtSameDate = isSameDay(new Date(a.from), copyDate(thisDay))
+            if (isCalendarHidden(get(calendars), currentSpecial?.hideUnlabeledCalendar, a.origin)) return
+
+            const fromDate = new Date(a.from)
+            const toDate = a.to ? new Date(a.to) : fromDate
+            const startingAtSameDate = isSameDay(fromDate, copyDate(thisDay))
             if (!startingAtSameDate) return
 
-            const endingAtSameDate = isSameDay(new Date(a.to), copyDate(thisDay))
-            if (endingAtSameDate) tempEvents[tempEvents.length - 1].events.push({ id, ...a })
-            else tempEvents.push({ date: day, events: [{ id, ...a }] })
+            const endingAtSameDate = isSameDay(toDate, copyDate(thisDay)) || endsMidnightNextDay(fromDate, toDate)
+            if (endingAtSameDate) tempEvents[tempEvents.length - 1].events.push({ ...a, id })
+            else tempEvents.push({ date: day, events: [{ ...a, id }] })
         })
     })
 

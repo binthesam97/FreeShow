@@ -5,6 +5,7 @@
     import { requestMain } from "../../../IPC/main"
     import { AudioPlayer } from "../../../audio/audioPlayer"
     import { AudioPlaylist } from "../../../audio/audioPlaylist"
+    import { addProjectItem } from "../../../converters/project"
     import { activePlaylist, activePopup, activeRename, audioFolders, audioPlaylists, drawerTabsData, effectsLibrary, labelsDisabled, media, outLocked, selectAllAudio, selected } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import Icon from "../../helpers/Icon.svelte"
@@ -37,14 +38,14 @@
 
     $: playlist = active && $audioPlaylists[active]
 
-    $: isDefault = ["all", "favourites", "effects_library", "microphones", "audio_streams", "metronome"].includes(active || "")
+    $: isDefault = ["all", "favourites", "effects_library", "inputs", "metronome"].includes(active || "")
     $: rootPath = isDefault || playlist ? "" : active !== null ? $audioFolders[active]?.path || "" : ""
     $: path = isDefault || playlist ? "" : rootPath
-    $: name = active === "all" ? "category.all" : active === "favourites" ? "category.favourites" : active === "effects_library" ? "category.sound_effects" : rootPath === path ? (active !== "microphones" && active !== "audio_streams" && active !== "metronome" && active !== null ? $audioFolders[active]?.name || "" : "") : splitPath(path).name
+    $: name = active === "all" ? "category.all" : active === "favourites" ? "category.favourites" : active === "effects_library" ? "category.sound_effects" : rootPath === path ? (active !== "inputs" && active !== "metronome" && active !== null ? $audioFolders[active]?.name || "" : "") : splitPath(path).name
 
     // get list of files & folders
     let prevActive: null | string = null
-    $: if (active || path) updateContent()
+    $: if (active || path || (active === "effects_library" && $effectsLibrary)) updateContent()
     function updateContent() {
         if (active === "favourites") {
             prevActive = active
@@ -75,7 +76,7 @@
 
             requestFiles(path)
         } else {
-            // microphones & audio_streams & metronome
+            // inputs & metronome
             prevActive = active
         }
     }
@@ -94,7 +95,7 @@
         requesting++
         let currentRequest = requesting
         const data = await requestMain(Main.READ_FOLDER, { path, depth })
-        if (requesting !== currentRequest) return
+        if (!data || requesting !== currentRequest) return
 
         allRelevantFiles = Object.values(data).filter((a) => {
             // remove folders with no content
@@ -137,7 +138,7 @@
 
     let filteredFiles: FileFolder[] = []
     function filterFiles() {
-        if (active === "microphones" || active === "audio_streams" || active === "metronome") return
+        if (active === "inputs" || active === "metronome") return
 
         let localFilteredFiles: FileFolder[] = sortFilenames(filesList)
 
@@ -173,13 +174,13 @@
             return
         }
         if (searchValue.length < 2) {
-            if (active !== "all" && active !== "favourites") requestFiles(path)
+            if (active !== "all" && active !== "favourites" && active !== "effects_library") requestFiles(path)
             else searchedFiles = clone(filteredFiles)
             searchFilterActive = false
             return
         }
 
-        if (active !== "all" && active !== "favourites" && currentDepth < 5) {
+        if (active !== "all" && active !== "favourites" && active !== "effects_library" && currentDepth < 5) {
             await requestFiles(path, 5)
         }
 
@@ -192,7 +193,23 @@
     }
 
     function keydown(e: KeyboardEvent) {
-        if (e.target?.closest("input") || e.target?.closest(".edit")) return
+        if (e.key === "Enter" && searchValue.length > 1 && e.target?.closest(".search")) {
+            let file = searchedFiles.filter((a) => !a.isFolder)[0]
+            if (!file) return
+
+            // play
+            if (e.ctrlKey || e.metaKey) {
+                AudioPlayer.start(file.path, { name: file.name })
+                return
+            }
+
+            // add to project
+            const data = { id: file.path, name: file.name, type: "audio" as const }
+            addProjectItem(data)
+            return
+        }
+
+        if (e.target?.closest?.("input") || e.target?.closest?.(".edit")) return
 
         if ((e.ctrlKey || e.metaKey) && e.key === "Backspace") {
             if (rootPath === path) return
@@ -278,28 +295,55 @@
     function update() {
         updater++
     }
+
+    let inputsTab = $drawerTabsData.audio?.openedSubSubTab?.microphones || "microphones"
+
+    function setSubSubTab(id: string) {
+        if (!active) return
+
+        drawerTabsData.update((a) => {
+            if (!a.audio) a.audio = { enabled: true, activeSubTab: active }
+            if (!a.audio.openedSubSubTab) a.audio.openedSubSubTab = {}
+            a.audio.openedSubSubTab[active] = id
+            return a
+        })
+
+        if (active === "inputs") inputsTab = id
+    }
 </script>
 
 <svelte:window on:keydown={keydown} />
 
-<div class="scroll" style="flex: 1;overflow-y: auto;" class:full={active === "audio_streams" || active === "effects_library"} bind:this={scrollElem}>
-    <div class="grid" style={active !== "audio_streams" && active !== "effects_library" && (playlist ? playlist.songs.length : searchedFiles.length) ? "" : "height: 100%;"}>
-        {#if active === "microphones"}
-            <Microphones />
-        {:else if active === "audio_streams"}
-            <AudioStreams />
+<!-- TABS -->
+
+{#if active === "inputs"}
+    <div class="tabs">
+        <MaterialButton style="flex: 1;" isActive={inputsTab === "microphones"} on:click={() => setSubSubTab("microphones")}>
+            <Icon size={1.2} id="microphone" white />
+            <p><T id="live.microphones" /></p>
+        </MaterialButton>
+        <MaterialButton style="flex: 1;" isActive={inputsTab === "audio_streams"} on:click={() => setSubSubTab("audio_streams")}>
+            <Icon size={1.2} id="audio_stream" white />
+            <p><T id="live.audio_streams" /></p>
+        </MaterialButton>
+    </div>
+{/if}
+
+<div class="scroll" style="flex: 1;overflow-y: auto;" class:full={active === "inputs" || active === "effects_library"} bind:this={scrollElem}>
+    <div class="grid" style={active !== "inputs" && active !== "effects_library" && !playlist && searchedFiles.length ? "" : "height: 100%;"}>
+        {#if active === "inputs"}
+            {#if inputsTab === "microphones"}
+                <Microphones />
+            {:else if inputsTab === "audio_streams"}
+                <AudioStreams />
+            {/if}
         {:else if active === "metronome"}
             <Metronome />
         {:else if playlist && playlistSettings}
             <div class="settings">
-                <MaterialNumberInput label="settings.audio_crossfade (s)" value={playlist?.crossfade || 0} max={30} step={0.5} on:change={(e) => AudioPlaylist.update(active || "", "crossfade", e.detail)} />
-                <MaterialNumberInput label="settings.playlist_volume (%)" value={Number(((playlist?.volume || 1) * 100).toFixed(2))} min={1} max={100} on:change={(e) => AudioPlaylist.update(active || "", "volume", e.detail / 100)} />
+                <MaterialNumberInput label="settings.audio_crossfade (s)" value={playlist?.crossfade || 0} max={60} on:change={(e) => AudioPlaylist.update(active || "", "crossfade", e.detail)} sliderValues={{ max: 10, step: 0.5 }} showSlider />
+                <MaterialNumberInput label="settings.playlist_volume (%)" value={Number(((playlist?.volume || 1) * 100).toFixed(2))} min={1} max={100} on:change={(e) => AudioPlaylist.update(active || "", "volume", e.detail / 100)} showSlider />
             </div>
-
-            <!-- <CombinedInput>
-                <p><T id="settings.custom_audio_output" /></p>
-                <Dropdown options={audioOutputs} value={audioOutputs.find((a) => a.id === $special.audioOutput)?.name || "—"} on:click={(e) => updateSpecial(e.detail.id, "audioOutput")} />
-            </CombinedInput> -->
         {:else if playlist}
             <DropArea id="audio_playlist" selectChildren let:fileOver file>
                 {#if playlist.songs.length}
@@ -312,26 +356,32 @@
                     </Center>
                 {/if}
             </DropArea>
-        {:else if searchedFiles.length}
-            {#if active === "effects_library"}
-                <div class="effects">
-                    {#each searchedFiles as file}
-                        <AudioEffect path={file.path} name={file.name} />
-                    {/each}
-                </div>
-            {:else}
-                {#key rootPath}
-                    {#key path}
+        {:else if active === "effects_library"}
+            <DropArea id="effects_library" selectChildren file>
+                {#if searchedFiles.length}
+                    <div class="effects">
                         {#each searchedFiles as file}
-                            {#if file.isFolder}
-                                <Folder name={file.name} path={file.path} mode="list" on:open={(e) => (path = e.detail)} />
-                            {:else}
-                                <AudioFile path={file.path} name={file.name} {active} />
-                            {/if}
+                            <AudioEffect path={file.path} name={file.name} />
                         {/each}
-                    {/key}
+                    </div>
+                {:else}
+                    <Center faded>
+                        <T id="empty.general" />
+                    </Center>
+                {/if}
+            </DropArea>
+        {:else if searchedFiles.length}
+            {#key rootPath}
+                {#key path}
+                    {#each searchedFiles as file}
+                        {#if file.isFolder}
+                            <Folder name={file.name} path={file.path} mode="list" on:open={(e) => (path = e.detail)} />
+                        {:else}
+                            <AudioFile path={file.path} name={file.name} {active} />
+                        {/if}
+                    {/each}
                 {/key}
-            {/if}
+            {/key}
         {:else}
             <Center style="opacity: 0.2;">
                 <Icon id="noAudio" size={5} white />
@@ -340,14 +390,16 @@
     </div>
 </div>
 
-{#if active === "microphones" || active === "effects_library" || active === "metronome"}
+{#if active === "effects_library" || active === "metronome"}
     <!-- nothing -->
-{:else if active === "audio_streams"}
-    <FloatingInputs onlyOne>
-        <MaterialButton icon="add" style="flex: 1;" on:click={() => activePopup.set("audio_stream")} center title="new.audio_stream">
-            {#if !$labelsDisabled}<T id="new.audio_stream" />{/if}
-        </MaterialButton>
-    </FloatingInputs>
+{:else if active === "inputs"}
+    {#if inputsTab === "audio_streams"}
+        <FloatingInputs onlyOne>
+            <MaterialButton icon="add" style="flex: 1;" on:click={() => activePopup.set("audio_stream")} center title="new.audio_stream">
+                {#if !$labelsDisabled}<T id="new.audio_stream" />{/if}
+            </MaterialButton>
+        </FloatingInputs>
+    {/if}
 {:else if playlist}
     <FloatingInputs side="left">
         <MaterialButton
@@ -381,6 +433,17 @@
             }}
         >
             <Icon size={1.1} id="loop" white={$audioPlaylists[active || ""]?.loop === false} />
+        </MaterialButton>
+
+        <!-- auto play next song in playlist -->
+        <MaterialButton
+            title={`media.auto_next${$audioPlaylists[active || ""]?.autoNext !== false ? ": settings.enabled" : ""}`}
+            on:click={() => {
+                if (!active) return
+                AudioPlaylist.update(active, "autoNext", $audioPlaylists[active]?.autoNext === undefined ? false : !$audioPlaylists[active]?.autoNext)
+            }}
+        >
+            <Icon size={1.1} id="auto" white={$audioPlaylists[active || ""]?.autoNext === false} />
         </MaterialButton>
 
         <div class="divider" />
@@ -440,6 +503,23 @@
 {/if}
 
 <style>
+    .tabs {
+        display: flex;
+        position: relative;
+        background-color: var(--primary-darkest);
+        align-items: center;
+    }
+
+    .tabs :global(button) {
+        border-radius: 0;
+        border: none !important;
+        border-bottom: 1px solid var(--primary-lighter) !important;
+        padding: 8px;
+    }
+    .tabs :global(button.isActive) {
+        border-bottom: 1px solid var(--secondary) !important;
+    }
+
     .scroll {
         padding-bottom: 60px;
     }
@@ -482,11 +562,14 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        align-content: center;
         flex-wrap: wrap;
         gap: 5px;
 
-        height: 100%;
-        margin: 10px;
+        width: 100%;
+        min-height: 100%;
+        box-sizing: border-box;
+        padding: 10px;
     }
     .effects :global(.selectElem button) {
         background-color: var(--primary-darkest);

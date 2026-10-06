@@ -13,6 +13,7 @@
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
     import MaterialTextInput from "../../inputs/MaterialTextInput.svelte"
     import Center from "../../system/Center.svelte"
+    import Tip from "../Tip.svelte"
 
     const initialData = $popupData
     let templateId: string = initialData.templateId || ""
@@ -117,8 +118,8 @@
     }
 </script>
 
-<section style="width: clamp(500px, 75vw, 900px);">
-    <p class="tip"><T id="edit.style_overrides_tip" /></p>
+<section>
+    <Tip type="info" value="edit.style_overrides_tip" bottom={20} />
 
     {#if overrides.length}
         {#each overrides as override (override.id)}
@@ -149,12 +150,3 @@
         <T id="settings.add" />
     </MaterialButton>
 </section>
-
-<style>
-    .tip {
-        margin-bottom: 10px;
-
-        opacity: 0.7;
-        font-size: 0.8em;
-    }
-</style>

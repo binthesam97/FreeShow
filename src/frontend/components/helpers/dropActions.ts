@@ -8,14 +8,16 @@ import type { DropData, Selected } from "../../../types/Main"
 import type { Item, Slide, SlideAction } from "../../../types/Show"
 import { sendMain } from "../../IPC/main"
 import { changeLayout, changeSlideGroups } from "../../show/slides"
-import { activeDrawerTab, activePage, activePopup, activeProject, activeShow, alertMessage, audioFolders, audioPlaylists, audioStreams, drawerTabsData, editingProjectTemplate, media, mediaFolders, overlays, playerVideos, projects, projectTemplates, scriptureSettings, shows, showsCache, templates, timers } from "../../stores"
+import { activeDrawerTab, activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, audioFolders, audioPlaylists, audioStreams, drawerTabsData, editingProjectTemplate, effectsLibrary, media, mediaFolders, overlays, playerVideos, projects, projectTemplates, scenes, scriptureSettings, shows, showsCache, slidesOptions, templates, timers } from "../../stores"
 import { newToast } from "../../utils/common"
 import { getAccess } from "../../utils/profile"
 import { audioExtensions, imageExtensions, mediaExtensions, presentationExtensions, videoExtensions } from "../../values/extensions"
 import { actionData } from "../actions/actionData"
-import { addSlideAction, getActionTriggerId } from "../actions/actions"
+import { addSlideAction, getActionTriggerId, isMatchingSlideAction } from "../actions/actions"
 import { getActiveScripturesContent, getReferenceText, getScriptureShow, getScriptureSlidesNew } from "../drawer/bible/scripture"
+import { getVimeoData, getYouTubeData, trimPlayerId } from "../drawer/player/playerHelper"
 import { addItem, DEFAULT_ITEM_STYLE } from "../edit/scripts/itemHelpers"
+import { addStageItem } from "../stage/stage"
 import { clone, removeDuplicates } from "./array"
 import { projectDropFolders } from "./drop"
 import { history, historyAwait } from "./history"
@@ -24,7 +26,6 @@ import { addToPos, getIndexes, mover } from "./mover"
 import { getLayoutRef } from "./show"
 import { getVariableNameId } from "./showActions"
 import { _show } from "./shows"
-import { getVimeoName, getYouTubeName, trimPlayerId } from "../drawer/player/playerHelper"
 
 function getId(drag: Selected): string {
     const id = ""
@@ -33,7 +34,7 @@ function getId(drag: Selected): string {
     if (drag.id === "files" && getMediaType(extension) === "audio") return "audio"
     if (drag.id === "show" && drag.data[0]?.type === "audio") return "audio"
     if (drag.id === "effect") return "overlay"
-    if ((drag.id === "show" && ["media", "image", "video"].includes(drag.data[0]?.type)) || drag.id === "media" || drag.id === "files" || drag.id === "camera" || drag.id === "screen" || drag.id === "ndi") return "media"
+    if ((drag.id === "show" && ["media", "image", "video"].includes(drag.data[0]?.type)) || drag.id === "media" || drag.id === "files" || drag.id === "camera" || drag.id === "screen" || drag.id === "ndi" || drag.id === "omt" || drag.id === "blackmagic" || drag.id === "player" || (drag.id === "urls" && (drag.data?.[0]?.includes?.("youtube.com") || drag.data?.[0]?.includes?.("youtu.be") || drag.data?.[0]?.includes?.("vimeo.com")))) return "media"
     // if (drag.id === "audio") return "audio"
     // if (drag.id === "global_group") return "global_group"
     return drag.id || id
@@ -197,12 +198,12 @@ export const dropActions = {
                 data.map(async (url) => {
                     if (url.includes("youtube.com") || url.includes("youtu.be")) {
                         const id = trimPlayerId(url, "youtube")
-                        const name = await getYouTubeName(id)
+                        const name = (await getYouTubeData(id)).name
                         return { id: "-", type: "player", data: { type: "youtube", id, name } }
                     }
                     if (url.includes("vimeo.com")) {
                         const id = trimPlayerId(url, "vimeo")
-                        const name = await getVimeoName(id)
+                        const name = (await getVimeoData(id)).name
                         return { id: "-", type: "player", data: { type: "vimeo", id, name } }
                     }
 
@@ -215,29 +216,57 @@ export const dropActions = {
             data = data.map((a) => ({ id: a.path, name: removeExtension(a.name), type: "audio" }))
         } else if (drag.id === "overlay") {
             data = data.map((a) => ({ id: a, type: "overlay" }))
+        } else if (drag.id === "effect") {
+            data = data.map((a) => ({ id: a, type: "effect" }))
         } else if (drag.id === "player") {
             data = data.map((a) => {
                 // store actual player data in project
                 const playerData = get(playerVideos)[a] || {}
                 return { id: a, type: "player", data: { type: playerData.type, id: playerData.id, name: playerData.name } }
             })
-        } else if (drag.id === "camera") {
-            data = data.map((a) => ({ id: a.id, name: a.name, type: "camera", data: { groupId: a.cameraGroup } }))
+        } else if (drag.id === "camera" || drag.id === "screen" || drag.id === "ndi" || drag.id === "omt" || drag.id === "blackmagic") {
+            data = data.map((a) => ({ id: a.id, name: a.name, type: a.type || drag.id, data: { groupId: a.cameraGroup } }))
         } else if (drag.id === "scripture") {
             const biblesContent = await getActiveScripturesContent()
             const show = await getScriptureShow(biblesContent)
             if (!show) return
 
-            let index = drop.index
-            if (drop.trigger?.includes("end")) index++
+            const activeShowObj = get(activeShow)
+            const isReplacingPlaceholderArea = !drop.data?.id && activeShowObj?.type === "show_placeholder"
+            const isReplacing = (drop.data?.type === "show_placeholder" && drop.center) || isReplacingPlaceholderArea
+            const replaceIndex = isReplacing ? (drop.data?.index !== undefined ? drop.data.index : activeShowObj?.index) : undefined
+            let index = isReplacing ? replaceIndex : drop.index
+            if (!isReplacing && drop.trigger?.includes("end")) index++
 
-            history({ id: "UPDATE", newData: { data: show, remember: { project: projectId, index } }, location: { page: "show", id: "show" } })
+            history({ id: "UPDATE", newData: { data: show, remember: { project: projectId, index, replacePlaceholder: isReplacing } }, location: { page: "show", id: "show" } })
             return
         }
 
         h.newData = { key: "shows", data: [] }
-        if (drag.id === "show") h.newData.data = mover(projectShows, getIndexes(data), drop.index)
-        else h.newData.data = addToPos(projectShows, data, drop.index)
+        const activeShowObj = get(activeShow)
+        const isReplacingPlaceholderArea = !drop.data?.id && activeShowObj?.type === "show_placeholder"
+        const isReplacing = (drop.data?.type === "show_placeholder" && drop.center) || isReplacingPlaceholderArea
+        if (isReplacing) {
+            const replaceIndex = drop.data?.index !== undefined ? drop.data.index : activeShowObj?.index
+            const indexes = drag.id === "show" ? getIndexes(data) : []
+            const itemsToInsert = drag.id === "show" ? indexes.map((i) => projectShows[i]).filter(Boolean) : data
+            h.newData.data = projectShows
+                .map((show, i) => (i === replaceIndex ? itemsToInsert : indexes.includes(i) ? null : show))
+                .flat()
+                .filter(Boolean)
+
+            const newShowId = itemsToInsert[0]?.id
+            const newShowType = itemsToInsert[0]?.type || "show"
+            if (newShowId && replaceIndex !== undefined) {
+                setTimeout(() => {
+                    activeShow.set({ id: newShowId, type: newShowType, index: replaceIndex })
+                    activeEdit.set({ type: "show", slide: 0, items: [], showId: newShowId })
+                })
+            }
+        } else {
+            if (drag.id === "show") h.newData.data = mover(projectShows, getIndexes(data), drop.index)
+            else h.newData.data = addToPos(projectShows, data, drop.index)
+        }
 
         return h
     },
@@ -403,6 +432,26 @@ export const dropActions = {
             return h
         }
 
+        if (drop.data === "effects_library" && (drag.id === "audio" || drag.id === "audio_effect" || drag.id === "media")) {
+            const rawFiles: any[] = drag.data
+            effectsLibrary.update((effects) => {
+                rawFiles.forEach((file) => {
+                    const path = file.path || file.id
+                    if (!path) return
+                    const ext = getExtension(file.name || path)
+                    if (getMediaType(ext) !== "audio" && !audioExtensions.includes(ext.toLowerCase())) return
+                    if (effects.some((e) => e.path === path)) return
+
+                    effects.push({
+                        path,
+                        name: file.name ? removeExtension(getFileName(file.name)) : removeExtension(getFileName(path))
+                    })
+                })
+                return effects
+            })
+            return
+        }
+
         if (drop.data !== "all" && (drag.id === "overlay" || drag.id === "template")) {
             drag.data.forEach((id) => {
                 history({
@@ -453,14 +502,35 @@ export const dropActions = {
     },
     overlays: ({ drag, drop }: Data) => dropActions.templates({ drag, drop }),
     edit: ({ drag }: Data) => {
+        const isStage = get(activePage) === "stage"
+
         if (drag.id === "media" || drag.id === "files") {
-            drag.data.forEach((file) => addItem("media", null, { src: file.path || window.api.showFilePath(file) }))
+            drag.data.forEach((file) => {
+                const src = file.path || window.api.showFilePath(file) || (typeof file === "string" ? file : "")
+                if (isStage) addStageItem("media", { src })
+                else addItem("media", null, { src })
+            })
+        } else if (drag.id === "camera" || drag.id === "screen" || drag.id === "ndi" || drag.id === "omt" || drag.id === "blackmagic") {
+            drag.data.forEach((device) => {
+                const deviceData = {
+                    id: device.id,
+                    name: device.name || "",
+                    type: device.type || drag.id,
+                    group: device.cameraGroup || device.group || ""
+                }
+                // if (isStage) addStageItem("camera", { device: deviceData })
+                addItem("camera", null, { device: deviceData })
+            })
         } else if (drag.id === "global_timer") {
-            drag.data.forEach((a) => addItem("timer", null, { timer: { id: a.id } }))
+            drag.data.forEach((a) => {
+                // if (isStage) addStageItem("timer", { timer: { id: a.id } })
+                addItem("timer", null, { timer: { id: a.id } })
+            })
         } else if (drag.id === "variable") {
             drag.data.forEach((a) => {
                 const name = getVariableNameId(a.name || "")
                 if (!name) return
+                // if (isStage) addStageItem("text", {}, `{$${name}}`)
                 addItem("text", null, {}, `{$${name}}`)
             })
         }
@@ -487,6 +557,26 @@ export const dropActions = {
 
         h.newData = { key: "songs", data: songs }
         return h
+    },
+    effects_library: ({ drag }: Data) => {
+        const rawFiles: any[] = drag.id === "files" ? drag.data.map((a: any) => ({ path: window.api.showFilePath(a), name: a.name })) : drag.data
+        if (!rawFiles?.length) return
+
+        effectsLibrary.update((effects) => {
+            rawFiles.forEach((file) => {
+                const path = file.path || file.id
+                if (!path) return
+                const ext = getExtension(file.name || path)
+                if (getMediaType(ext) !== "audio" && !audioExtensions.includes(ext.toLowerCase())) return
+                if (effects.some((e) => e.path === path)) return
+
+                effects.push({
+                    path,
+                    name: file.name ? removeExtension(getFileName(file.name)) : removeExtension(getFileName(path))
+                })
+            })
+            return effects
+        })
     }
 }
 
@@ -538,11 +628,9 @@ const files = {
 }
 
 const slideDrop = {
-    media: ({ drag, drop }: Data, h: History, keys: Keys) => {
+    media: async ({ drag, drop }: Data, h: History, keys: Keys) => {
         let data = clone(drag.data)
         if (!data.length) return
-
-        // TODO: move multiple add to possible slides
 
         // check files
         if (drag.id === "files") {
@@ -560,7 +648,46 @@ const slideDrop = {
         } else if (drag.id === "camera") data[0].type = "camera"
         else if (drag.id === "screen") data[0].type = "screen"
         else if (drag.id === "ndi") data[0].type = "ndi"
-        else if (!data[0]?.name) data[0].name = data[0].path
+        else if (drag.id === "omt") data[0].type = "omt"
+        else if (drag.id === "blackmagic") data[0].type = "blackmagic"
+        else if (drag.id === "player") {
+            data = data.map((id: string) => {
+                const playerData = get(playerVideos)[id] || {}
+                return { path: id, name: playerData.name || playerData.id || id, type: "player", data: { type: playerData.type, id: playerData.id, name: playerData.name } }
+            })
+        } else if (drag.id === "urls") {
+            data = (
+                await Promise.all(
+                    data.map(async (url: string) => {
+                        let videoType: "youtube" | "vimeo" | null = null
+                        if (url.includes("youtube.com") || url.includes("youtu.be")) videoType = "youtube"
+                        else if (url.includes("vimeo.com")) videoType = "vimeo"
+
+                        if (!videoType) return null
+
+                        const videoId = trimPlayerId(url, videoType)
+                        let rid = Object.keys(get(playerVideos)).find((key) => {
+                            const p = get(playerVideos)[key]
+                            return p?.type === videoType && p?.id === videoId
+                        })
+
+                        let name = ""
+                        if (rid) {
+                            name = get(playerVideos)[rid]?.name || ""
+                        } else {
+                            name = videoType === "youtube" ? (await getYouTubeData(videoId)).name : (await getVimeoData(videoId)).name
+                            rid = uid()
+                            playerVideos.update((a) => {
+                                a[rid!] = { id: videoId, name, type: videoType! }
+                                return a
+                            })
+                        }
+
+                        return { path: rid, name, type: "player", data: { type: videoType, id: videoId, name } }
+                    })
+                )
+            ).filter(Boolean)
+        } else if (!data[0]?.name) data[0].name = data[0].path
 
         let center = drop.center
         if (drag.id === "files" && drop.index !== undefined) center = true
@@ -577,12 +704,16 @@ const slideDrop = {
 
             // "background" by default
             let backgroundData = { muted: true, loop: true }
-            const mediaStyle = getMediaStyle(get(media)[path], undefined)
-            let type = getMediaLayerType(path, mediaStyle) || (shouldBeForeground ? "foreground" : "background")
-            if (a.contentProvider) type = "foreground"
-            if (type === "foreground") backgroundData = { muted: false, loop: false }
+            if (a.type === "player") {
+                backgroundData = { muted: false, loop: false }
+            } else {
+                const mediaStyle = getMediaStyle(get(media)[path], undefined)
+                let type = getMediaLayerType(path, mediaStyle) || (shouldBeForeground ? "foreground" : "background")
+                if (a.contentProvider) type = "foreground"
+                if (type === "foreground") backgroundData = { muted: false, loop: false }
+            }
 
-            return { ...a, path, ...(a.type === "video" ? backgroundData : {}) }
+            return { ...a, path, ...(a.type === "video" || a.type === "player" ? backgroundData : {}) }
         })
 
         if (center) {
@@ -661,7 +792,6 @@ const slideDrop = {
         h.location!.layoutSlide = drop.index
 
         data.forEach((audio) => {
-            // TODO: drop both audio & video files...
             h.newData = { name: audio.name || audio.path || audio.id, path: audio.path || audio.id, type: "audio" }
             history(h)
         })
@@ -672,6 +802,14 @@ const slideDrop = {
         if (!playlistId || !get(audioPlaylists)[playlistId]) return
 
         addSlideAction(drop.index ?? -1, "start_playlist", { id: playlistId })
+    },
+    scene: ({ drag, drop }: Data) => {
+        drag.data.forEach((scene) => {
+            const sceneId = scene?.id || scene
+            if (!sceneId || !get(scenes)[sceneId]) return
+
+            addSlideAction(drop.index ?? -1, "start_scene", { id: sceneId })
+        })
     },
     audio_effect: ({ drag, drop }: Data, h: History) => slideDrop.audio({ drag, drop }, h),
     microphone: ({ drag, drop }: Data, h: History) => {
@@ -708,6 +846,26 @@ const slideDrop = {
         const oldLayout = _show(showId).layouts("active").get()[0]?.slides || []
         history.oldData = clone({ layout: oldLayout, slides })
 
+        // in "Groups view", never place groups as children in between. Always place right before or after a parent group.
+        if (get(slidesOptions)?.mode === "groups" && drop.data?.index !== undefined) {
+            const targetRef = ref[drop.data.index]
+            if (drop.trigger?.includes("end")) {
+                if (targetRef?.type === "parent") {
+                    drop.index = drop.data.index + 1 + (targetRef.children?.length || 0)
+                } else if (targetRef?.type === "child" && targetRef.parent) {
+                    const parentRef = ref[targetRef.parent.layoutIndex] || ref.find((a) => a.id === targetRef.parent?.id && a.type === "parent")
+                    if (parentRef) drop.index = parentRef.layoutIndex + 1 + (parentRef.children?.length || 0)
+                }
+            } else {
+                if (targetRef?.type === "child" && targetRef.parent) {
+                    const parentRef = ref[targetRef.parent.layoutIndex] || ref.find((a) => a.id === targetRef.parent?.id && a.type === "parent")
+                    if (parentRef) drop.index = parentRef.layoutIndex
+                } else if (targetRef?.type === "parent") {
+                    drop.index = drop.data.index
+                }
+            }
+        }
+
         // end of layout
         if (drop.index === undefined) drop.index = ref.length
 
@@ -743,12 +901,8 @@ const slideDrop = {
                 return false
             })
         } else if (drag.id === "group") {
-            // WIP this does not work on children
-
             if (drop.center) {
                 if (drop.trigger?.includes("end")) newIndex--
-                // ref.splice(drop.index, 1)
-                // WIP adding to children will not remove old children
             }
 
             moved = data.map(({ index, id }) => ref[index] || { type: "parent", id })
@@ -758,9 +912,6 @@ const slideDrop = {
         // sort layout ref
         const newLayoutRef = addToPos(ref, moved, newIndex)
 
-        // TODO: dragging a current group on child will not remove old children
-        // TODO: dragging a parent slide over its own childs will not change children
-
         // check if first slide child
         if (newLayoutRef[0]?.type === "child") newLayoutRef[0].newType = "parent"
 
@@ -769,7 +920,7 @@ const slideDrop = {
     },
     global_group: ({ drag, drop }: Data, history: History) => {
         const ref = getLayoutRef()
-        if (!drag.data[0].slide) return
+        if (!drag.data[0]?.slide) return
 
         if (drop.center) {
             if (drop.trigger?.includes("end")) drop.index!--
@@ -889,17 +1040,6 @@ const slideDrop = {
         history.location!.layout = layoutId
         return history
     },
-    trigger: ({ drag, drop }: Data, history: History) => {
-        if (drop.index === undefined) return
-        history.id = "SHOW_LAYOUT"
-
-        const data = drag.data[0]
-        const actions = createSlideAction("start_trigger", drop.index, data)
-        if (!actions) return
-
-        history.newData = { key: "actions", data: actions, indexes: [drop.index] }
-        return history
-    },
     audio_stream: ({ drag, drop }: Data, history: History) => {
         if (drop.index === undefined) return
         history.id = "SHOW_LAYOUT"
@@ -998,6 +1138,18 @@ const slideDrop = {
         drag.data.forEach((action) => {
             if (!action?.triggers) return
 
+            const isSelfTrigger = action.triggers.some((trigger) => {
+                const triggerId = getActionTriggerId(trigger)
+                if (triggerId !== "index_select_slide") return false
+                const targetIndex = action.actionValues?.[trigger]?.index ?? action.actionValues?.index_select_slide?.index
+                return targetIndex !== undefined && Number(targetIndex) === Number(drop.index)
+            })
+            if (isSelfTrigger) {
+                alertMessage.set("The action can't be added to this slide because it is set to trigger the same slide which will cause an infinite loop!")
+                activePopup.set("alert")
+                return
+            }
+
             if (action.triggers.length > 1) {
                 const existingRunActionIndex = slideActions.findIndex((a) => a.actionValues?.run_action?.id === action.id)
                 if (existingRunActionIndex > -1) return
@@ -1015,16 +1167,7 @@ const slideDrop = {
 
             // replace if existing & and only one or value is the same
             // For actions that can have multiple instances, only replace if values are identical
-            const existingIndex = slideActions.findIndex((a) => {
-                const actionTriggerId = getActionTriggerId(a.triggers[0])
-                if (actionTriggerId !== triggerId) return false
-
-                // If action cannot have multiple instances, replace any existing
-                if (!data.canAddMultiple) return true
-
-                // If action can have multiple instances, only replace if values are exactly the same
-                return JSON.stringify(a.actionValues) === JSON.stringify(action.actionValues)
-            })
+            const existingIndex = slideActions.findIndex((a) => isMatchingSlideAction(a, triggerId, action.actionValues, data.canAddMultiple))
 
             if (existingIndex > -1) {
                 slideActions[existingIndex] = { ...action, id: slideActions[existingIndex].id }

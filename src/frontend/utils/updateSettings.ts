@@ -1,9 +1,15 @@
 import { get } from "svelte/store"
+import { uid } from "uid"
+import { OUTPUT } from "../../types/Channels"
 import { Main } from "../../types/IPC/Main"
 import type { Output } from "../../types/Output"
+import type { SaveListSettings, SaveListSyncedSettings } from "../../types/Save"
 import type { Metadata, Themes } from "../../types/Settings"
+import { migrateAudioEffects } from "../audio/effects/audioEffectsHelpers"
+import { initAudioRouting } from "../audio/routing/audioRoutingInit"
 import { clone, keysToID } from "../components/helpers/array"
-import { checkWindowCapture, setOutput, toggleOutputs } from "../components/helpers/output"
+import { checkFFmpeg, checkWindowCapture, setOutput, startScene, toggleOutputs } from "../components/helpers/output"
+import { migrateOutputsRtmp } from "../components/helpers/rtmpDestinations"
 import { defaultThemes } from "../components/settings/tabs/defaultThemes"
 import { sendMain } from "../IPC/main"
 import {
@@ -11,21 +17,25 @@ import {
     actions,
     activePopup,
     activeProject,
+    ai,
     alertUpdates,
     audioChannelsData,
+    audioEffectPresets,
+    audioEffects,
     audioFolders,
     audioPlaylists,
     audioStreams,
     autoOutput,
     autosave,
     calendarAddShow,
+    calendars,
     categories,
     cloudSyncData,
     companion,
     contentProviderData,
+    customFonts,
     customMetadata,
     customizedIcons,
-    dataPath,
     deletedDefaults,
     disabledServers,
     drawSettings,
@@ -35,27 +45,29 @@ import {
     effects,
     effectsLibrary,
     emitters,
-    eqPresets,
-    equalizerConfig,
     formatNewShow,
     fullColors,
-    gain,
-    globalTags,
     globalRegexes,
+    globalTags,
     groupNumbers,
     groups,
+    interactions,
     labelsDisabled,
     language,
     loaded,
     loadedState,
     lockedOverlays,
+    activeScenes,
+    maxConnections,
     mediaFolders,
     mediaOptions,
     mediaTags,
     metronome,
+    obsData,
     openedFolders,
     os,
     outLocked,
+    outputs,
     overlayCategories,
     overlays,
     playerTags,
@@ -65,12 +77,15 @@ import {
     projectView,
     remotePassword,
     resized,
+    scenes,
+    scriptureSettings,
+    scriptures,
     serverData,
     showRecentlyUsedProjects,
-    showsPath,
     slidesOptions,
     sorted,
     special,
+    splitLines,
     styles,
     templateCategories,
     theme,
@@ -78,25 +93,25 @@ import {
     timeFormat,
     timecode,
     timeline,
+    timerTags,
     timers,
-    triggers,
+    transitionData,
     variableTags,
     variables,
     version,
-    videoMarkers,
-    videosData,
-    videosTime
-} from "../stores"
-import { OUTPUT } from "./../../types/Channels"
-import type { SaveListSettings, SaveListSyncedSettings } from "./../../types/Save"
-import { maxConnections, outputs, scriptureSettings, scriptures, splitLines, transitionData, volume } from "./../stores"
+    videoMarkers
+} from "./../stores"
 import { checkForUpdates } from "./checkForUpdates"
 import { isMainWindow, startAutosave } from "./common"
 import { setLanguage } from "./language"
+import { startRemoteController } from "./remoteController"
 import { send } from "./request"
 
 export function updateSyncedSettings(data: any) {
     if (!data || !Object.keys(data).length) return
+
+    // pre v1.6.1 (triggers are now actions)
+    data = convertTriggersToActions(data)
 
     Object.entries(data).forEach(([key, value]: any) => {
         if (updateList[key as SaveListSyncedSettings]) updateList[key as SaveListSyncedSettings](value)
@@ -108,6 +123,16 @@ export function updateSyncedSettings(data: any) {
 
 export function updateSettings(data: any) {
     // pre v0.8.2 (data contains SaveListSyncedSettings, but it gets overwritten and removed on first save)
+
+    // pre v1.6.1 (equalizerConfig was not in audioEffects)
+    if (data.equalizerConfig && !data.audioEffects?.main) {
+        data.audioEffects = { main: { equalizer: clone(data.equalizerConfig) } }
+        delete data.equalizerConfig
+    }
+    // pre v1.6.5 (audioEffects was not in stack format)
+    if (data.audioEffects) {
+        data.audioEffects = migrateAudioEffects(data.audioEffects)
+    }
 
     Object.entries(data).forEach(([key, value]: any) => {
         if (updateList[key as SaveListSettings]) updateList[key as SaveListSettings](value)
@@ -162,11 +187,44 @@ export function updateSettings(data: any) {
     window.api.send("LOADED")
 }
 
-let videoDataUpdating = false
-export function restartOutputs(specificId = "") {
-    const data = clone(get(videosData))
-    const time = clone(get(videosTime))
+// pre v1.6.1
+function convertTriggersToActions(data: any) {
+    const triggers: { [key: string]: { name: string; type: "http"; value: string } } = data.triggers || {}
+    if (!Object.keys(triggers).length) return data
 
+    let tagId = "triggertag"
+    if (typeof data.actionTags === "object") {
+        data.actionTags[tagId] = { name: "Triggers", color: "#abb4e6" }
+
+        // update store as this is non-synced settings
+        setTimeout(() => {
+            special.update((a) => {
+                a["actions_grid" + tagId] = true
+                return a
+            })
+        }, 1000)
+    }
+
+    const actions = data.midiIn || {}
+    Object.entries(triggers).forEach(([key, trigger]) => {
+        let emitterId = uid()
+        data.emitters[emitterId] = { name: "Trigger: " + trigger.name, type: "http", signal: { url: trigger.value, method: "GET", contentType: "", payload: "" } }
+        let triggerId = "emit_action:" + uid(5)
+
+        actions[key] = {
+            name: trigger.name,
+            triggers: [triggerId],
+            actionValues: { [triggerId]: { emitter: emitterId } },
+            tags: [tagId]
+        }
+    })
+
+    delete data.triggers
+    data.midiIn = actions
+    return data
+}
+
+export function restartOutputs(specificId = "") {
     const allOutputs = keysToID(get(outputs))
     const outputIds = specificId ? [specificId] : allOutputs.filter((a) => a.enabled).map(({ id }) => id)
 
@@ -174,20 +232,8 @@ export function restartOutputs(specificId = "") {
         const output: Output = get(outputs)[id]
         if (!output) return
 
-        // , rate: get(special).previewRate || "auto"
         send(OUTPUT, ["CREATE"], { ...output, id })
     })
-
-    if (videoDataUpdating) return
-    videoDataUpdating = true
-
-    // restore output video data when recreating window
-    // WIP values are empty when sent
-    setTimeout(() => {
-        send(OUTPUT, ["DATA"], data)
-        send(OUTPUT, ["TIME"], time)
-        videoDataUpdating = false
-    }, 2200)
 }
 
 export function updateThemeValues(themeValues: Themes) {
@@ -217,31 +263,41 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
         activeProject.set(v)
         if (v) projectView.set(false)
     },
-    showsPath: (v: any) => {
-        if (!v) return
 
-        // DEPRECATED (keep for backward compatibility)
-        showsPath.set(v)
-    },
-    dataPath: (v: any) => {
-        if (!v) return
 
-        // DEPRECATED (keep for backward compatibility)
-        dataPath.set(v)
-    },
     lockedOverlays: (v: any) => {
-        // only get locked overlays
-        v = v.filter((id) => get(overlays)[id]?.locked === true)
+        if (Array.isArray(v)) {
+            const map: { [id: string]: string[] } = {}
+            v.forEach((id) => (map[id] = []))
+            v = map
+        }
 
-        lockedOverlays.set(v)
+        lockedOverlays.set(v || {})
 
-        // start overlays
-        if (v.length) setOutput("overlays", v, false, "", true)
+        // timeout to ensure outputs are initialized
+        setTimeout(() => {
+            Object.entries(v || {}).forEach(([id, outputIds]: any) => {
+                // only get locked overlays
+                if (!get(overlays)[id]?.locked) return
+
+                if (outputIds?.length) outputIds.forEach((outputId: string) => setOutput("overlays", [id], false, outputId, true))
+                else setOutput("overlays", [id], false, "", true)
+            })
+        }, 10)
+    },
+    activeScenes: (v: any) => {
+        activeScenes.set(v || {})
+
+        // timeout to ensure outputs are initialized
+        setTimeout(() => {
+            Object.entries(v || {}).forEach(([id, outputIds]: any) => startScene(id, outputIds))
+        }, 10)
     },
     language: (v: any) => {
         language.set(v)
         setLanguage(v)
     },
+    customFonts: (v: any) => customFonts.set(v),
     alertUpdates: (v: any) => {
         alertUpdates.set(v !== false)
         // make sure "special" is set before checking
@@ -260,8 +316,14 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
     outputs: (v: any) => {
         Object.keys(v).forEach((id: string) => {
             delete v[id].out
+            if (v[id].webrtcData?.streaming) v[id].webrtcData.streaming = false
+            if (v[id].rtmpData?.streaming) v[id].rtmpData.streaming = false
         })
+        migrateOutputsRtmp(v)
         outputs.set(v)
+
+        // RTMP check
+        if (Object.values(v).some((out: any) => out.enabled && out.rtmp)) checkFFmpeg()
     },
     sorted: (v: any) => sorted.set(v),
     styles: (v: any) => {
@@ -305,28 +367,29 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
     templateCategories: (v: any) => templateCategories.set(v),
     timers: (v: any) => timers.set(v),
     variables: (v: any) => variables.set(v),
-    triggers: (v: any) => triggers.set(v),
+    scenes: (v: any) => scenes.set(v),
+    interactions: (v: any) => interactions.set(v),
     audioStreams: (v: any) => audioStreams.set(v),
     audioPlaylists: (v: any) => audioPlaylists.set(v),
     theme: (v: any) => theme.set(v),
     transitionData: (v: any) => transitionData.set(v),
-    volume: (v: any) => volume.set(v),
-    gain: (v: any) => gain.set(v),
     audioChannelsData: (v: any) => audioChannelsData.set(v),
     emitters: (v: any) => emitters.set(v),
     midiIn: (v: any) => actions.set(v),
     videoMarkers: (v: any) => videoMarkers.set(v),
+    calendars: (v: any) => calendars.set(v),
     mediaTags: (v: any) => mediaTags.set(v),
     playerTags: (v: any) => playerTags.set(v),
     actionTags: (v: any) => actionTags.set(v),
     variableTags: (v: any) => variableTags.set(v),
+    timerTags: (v: any) => timerTags.set(v),
     customizedIcons: (v: any) => customizedIcons.set(v),
     cloudSyncData: (v: any) => cloudSyncData.set(v),
     driveData: (v: any) => driveData.set(v),
     calendarAddShow: (v: any) => calendarAddShow.set(v),
     metronome: (v: any) => metronome.set(v),
-    equalizerConfig: (v: any) => equalizerConfig.set(v),
-    eqPresets: (v: any) => eqPresets.set(v),
+    audioEffects: (v: any) => audioEffects.set(v),
+    audioEffectPresets: (v: any) => audioEffectPresets.set(v),
     effectsLibrary: (v: any) => effectsLibrary.set(v),
     globalTags: (v: any) => globalTags.set(v),
     globalRegexes: (v: any) => globalRegexes.set(v),
@@ -336,7 +399,7 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
 
         if (v.enabled) {
             setTimeout(() => {
-                sendMain(Main.WEBSOCKET_START, get(ports).companion)
+                sendMain(Main.WEBSOCKET_START, { port: get(ports).companion, password: v.password })
             }, 3000)
         }
     },
@@ -350,6 +413,9 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
             // let "activeProject" setting update first
             setTimeout(() => projectView.set(true))
             showRecentlyUsedProjects.set(false)
+        }
+        if (v.remoteController) {
+            startRemoteController(v.remoteControllerId)
         }
 
         // DEPRECATED (migrate)
@@ -377,6 +443,12 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
         }
         if (Object.keys(deletedDefaultsValue).length) deletedDefaults.set(deletedDefaultsValue)
 
+        // DEPRECATED (migrate) - only in 1.6.5-beta
+        if (v.calendars && !Object.keys(get(calendars)).length) {
+            calendars.set(v.calendars)
+            delete v.calendars
+        }
+
         special.set(v)
     },
     timeline: (v: any) => timeline.set(v),
@@ -386,6 +458,9 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
         if (v?.length > 1) contentProviderData.set({ ...get(contentProviderData), churchApps: { syncCategories: v } })
     },
     contentProviderData: (v: any) => contentProviderData.set(v),
+    obsData: (v: any) => obsData.set(v),
     effects: (a: any) => effects.set(a),
-    deletedDefaults: (a: any) => deletedDefaults.set({ ...get(deletedDefaults), ...a })
+    deletedDefaults: (a: any) => deletedDefaults.set({ ...get(deletedDefaults), ...a }),
+    audioRouting: (v: any) => initAudioRouting(v),
+    ai: (a: any) => ai.set(a)
 }

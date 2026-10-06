@@ -1,32 +1,8 @@
-import os from "os"
+import { join } from "path"
+import { Worker } from "worker_threads"
 import { toApp } from ".."
 import { CaptureHelper } from "../capture/CaptureHelper"
-import util from "./vingester-util"
-
-// Dynamic import for grandiose ES module to prevent TypeScript compilation issues
-let warned = false
-let grandioseModule: any | null = null
-let grandiosePromise: Promise<any | null> | null = null
-const loadGrandiose = async () => {
-    if (grandioseModule) return grandioseModule
-    if (grandiosePromise) return grandiosePromise
-
-    grandiosePromise = import("grandiose")
-        .then((imported) => {
-            grandioseModule = imported
-            return imported
-        })
-        .catch((err: any) => {
-            if (!warned) console.warn("NDI not available:", err?.message || err)
-            warned = true
-            return null
-        })
-        .finally(() => {
-            grandiosePromise = null
-        })
-
-    return grandiosePromise
-}
+import { SenderCapture, type CaptureFrameOpts } from "../capture/SenderCapture"
 
 // Resources:
 // https://www.npmjs.com/package/grandiose-mac
@@ -34,182 +10,129 @@ const loadGrandiose = async () => {
 // https://github.com/rse/grandiose
 // https://github.com/rse/vingester
 
+// NDI sender proxy: delegates NDI encoding and dispatch to a worker thread (./ndiWorker)
 export class NdiSender {
-    static timeStart = BigInt(Date.now()) * BigInt(1e6) - process.hrtime.bigint()
-    static NDI: { [key: string]: { name: string; groups?: string; status?: string; previousStatus?: string; sender?: any; timer?: NodeJS.Timeout; sendAudio?: boolean } } = {}
+    private static worker: Worker | null = null
+    private static readonly MAX_INFLIGHT_SENDS = 3
 
-    static stopSenderNDI(id: string) {
-        if (!this.NDI[id]?.timer) return
+    static NDI: {
+        [key: string]: {
+            name: string
+            groups?: string
+            status?: string
+            previousStatus?: string
+            sender?: boolean
+            inFlight?: number
+            connections?: number
+        }
+    } = {}
 
-        console.info("NDI - stopping sender: " + this.NDI[id].name)
-        clearInterval(this.NDI[id].timer)
+    private static getWorker(): Worker | null {
+        if (this.worker) return this.worker
 
         try {
-            this.NDI[id].sender.destroy()
+            this.worker = new Worker(join(__dirname, "ndiWorker.js"), {
+                env: { ...process.env, UV_THREADPOOL_SIZE: "32" }
+            })
+            this.worker.on("message", (msg: any) => this.onWorkerMessage(msg))
+            this.worker.on("error", (err) => console.error("NDI worker error:", err))
+            this.worker.on("exit", (code) => {
+                if (code !== 0) console.error(`NDI worker exited with code ${code}`)
+                this.worker = null
+                this.NDI = {}
+            })
         } catch (err) {
-            console.error("ERROR", err)
+            console.error("Could not start NDI worker:", err)
+            this.worker = null
         }
 
-        delete this.NDI[id]
+        return this.worker
     }
+
+    private static onWorkerMessage(msg: any) {
+        if (!msg?.type) return
+        if (SenderCapture.handleMessage(msg)) return
+
+        if (msg.type === "status") {
+            const data = this.NDI[msg.id]
+            if (!data) return
+
+            data.status = msg.status
+            data.connections = msg.connections
+            const newStatus = String(msg.status) + String(msg.connections)
+            if (newStatus !== data.previousStatus) {
+                toApp("NDI", { channel: "SEND_DATA", data: { id: msg.id, status: msg.status, connections: msg.connections } })
+                CaptureHelper.updateFramerate(msg.id)
+                data.previousStatus = newStatus
+            }
+        } else if (msg.type === "createFailed") {
+            delete this.NDI[msg.id]
+        } else if (msg.type === "videoDone") {
+            const data = this.NDI[msg.id]
+            if (data) data.inFlight = Math.max(0, (data.inFlight ?? 0) - 1)
+        }
+    }
+
 
     static initNameNDI(name?: string, outputName?: string) {
         return name || `FreeShow NDI${outputName ? ` - ${outputName}` : ""}`
     }
 
+    static isBusyNDI(id: string): boolean {
+        return (this.NDI[id]?.inFlight ?? 0) >= this.MAX_INFLIGHT_SENDS
+    }
+
     static async createSenderNDI(id: string, name = "", groups?: string) {
-        if (this.NDI[id]) return
-
-        this.NDI[id] = { name, groups }
-        console.info("NDI - creating sender: " + this.NDI[id].name, groups ? `; In group: ${groups}` : "")
-
-        try {
-            const grandiose = await loadGrandiose()
-            if (!grandiose) return
-
-            /* eslint @typescript-eslint/await-thenable: 0 */
-            this.NDI[id].sender = await grandiose.send({
-                name: this.NDI[id].name,
-                groups: this.NDI[id].groups,
-                clockVideo: false,
-                clockAudio: false
-            })
-        } catch (err) {
-            console.error("Could not create NDI sender:", err)
-            delete this.NDI[id]
-            return
+        if (this.NDI[id]) {
+            this.stopSenderNDI(id)
         }
 
-        this.NDI[id].timer = setInterval(() => {
-            /*  poll NDI for connections  */
-            const conns: number = this.NDI[id].sender?.connections() || 0
-            this.NDI[id].status = conns > 0 ? "connected" : "unconnected"
+        const worker = this.getWorker()
+        if (!worker) return
 
-            const newStatus = String(this.NDI[id].status) + conns.toString()
-            if (newStatus !== this.NDI[id].previousStatus) {
-                toApp("NDI", { channel: "SEND_DATA", data: { id, status: this.NDI[id].status, connections: conns } })
-                CaptureHelper.updateFramerate(id)
-
-                this.NDI[id].previousStatus = newStatus
-
-                if (this.NDI[id].status === "connected") {
-                    // Force a frame update when NDI reconnects
-                    // (frames now stream directly, so just log reconnection)
-                    console.log(`[NDI] Reconnected for ${id}`)
-                }
-            }
-        }, 1000)
+        this.NDI[id] = { name, groups, sender: true, status: "unconnected" }
+        worker.postMessage({ type: "create", id, name, groups })
     }
 
-    // static frames = 0
-    static async sendVideoBufferNDI(id: string, buffer: Buffer, { size = { width: 1280, height: 720 }, ratio = 16 / 9, framerate = 1 }) {
-        // DEBUG log fps
-        // this.frames++
-        // setTimeout(() => this.frames--, 1000)
-        // console.log(`NDI FPS ${id}:`, this.frames)
-
-        /*  convert from ARGB (Electron/Chromium on big endian CPU)
-        to BGRA (supported input of NDI SDK). On little endian
-        CPU the input is already BGRA.  */
-        if (os.endianness() === "BE") {
-            util.ImageBufferAdjustment.ARGBtoBGRA(buffer)
-        }
-
-        /*  optionally convert from BGRA to BGRX (no alpha channel)  */
-        const grandiose = await loadGrandiose()
-        if (!grandiose) return
-
-        const fourCC = grandiose.FOURCC_BGRA
-        // if (!this.cfg.v) {
-        //     util.ImageBufferAdjustment.BGRAtoBGRX(buffer)
-        //     fourCC = grandiose.FOURCC_BGRX
-        // }
-
-        /*  send NDI video frame  */
-        const now = this.timeStart + process.hrtime.bigint()
-        const timecode = now / BigInt(100)
-        const bytesForBGRA = 4
-        const frame = {
-            /*  base information  */
-            // type: "video",
-            timecode,
-
-            /*  type-specific information  */
-            xres: size.width,
-            yres: size.height,
-            frameRateN: framerate * 1000,
-            frameRateD: 1000,
-            pictureAspectRatio: ratio,
-            frameFormatType: grandiose.FORMAT_TYPE_PROGRESSIVE,
-            lineStrideBytes: size.width * bytesForBGRA,
-
-            /*  the data itself  */
-            fourCC,
-            data: buffer
-        }
-
-        try {
-            await this.NDI[id].sender.video(frame)
-        } catch (err) {
-            console.error("Error sending NDI video frame:", err)
-        }
-    }
-
-    static enableAudio(id: string) {
+    static stopSenderNDI(id: string) {
         if (!this.NDI[id]) return
-        this.NDI[id].sendAudio = true
+
+        delete this.NDI[id]
+        this.worker?.postMessage({ type: "destroy", id })
     }
 
-    static disableAudio(id: string) {
-        if (!this.NDI[id]) return
-        this.NDI[id].sendAudio = false
+    static sendVideoBufferNDI(id: string, buffer: Buffer, { size = { width: 1280, height: 720 }, ratio = 16 / 9, framerate = 1, transparent = true, format = 0 }: { size?: { width: number; height: number }; ratio?: number; framerate?: number; transparent?: boolean; format?: number } = {}) {
+        const data = this.NDI[id]
+        if (!data?.sender || !this.worker) return
+
+        data.inFlight = (data.inFlight ?? 0) + 1
+
+        let arrayBuffer: ArrayBuffer
+        if (buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength) {
+            arrayBuffer = buffer.buffer as ArrayBuffer
+        } else {
+            arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+        }
+        this.worker.postMessage({ type: "video", id, buffer: arrayBuffer, byteOffset: 0, byteLength: arrayBuffer.byteLength, opts: { size, ratio, framerate, transparent, format } }, [arrayBuffer])
     }
 
-    static bytesForFloat32 = 4
+    static captureFrameNDI(id: string, source: any, opts: CaptureFrameOpts) {
+        const data = this.NDI[id]
+        if (!data?.sender || !this.getWorker()) return false
+        this.worker!.postMessage({ type: "captureFrame", id, source, opts })
+        return true
+    }
+
+    static async sendAudioBufferNDITarget(id: string, buffer: Buffer, { sampleRate, channelCount }: { sampleRate: number; channelCount: number }) {
+        if (!this.NDI[id]?.sender || !this.worker || !buffer || buffer.length === 0) return
+
+        this.worker.postMessage({ type: "audioTarget", id, buffer: buffer.buffer, byteOffset: buffer.byteOffset, byteLength: buffer.byteLength, opts: { sampleRate, channelCount } })
+    }
+
     static async sendAudioBufferNDI(buffer: Buffer, { sampleRate, channelCount }: { sampleRate: number; channelCount: number }) {
-        if (!Object.values(this.NDI).find((a) => a?.sendAudio)) return
+        const hasSender = Object.values(this.NDI).some((s) => s?.sender)
+        if (!hasSender || !this.worker || !buffer || buffer.length === 0) return
 
-        const ndiAudioBuffer = convertPCMtoPlanarFloat32(buffer, channelCount)
-        if (!ndiAudioBuffer) return
-
-        const grandiose = await loadGrandiose()
-        if (!grandiose) return
-
-        const now = this.timeStart + process.hrtime.bigint()
-        const frame = {
-            /*  base information  */
-            timecode: now / BigInt(100),
-
-            /*  type-specific information  */
-            sampleRate,
-            noChannels: channelCount,
-            noSamples: Math.trunc(ndiAudioBuffer.byteLength / channelCount / this.bytesForFloat32),
-            channelStrideBytes: Math.trunc(ndiAudioBuffer.byteLength / channelCount),
-
-            /*  the data itself  */
-            fourCC: grandiose.FOURCC_FLTp,
-            data: ndiAudioBuffer
-        }
-
-        Object.values(this.NDI).forEach((data) => {
-            if (!data?.sendAudio || !data?.sender) return
-
-            try {
-                data.sender.audio(frame)
-            } catch (err) {
-                console.error("Error sending NDI audio frame:", err)
-            }
-        })
-    }
-}
-
-// convert from PCM/signed-16-bit/little-endian data to NDI's "PCM/planar/signed-float32/little-endian"
-function convertPCMtoPlanarFloat32(buffer: Buffer, channels: number) {
-    try {
-        const pcmconvert = require("pcm-convert")
-        return pcmconvert(buffer, { channels, dtype: "int16", endianness: "le", interleaved: true }, { dtype: "float32", endianness: "le", interleaved: false }) as Buffer
-    } catch (err) {
-        console.error("Could not convert audio")
-        return null
+        this.worker.postMessage({ type: "audio", buffer: buffer.buffer, byteOffset: buffer.byteOffset, byteLength: buffer.byteLength, opts: { sampleRate, channelCount } })
     }
 }

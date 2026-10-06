@@ -27,14 +27,26 @@
     let addGroups: boolean = false
     let editOpened: boolean = false
     let textValue = ""
+    let editSeedValue = ""
 
-    $: if (editOpened && $textCache[$activeShow?.id || ""]) setText()
-    else reset()
+    $: {
+        const showId = $activeShow?.id || ""
+
+        if (!editOpened) {
+            reset()
+            editSeedValue = ""
+        } else {
+            const cachedText = $textCache[showId]
+            // Only hydrate from cache while the draft is still untouched.
+            if (typeof cachedText === "string" && textValue === editSeedValue && cachedText !== editSeedValue) {
+                textValue = cachedText
+                editSeedValue = cachedText
+            }
+        }
+    }
+
     function reset() {
         textValue = ""
-    }
-    function setText() {
-        textValue = $textCache[$activeShow?.id || ""]
     }
     function cancel() {
         editOpened = false
@@ -185,11 +197,11 @@
                         <TextEdit bind:value={textValue} />
                     {/if}
                 {:else}
-                    <div bind:this={scrollElem} on:scroll={handleScrollThrottled} class="scroll" style="flex: 1;min-height: 0;overflow-y: auto;background-color: var(--primary-darkest);scroll-behavior: smooth;display: flex;flex-direction: column;">
+                    <div bind:this={scrollElem} on:scroll={handleScrollThrottled} class="scroll" style="flex: 1;min-height: 0;overflow-y: auto;background-color: var(--primary-darker);scroll-behavior: smooth;display: flex;flex-direction: column;">
                         {#if slideView === "lyrics"}
                             {#each layoutSlides as layoutSlide, i (layoutSlide.id)}
                                 {#if !layoutSlide.disabled}
-                                    <span style="padding: 5px;{$outShow?.id === $activeShow.id && outNumber === i ? 'background-color: rgba(0 0 0 / 0.6);' : ''}" role="button" tabindex="0" on:click={() => playSlide(i)} on:keydown={(e) => (e.key === "Enter" ? playSlide(i) : null)}>
+                                    <span style="padding: 5px;{$outShow?.id === $activeShow.id && outNumber === i ? 'background-color: var(--focus);' : ''}" role="button" tabindex="0" on:click={() => playSlide(i)} on:keydown={(e) => (e.key === "Enter" ? playSlide(i) : null)}>
                                         <span class="group" style="opacity: 0.6;font-size: 0.8em;display: flex;justify-content: center;position: relative;">
                                             <span style="left: 0;position: absolute;">{i + 1}</span>
                                             <span>{$activeShow.slides[layoutSlide.id].group === null ? "" : getName($activeShow.slides[layoutSlide.id].group || "", layoutSlide.id, i)}</span>
@@ -299,7 +311,7 @@
         flex: 1;
         min-width: 0;
         overflow: hidden;
-        background-color: var(--primary-darkest);
+        background-color: var(--primary-darker);
     }
 
     /* lyric spacing inside scroll */
@@ -381,7 +393,7 @@
         fill: var(--secondary);
     }
     .hero-row:hover {
-        background: rgb(255 255 255 / 0.06);
+        background: var(--hover);
         transform: translateY(-1px);
     }
     .hero-row:active {

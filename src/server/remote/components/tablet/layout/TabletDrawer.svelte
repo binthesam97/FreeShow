@@ -186,9 +186,11 @@
     </div>
 
     <div class="content">
-        <Resizeable id="leftPanelDrawer">
-            <TabletDrawerNavigation id={$activeDrawerTab} />
-        </Resizeable>
+        {#if $activeDrawerTab !== "audio"}
+            <Resizeable id="leftPanelDrawer">
+                <TabletDrawerNavigation id={$activeDrawerTab} />
+            </Resizeable>
+        {/if}
 
         <div class="main-content">
             <TabletDrawerContent id={$activeDrawerTab} {searchValue} on:search-clear={clearDrawerSearch} />
@@ -272,7 +274,7 @@
     .search-container {
         display: flex;
         align-items: center;
-        background-color: rgb(0 0 0 / 0.2);
+        background-color: var(--focus);
         border-radius: 4px;
         padding: 0 10px;
         height: 28px;
@@ -348,10 +350,10 @@
     }
 
     .dock-btn:hover {
-        background-color: rgb(255 255 255 / 0.05);
+        background-color: var(--hover);
     }
 
     .dock-btn:active {
-        background-color: rgb(255 255 255 / 0.1);
+        background-color: var(--focus);
     }
 </style>

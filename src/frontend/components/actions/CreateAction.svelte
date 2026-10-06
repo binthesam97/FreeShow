@@ -1,6 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte"
-    import { actionRevealUsed, actions, activePopup, audioPlaylists, audioStreams, categories, effects, emitters, outputs, overlays, popupData, projects, shows, stageShows, styles, templates, timers, triggers, variables } from "../../stores"
+    import { actionRevealUsed, actions, activePopup, ai, audioPlaylists, audioStreams, categories, effects, emitters, obsData, outputs, overlays, popupData, projects, scenes, shows, stageShows, styles, templates, timers, variables } from "../../stores"
     import { translateText } from "../../utils/language"
     import { formatSearch } from "../../utils/search"
     import Icon from "../helpers/Icon.svelte"
@@ -15,11 +15,12 @@
     import MaterialButton from "../inputs/MaterialButton.svelte"
     import MaterialTextInput from "../inputs/MaterialTextInput.svelte"
     import MaterialToggleSwitch from "../inputs/MaterialToggleSwitch.svelte"
+    import { spotifyState } from "../output/preview/SpotifyManager"
     import { getGlobalGroupName } from "../show/tools/groups"
     import Center from "../system/Center.svelte"
     import CustomInput from "./CustomInput.svelte"
     import { actionData } from "./actionData"
-    import { getActionTriggerId } from "./actions"
+    import { getActionName, getActionTriggerId } from "./actions"
     import { API_ACTIONS } from "./api"
 
     export let list = false
@@ -50,11 +51,11 @@
         "start_audio_stream",
         "start_playlist",
         "start_metronome",
+        "id_start_timer",
         "start_slide_timers",
         "stop_timers",
         "change_output_style",
         "change_stage_output_layout",
-        "start_trigger",
         "send_midi",
         "run_action"
     ]
@@ -70,12 +71,18 @@
 
     let usedSections: string[] = []
 
+    const obsEnabled = !!$obsData.enabled
+    const spotifyEnabled = !!$spotifyState
+    const webRtcOutputs = Object.values($outputs).some((a) => a.webrtc)
+    const rtmpOutputs = Object.values($outputs).some((a) => a.rtmp)
+    const smartEnabled = !!$ai?.enabled
+
     let previousSection = ""
     $: ACTIONS = [
         ...Object.keys(API_ACTIONS)
             .map((id) => {
                 let data = actionData[id] || {}
-                let name = translateText(data.name || "") || id
+                let name = translateText(data.name || "", null, data.replace) || id
                 let icon = data.icon || "actions"
                 let common = !!data.common
 
@@ -94,7 +101,17 @@
                 // don't display GET actions
                 if (id.includes("get_")) return false
 
-                // WIP MIDI multiple of the same (needs a new way of setting the id)
+                // remove any OBS ones if not enabled
+                if (id.startsWith("obs_") && !obsEnabled) return false
+                // remove any Spotify ones if not active
+                if (id.startsWith("spotify_") && !spotifyEnabled) return false
+                // remove WebRTC actions if no WebRTC outputs exist
+                if (id.includes("webrtc_") && !webRtcOutputs) return false
+                // remove RTMP actions if no RTMP outputs exist
+                if (id.includes("rtmp_") && !rtmpOutputs) return false
+                // remove Smart actions if not enabled
+                if (id.includes("smart_") && !smartEnabled) return false
+
                 // show if it has an input (because you probably want to have multiple)
                 // if (actionData[actionId]?.input) return true
                 // remove already added or custom ones
@@ -195,25 +212,31 @@
         if (id === "start_playlist") return getName($audioPlaylists)
         if (id === "id_select_overlay" || id === "clear_overlay") return getName($overlays)
         if (id === "emit_action") return $emitters[actionValue.emitter]?.name || ""
-        if (id === "start_trigger") return getName($triggers)
         if (id === "run_action" || id === "toggle_action") return getName($actions)
         if (id === "id_start_effect") return getName($effects)
-        if (id === "start_show") return getName($shows)
+        if (id === "start_show" || id === "id_select_show") return getName($shows)
         if (id === "id_select_project") return getName($projects)
         if (id === "set_template") return getName($templates)
-        if (id === "toggle_output") return getName($outputs)
+        if (id === "start_scene") return getName($scenes)
+        if (id === "toggle_output" || id === "start_output_recording") return getName($outputs)
         if (id === "id_select_stage_layout") return getName($stageShows)
         if (id === "start_audio_stream") return getName($audioStreams)
         if (id === "wait") return Number(actionValue.number) + "s"
         if (id === "id_select_group") return getGlobalGroupName(actionValue.id)
         if (id === "start_camera") return actionValue.label || ""
+        if (id === "start_microphone" || id === "stop_microphone") return actionValue.name || ""
         if (id === "start_screen") return actionValue.name || ""
-        if (id === "change_volume") return ((actionValue.volume || 1) * 100).toString()
+        if (id === "change_volume" || id === "mute") return getActionName(id, actionValue)
         if (id.includes("index")) return actionValue.index || "0"
         if (id.includes("name")) return actionValue.value || ""
         if (id === "change_stage_output_layout") return `${actionValue.outputId ? ($outputs[actionValue.outputId]?.name || "—") + ": " : ""}${$stageShows[actionValue.stageLayoutId]?.name || ""}`
         if (id === "change_output_style") return `${actionValue.outputId ? ($outputs[actionValue.outputId]?.name || "—") + ": " : ""}${actionValue.styleId ? $styles[actionValue.styleId]?.name || "" : translateText("main.none")}`
         if (id === "set_next_slide_timer") return Number(actionValue.value) + "s"
+        if (id === "disable_slide") {
+            const showName = actionValue.showId ? $shows[actionValue.showId]?.name || "—" : ""
+            const slideIndex = actionValue.index ?? 0
+            return `${showName ? showName + " - " : ""}${slideIndex}`
+        }
 
         return ""
     }

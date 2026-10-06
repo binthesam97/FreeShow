@@ -4,7 +4,7 @@
     import { Main } from "../../../../types/IPC/Main"
     import { AudioAnalyser } from "../../../audio/audioAnalyser"
     import { sendMain } from "../../../IPC/main"
-    import { activePopup, maxConnections, os, outputs, popupData, ports, remotePassword, serverData, special } from "../../../stores"
+    import { activePopup, companion, maxConnections, os, outputs, popupData, ports, remotePassword, serverData, special } from "../../../stores"
     import { clone, keysToID, sortByName } from "../../helpers/array"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
@@ -14,9 +14,25 @@
     import MaterialNumberInput from "../../inputs/MaterialNumberInput.svelte"
     import MaterialTextInput from "../../inputs/MaterialTextInput.svelte"
     import MaterialToggleSwitch from "../../inputs/MaterialToggleSwitch.svelte"
+    import { startRemoteController, stopRemoteController } from "../../../utils/remoteController"
+    import Tip from "../Tip.svelte"
 
     let id: keyof typeof defaultPorts = "stage"
     let ip = "localhost"
+
+    let remoteController = $popupData.remoteController
+    let controllerId = $special.remoteControllerId
+    if (!controllerId) setRemoteId()
+    function setRemoteId() {
+        if (controllerId) stopRemoteController(controllerId)
+
+        // a string of 6 random characters
+        let id = Math.random().toString(36).substring(2, 8)
+        controllerId = id
+        special.update((a) => ({ ...a, remoteControllerId: id }))
+
+        startRemoteController(id)
+    }
 
     $: useHostname = $special.connectionHostname
 
@@ -40,7 +56,7 @@
 
     $: port = $ports[id] || defaultPorts[id]
     $: hostname = `${$os.name.toLowerCase()}${$os.platform === "win32" ? ".local" : ""}`
-    $: url = `http://${useHostname ? hostname : ip}:${port}`
+    $: url = remoteController ? `https://freeshow.net/control?id=${controllerId}` : `http://${useHostname ? hostname : ip}:${port}`
     $: if (url) generateQR(url)
 
     function mouseup(e: any) {
@@ -49,7 +65,7 @@
 
     let qrImg = ""
     function generateQR(text) {
-        if ((!useHostname && ip === "localhost") || id === "companion") return
+        if (remoteController ? !controllerId : (!useHostname && ip === "localhost") || id === "companion") return
 
         var qr = qrcode(0, "L")
         qr.addData(text)
@@ -68,9 +84,25 @@
             a[id] = port
             return a
         })
+
+        if (id === "companion") restartCompanion()
     }
 
     const setRemotePassword = (e: any) => remotePassword.set(e.detail)
+    const setCompanionPassword = (e: any) => {
+        const password = e.detail || ""
+        companion.update((a) => {
+            a.password = password
+            return a
+        })
+
+        restartCompanion()
+    }
+
+    function restartCompanion() {
+        if (!$companion?.enabled) return
+        sendMain(Main.WEBSOCKET_START, { port: $ports.companion || 5505, password: $companion?.password })
+    }
 
     // output
     $: outputsList = getList(clone($outputs))
@@ -108,9 +140,13 @@
     // $: enableOutputSelector = ($serverData?.output_stream?.outputId && $outputs[$serverData.output_stream.outputId]) || getActiveOutputs($outputs, false, true).length > 1
 </script>
 
-<MaterialButton class="popup-options {options ? 'active' : ''}" icon="options" iconSize={1.3} title={options ? "actions.close" : "create_show.more_options"} on:click={() => (options = !options)} white />
+{#if remoteController}
+    <MaterialButton class="popup-options" icon="reset" iconSize={1.1} title="actions.reset" on:click={() => setRemoteId()} white />
+{:else}
+    <MaterialButton class="popup-options {options ? 'active' : ''}" icon="options" iconSize={1.3} title={options ? "actions.close" : "create_show.more_options"} on:click={() => (options = !options)} white />
 
-<MaterialButton class="popup-reset" icon="help" iconSize={1.1} title="titlebar.help" on:click={() => sendMain(Main.URL, "https://freeshow.app/docs/connecting")} white />
+    <MaterialButton class="popup-reset" icon="help" iconSize={1.1} title="titlebar.help" on:click={() => sendMain(Main.URL, "https://freeshow.app/docs/connecting")} white />
+{/if}
 
 {#if options}
     <div class="reserved" class:isReserved>
@@ -119,12 +155,17 @@
 
     {#if id === "remote"}
         <MaterialTextInput label="remote.password" value={$remotePassword} on:change={setRemotePassword} />
+    {:else if id === "companion"}
+        <MaterialTextInput label="remote.password" value={$companion?.password || ""} on:change={setCompanionPassword} />
     {:else if id === "output_stream"}
         <!-- {#if enableOutputSelector} -->
         <MaterialDropdown label="midi.output" options={outputsList} value={$serverData?.output_stream?.outputId || ""} on:change={(e) => updateData(e.detail, "outputId")} allowEmpty />
         <!-- {/if} -->
 
-        <MaterialToggleSwitch label="preview.audio" checked={$serverData?.output_stream?.sendAudio} defaultValue={false} on:change={toggleAudio} />
+        <!-- WIP disable for now until it's working again -->
+        {#if $serverData?.output_stream?.sendAudio}
+            <MaterialToggleSwitch label="preview.audio" checked={$serverData?.output_stream?.sendAudio} defaultValue={false} on:change={toggleAudio} />
+        {/if}
     {/if}
 
     {#if id !== "companion"}
@@ -166,6 +207,10 @@
 
         {#if id === "remote" && $remotePassword}
             <p style="padding-top: 10px;font-size: 0.9em;"><T id="remote.password" />: <b>{$remotePassword}</b></p>
+        {:else if id === "companion" && $companion?.password}
+            <p style="padding-top: 10px;font-size: 0.9em;"><T id="remote.password" />: <b>{$companion.password}</b></p>
+        {:else if remoteController}
+            <Tip value="With this you don't need to connect to the same router." top={15} />
         {/if}
     </div>
 {/if}

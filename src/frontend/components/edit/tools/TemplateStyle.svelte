@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { TemplateSettings } from "../../../../types/Show"
+    import type { Item, TemplateSettings } from "../../../../types/Show"
     import { activeEdit, activePopup, overlays, popupData, templates } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { mediaExtensions } from "../../../values/extensions"
@@ -7,12 +7,14 @@
     import { history } from "../../helpers/history"
     import Icon from "../../helpers/Icon.svelte"
     import InputRow from "../../input/InputRow.svelte"
-    import MaterialColorInput from "../../inputs/MaterialColorInput.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
+    import MaterialColorInput from "../../inputs/MaterialColorInput.svelte"
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
     import MaterialFilePicker from "../../inputs/MaterialFilePicker.svelte"
     import MaterialNumberInput from "../../inputs/MaterialNumberInput.svelte"
     import MaterialPopupButton from "../../inputs/MaterialPopupButton.svelte"
+    import MaterialToggleSwitch from "../../inputs/MaterialToggleSwitch.svelte"
+    import ItemsList from "./ItemsList.svelte"
 
     $: templateId = $activeEdit?.id || ""
     $: template = $templates[templateId] || {}
@@ -53,6 +55,8 @@
         // { value: "text", label: translateText("edit.text") } // hidden
     ]
     $: mode = template.settings?.mode || "default"
+
+    export let allSlideItems: Item[]
 </script>
 
 <div class="tools">
@@ -69,6 +73,7 @@
                 update()
             }}
             allowEmpty
+            allowGradients
             noLabel
         />
 
@@ -78,17 +83,19 @@
         </InputRow>
     </div>
 
-    <div>
-        <div class="title">
-            <span style="display: flex;gap: 8px;align-items: center;padding: 8px 12px;">
-                <Icon id="text" white />
-                <p>{translateText("edit.text")}</p>
-            </span>
-        </div>
+    {#if mode !== "scripture"}
+        <div>
+            <div class="title">
+                <span style="display: flex;gap: 8px;align-items: center;padding: 8px 12px;">
+                    <Icon id="text" white />
+                    <p>{translateText("edit.text")}</p>
+                </span>
+            </div>
 
-        <MaterialNumberInput label="edit.max_lines_per_slide" value={settings?.maxLinesPerSlide || 0} max={100} on:change={(e) => setValue(e, "maxLinesPerSlide")} />
-        <MaterialNumberInput label="edit.break_long_lines_tip" value={settings?.breakLongLines || 0} max={100} on:change={(e) => setValue(e, "breakLongLines")} />
-    </div>
+            <MaterialNumberInput label="edit.max_lines_per_slide" value={settings?.maxLinesPerSlide || 0} max={100} on:change={(e) => setValue(e, "maxLinesPerSlide")} />
+            <MaterialNumberInput label="edit.break_long_lines_tip" value={settings?.breakLongLines || 0} max={100} on:change={(e) => setValue(e, "breakLongLines")} />
+        </div>
+    {/if}
 
     <div>
         <div class="title">
@@ -109,6 +116,7 @@
                 icon="templates"
                 on:change={(e) => {
                     settings.firstSlideTemplate = e.detail
+                    if (!e.detail) settings.createFirstSlide = false
                     update()
                 }}
                 allowEmpty
@@ -117,6 +125,10 @@
                     <MaterialButton title="titlebar.edit" icon="edit" on:click={() => editTemplate(settings.firstSlideTemplate || "")} />
                 {/if} -->
         </InputRow>
+
+        {#if settings.firstSlideTemplate}
+            <MaterialToggleSwitch label="settings.always_place_empty_slide_first" checked={settings.createFirstSlide} defaultValue={false} on:change={(e) => setValue(e.detail, "createFirstSlide")} />
+        {/if}
 
         <!-- <InputRow>
             <MaterialPopupButton
@@ -145,6 +157,8 @@
             {translateText("popup.template_style_overrides")}
         </MaterialButton>
     </div>
+
+    <ItemsList bind:allSlideItems />
 </div>
 
 <style>

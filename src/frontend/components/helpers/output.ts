@@ -2,35 +2,118 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import { OUTPUT } from "../../../types/Channels"
 import { Main } from "../../../types/IPC/Main"
-import type { Output, Outputs } from "../../../types/Output"
+import type { Output, Outputs, RtmpDestination } from "../../../types/Output"
 import type { Resolution, Styles } from "../../../types/Settings"
 import type { Item, Layout, LayoutRef, Media, OutSlide, Show, Slide, SlideData, Template, TemplateSettings, Transition } from "../../../types/Show"
 import { AudioAnalyser } from "../../audio/audioAnalyser"
-import { fadeinAllPlayingAudio, fadeoutAllPlayingAudio } from "../../audio/audioFading"
-import { sendMain } from "../../IPC/main"
-import { actions, activeProject, activeRename, activeTimers, allOutputs, categories, connections, currentOutputSettings, customMessageCredits, disabledServers, effects, lockedOverlays, media, outputDisplay, outputs, outputSlideCache, outputState, overlays, overlayTimers, playingVideos, projects, scriptures, scriptureSettings, serverData, showsCache, special, stageShows, styles, templates, theme, themes, transitionData, usageLog } from "../../stores"
+import { requestMain, sendMain } from "../../IPC/main"
+import {
+    actions,
+    activeFocus,
+    activeProject,
+    activeRename,
+    activeScenes,
+    activeShow,
+    activeTimers,
+    allOutputs,
+    categories,
+    connections,
+    currentOutputSettings,
+    customMessageCredits,
+    disabledServers,
+    effects,
+    focusMode,
+    lockedOverlays,
+    media,
+    outLocked,
+    outputDisplay,
+    outputs,
+    outputSlideCache,
+    outputState,
+    overlays,
+    overlayTimers,
+    projects,
+    scenes,
+    scriptures,
+    scriptureSettings,
+    serverData,
+    showsCache,
+    special,
+    stageShows,
+    styles,
+    syncedOutputs,
+    templates,
+    theme,
+    themes,
+    transitionData,
+    usageLog
+} from "../../stores"
 import { trackScriptureUsage } from "../../utils/analytics"
 import { isMainWindow, isOutputWindow, newToast } from "../../utils/common"
 import { translateText } from "../../utils/language"
+import { confirmCustom } from "../../utils/popup"
 import { send } from "../../utils/request"
-import { sendBackgroundToStage } from "../../utils/stageTalk"
+import { hasStageStreamViewers, sendBackgroundToStage } from "../../utils/stageTalk"
 import { TemplateHelper } from "../../utils/templates"
-import { videoExtensions } from "../../values/extensions"
 import { customActionActivation, runAction } from "../actions/actions"
 import type { API_camera, API_screen, API_stage_output_layout } from "../actions/api"
 import { getItemText, getSlideText } from "../edit/scripts/textStyle"
 import type { EditInput } from "../edit/values/boxes"
+import { VideoPlayer } from "../media/video/videoPlayer"
 import { clearBackground, clearSlide } from "../output/clear"
 import { areObjectsEqual, clone, keysToID, removeDuplicates, sortByName, sortObject } from "./array"
-import { getExtension, getFileName, getMediaLayerType, removeExtension } from "./media"
+import { getExtension, getFileName, getMediaLayerType, getMediaType, removeExtension } from "./media"
+import { createDestination, hasStreamableDestination } from "./rtmpDestinations"
 import { getLayoutRef } from "./show"
-import { getFewestOutputLines, getItemWithMostLines, replaceDynamicValues } from "./showActions"
+import { getFewestOutputLines, getItemWithMostLines } from "./showActions"
 import { _show } from "./shows"
 import { getStyles } from "./style"
-import { getFirstOutputIdWithAudableBackground } from "./video"
+
+// Resolve output ID or name to matching local output ID
+export function resolveOutputId(targetId: string, currentOutputs: Outputs = get(outputs)): string | null {
+    if (!targetId || currentOutputs[targetId]) return targetId || null
+
+    const registry = get(syncedOutputs) || {}
+    const targetName = registry[targetId] || targetId
+    const normalized = targetName.trim().toLowerCase()
+
+    const match = Object.entries(currentOutputs).find(([_, out]) => out?.name?.trim().toLowerCase() === normalized)
+    return match ? match[0] : null
+}
+
+export function resolveOutputIds(outputIds: string[], currentOutputs: Outputs = get(outputs)): string[] {
+    if (!outputIds || !outputIds.length) return []
+    return removeDuplicates(outputIds.map((id) => resolveOutputId(id, currentOutputs)).filter(Boolean) as string[])
+}
+
+// Check if output ID is included in bindings (supports ID and name resolution)
+export function isOutputBound(bindings: string[] | undefined, currentOutputId: string, currentOutputs: Outputs = get(outputs)): boolean {
+    if (!bindings || !bindings.length) return true
+    if (!currentOutputId) return false
+    return bindings.includes(currentOutputId) || bindings.some((bId) => resolveOutputId(bId, currentOutputs) === currentOutputId)
+}
+
+export function updateSyncedOutputs() {
+    const outs = get(outputs)
+    if (!outs) return
+    syncedOutputs.update((synced = {}) => {
+        let changed = false
+        const updated = { ...synced }
+        for (const [id, out] of Object.entries(outs)) {
+            if (out?.name && updated[id] !== out.name) {
+                updated[id] = out.name
+                changed = true
+            }
+        }
+        return changed ? updated : synced
+    })
+}
+
+///
 
 export function toggleOutputs(outputIds: string[] | null = null, options: { force?: boolean; autoStartup?: boolean; state?: boolean } = {}) {
     if (outputIds === null) outputIds = getActiveOutputs(get(outputs), false)
+    else outputIds = resolveOutputIds(outputIds)
     // if (outputIds === null) outputIds = Object.keys(get(outputs))
 
     const outputsList = outputIds.map((id) => ({ ...get(outputs)[id], id })).filter((a) => a.enabled)
@@ -42,9 +125,9 @@ export function toggleOutputs(outputIds: string[] | null = null, options: { forc
     const currentOutputState = !!get(outputState).find((a) => a.id === outputIds[0])?.active
     const state = typeof options.state === "boolean" ? options.state : options.force || !(outputIds.length === 1 ? currentOutputState : get(outputDisplay))
 
-    const autoPosition = sortedOutputList.length === 1 && !sortedOutputList[0].forcedResolution?.width
+    const autoPosition = options.force ? false : sortedOutputList.length === 1 && !sortedOutputList[0].forcedResolution?.width
 
-    send(OUTPUT, ["TOGGLE_OUTPUTS"], { outputs: sortedOutputList, state, force: options.force, autoStartup: options.autoStartup, autoPosition })
+    send(OUTPUT, ["TOGGLE_OUTPUTS"], { outputs: sortedOutputList, state, autoStartup: options.autoStartup, autoPosition })
 }
 
 export function toggleOutput(id: string) {
@@ -55,12 +138,18 @@ export function toggleOutput(id: string) {
 // slide: null,
 // overlays: [],
 // transition: null,
-// TODO: updating a output when a "next slide timer" is active, will "reset/remove" the "next slide timer"
 let resetActionTrigger = false
 export function setOutput(type: string, data: any, toggle = false, outputId = "", add = false) {
     const ref = data?.layout ? _show(data.id).layouts([data.layout]).ref()[0] || [] : []
 
-    customActionActivation("output_changed")
+    // stop any active break slide recording when the slide changes
+    if (type === "slide") _stopBreakRecording()
+
+    const bindings = data?.bindings || (data?.layout ? ref[data.index]?.data?.bindings || [] : [])
+    const resolvedBindings = bindings.length ? resolveOutputIds(bindings) : []
+    const allOutputIds = resolvedBindings.length ? resolvedBindings : getActiveOutputs(get(outputs), true, false, true)
+    const resolvedOutputId = outputId ? resolveOutputId(outputId) || outputId : ""
+    const outs = resolvedOutputId ? [resolvedOutputId] : allOutputIds
 
     // track usage (& set attributionString)
     if (type === "slide" && data?.id) {
@@ -82,22 +171,37 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
             if (translation.attributionString) data.attributionString = translation.attributionString
         }
 
-        const groupId = slide.globalGroup
-        if (groupId) customActionActivation("group_start", groupId)
+        if (data.type === "pdf") {
+            const out = get(outputs)[outs[0]]?.out?.slide
+            // timeout to activate after output has updated
+            if (out?.type !== "pdf") setTimeout(() => customActionActivation("pdf_start"))
+        } else {
+            const groupId = slide.globalGroup
+            // timeout to activate after output has updated
+            if (groupId) setTimeout(() => customActionActivation("group_start", groupId))
+
+            // start recording time on break slides (no items, globalGroup === "break")
+            const layoutSlideIndex = ref[data.index]?.type === "parent" ? (ref[data.index]?.index ?? -1) : -1
+            if (slide.globalGroup === "break" && !slide.items?.length && layoutSlideIndex > -1) {
+                const previousDuration = _pausedBreakRecording?.slideIndex === layoutSlideIndex ? _pausedBreakRecording.accumulatedDuration : 0
+                _breakRecording = { startTime: Date.now(), showId: data.id, layoutId: data.layout, slideIndex: layoutSlideIndex, previousDuration }
+            } else if (_pausedBreakRecording && layoutSlideIndex > _pausedBreakRecording.slideIndex + 1) {
+                _pausedBreakRecording = null
+            }
+        }
+
+        // store project index so we can use it for dynamic values (in case there are multiple of the same project item)
+        const active = get(focusMode) ? get(activeFocus) : get(activeShow)
+        if (active?.id === data.id && active?.index !== undefined) {
+            data.projectIndex = active.index
+        }
     }
 
-    if (type === "slide" && data?.id === "temp") {
-        console.log("[setOutput] Setting temp slide output, tempItems count:", data?.tempItems?.length, "customDynamicValues keys:", Object.keys(data?.customDynamicValues || {}))
-    }
+    const inputData = clone(data)
+
+    checkAudio(type, data, allOutputIds, outs)
 
     outputs.update((a) => {
-        const bindings = data?.bindings || (data?.layout ? ref[data.index]?.data?.bindings || [] : [])
-        const allOutputIds = bindings.length ? bindings : getActiveOutputs(a, true, false, true)
-        const outs = outputId ? [outputId] : allOutputIds
-        const inputData = clone(data)
-
-        const backgroundId = getFirstOutputIdWithAudableBackground(allOutputIds)
-
         if (type === "slide" && data?.id) {
             // reset slide cache (after update)
             setTimeout(() => outputSlideCache.set({}), 50)
@@ -113,7 +217,7 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
             if (currentOutSlideId !== data?.id || resetActionTrigger) {
                 const category = get(showsCache)[data.id]?.category || ""
                 const categoryActionId = get(categories)[category]?.action
-                if (!overrideCategoryAction && categoryActionId) runAction(get(actions)[categoryActionId], {}, true)
+                if (!overrideCategoryAction && categoryActionId) runAction(get(actions)[categoryActionId], { source: "slide" }, true)
             }
 
             if (overrideCategoryAction) resetActionTrigger = true
@@ -144,7 +248,7 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
                 const slideContent = getOutputContent(id)
                 if (data && (slideContent.type === "pdf" || slideContent.type === "ppt")) clearSlide()
 
-                data = changeOutputBackground(data, { output, id, mute: allOutputIds.length > 1 && id !== backgroundId, videoOutputId: backgroundId })
+                if (data) data = changeOutputBackground(data, { id })
             }
 
             let outData = a[id].out?.[type] || null
@@ -154,6 +258,10 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
                 if (toggle && toggleState) outData.splice(outData.indexOf(data[0]), 1)
                 else if (toggle || add) outData = removeDuplicates([...(a[id].out?.[type] || []), ...data])
                 else outData = data
+
+                if (type === "effects" && (!toggle || !toggleState)) {
+                    outData = clearDuplicateFullscreenEffects(outData, data, id)
+                }
 
                 data.forEach((overlayId) => {
                     // timeout so output can update first
@@ -171,12 +279,91 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
 
             a[id].out![type] = clone(outData)
 
-            // save locked overlays
-            if (type === "overlays") lockedOverlays.set(outData)
+            // save locked overlays / outputted scenes for relaunch
+            if (type === "overlays") saveLockedOverlays(a)
+            if (type === "scene") saveActiveScenes(a)
         })
 
         return a
     })
+
+    customActionActivation("output_changed")
+}
+
+function saveLockedOverlays(a: any) {
+    const overlaysMap: { [overlayId: string]: string[] } = {}
+    Object.keys(a).forEach((outputId) => {
+        a[outputId].out?.overlays?.forEach((overlayId) => {
+            if (!get(overlays)[overlayId]?.locked) return
+
+            if (!overlaysMap[overlayId]) overlaysMap[overlayId] = []
+            overlaysMap[overlayId].push(outputId)
+        })
+    })
+    lockedOverlays.set(overlaysMap)
+}
+function saveActiveScenes(a: any) {
+    const scenesMap: { [sceneId: string]: string[] } = {}
+    Object.keys(a).forEach((outputId) => {
+        const sceneId = a[outputId].out?.scene?.id
+        if (!sceneId) return
+
+        if (!scenesMap[sceneId]) scenesMap[sceneId] = []
+        scenesMap[sceneId].push(outputId)
+    })
+    activeScenes.set(scenesMap)
+}
+
+// setup video manager (and audio analyser)
+function checkAudio(type: string, data: any, allOutputIds: string[], outs: string[]) {
+    if (type === "background") {
+        if (data) {
+            const newPath = data.path || data.id || ""
+
+            // stop any playing backgrounds (if different than new path)
+            let hasActiveBg = false
+            allOutputIds.forEach((outputId) => {
+                const currentBg = get(outputs)[outputId]?.out?.background
+                const bgPath = currentBg?.path || currentBg?.id || ""
+                if (bgPath) hasActiveBg = true
+
+                // this will "break" any playing video items if it's the same
+                if (bgPath && bgPath !== newPath) VideoPlayer.stop(bgPath, outputId)
+            })
+
+            VideoPlayer.start(newPath, { loop: data.loop, muted: data.muted, startAt: data.startAt || 0, isOnline: data.type === "player", hasActiveBg }, allOutputIds)
+        } else {
+            VideoPlayer.stopByOutputIds(allOutputIds)
+        }
+    } else if (type === "slide") {
+        const oldSlideOut = get(outputs)[outs?.[0]]?.out?.slide
+        const oldItems = getSlideVideoItems(oldSlideOut)
+        const newItems = getSlideVideoItems(data)
+
+        const newPaths = newItems.map((item: any) => item.src)
+
+        // stop old video items not present on new slide
+        oldItems.forEach((item: any) => {
+            if (!newPaths.includes(item.src)) {
+                // don't stop if the same video is used as background
+                const outBg = get(outputs)[allOutputIds?.[0]]?.out?.background
+                if (outBg?.path === item.src) return
+
+                allOutputIds.forEach((outId) => VideoPlayer.stop(item.src, outId))
+            }
+        })
+
+        // start new video items
+        newItems.forEach((item: any) => {
+            VideoPlayer.start(item.src, { loop: item.loop !== false, muted: item.muted, startAt: item.startAt || 0, type: "item" }, allOutputIds)
+        })
+    }
+}
+function getSlideVideoItems(slideData: any) {
+    if (!slideData || !slideData.id) return []
+    const layoutRef = slideData.layout ? _show(slideData.id).layouts([slideData.layout]).ref()[0] || [] : []
+    const slide = _show(slideData.id).get("slides")?.[layoutRef[slideData.index]?.id] || {}
+    return (slide.items || []).filter((item: any) => item.type === "media" && item.src && getMediaType(getExtension(item.src)) === "video")
 }
 
 export function startFolderTimer(folderPath: string, file: { type: string; path: string }) {
@@ -226,7 +413,33 @@ function appendShowUsage(showId: string) {
     })
 }
 
-function changeOutputBackground(data, { output, id, mute, videoOutputId }) {
+// break slide time recording
+let _breakRecording: { startTime: number; showId: string; layoutId: string; slideIndex: number; previousDuration: number } | null = null
+let _pausedBreakRecording: { slideIndex: number; accumulatedDuration: number } | null = null
+function _stopBreakRecording() {
+    if (!_breakRecording) return
+
+    const { startTime, showId, layoutId, slideIndex, previousDuration } = _breakRecording
+    _breakRecording = null
+
+    const sessionElapsed = Math.round((Date.now() - startTime) / 1000)
+    const totalElapsed = previousDuration + sessionElapsed
+
+    // store accumulated time so returning to this slide resumes from here
+    _pausedBreakRecording = { slideIndex, accumulatedDuration: totalElapsed }
+
+    if (totalElapsed <= 3) return // only save if over 3 seconds
+
+    showsCache.update((a) => {
+        const slideData = a[showId]?.layouts?.[layoutId]?.slides?.[slideIndex]
+        if (!slideData) return a
+
+        slideData.breakDuration = totalElapsed
+        return a
+    })
+}
+
+function changeOutputBackground(data, { id }) {
     if (isMainWindow()) {
         setTimeout(() => {
             // update stage background if any
@@ -236,50 +449,20 @@ function changeOutputBackground(data, { output, id, mute, videoOutputId }) {
         }, 100)
     }
 
-    const previousWasVideo: boolean = videoExtensions.includes(getExtension(output.out?.background?.path))
-
-    if (data === null) {
-        if (id === videoOutputId) fadeinAllPlayingAudio()
-        if (previousWasVideo) videoEnding()
-
-        return data
-    }
-
-    // mute videos in the other output windows if more than one
-    // WIP fix multiple outputs: if an output with style without background is first the video will be muted... even if another output should not be muted
-    data.muted = data.muted || false
-    if (mute) data.muted = true
-
-    const videoData = { muted: data.muted, loop: data.loop || false }
-
-    if (id === videoOutputId) {
-        const muteAudio = get(special).muteAudioWhenVideoPlays
-        const isVideo = data.type === "player" || data.type === "video" || videoExtensions.includes(getExtension(data.path))
-        if (!data.muted && muteAudio && isVideo) fadeoutAllPlayingAudio()
-        else fadeinAllPlayingAudio()
-
-        if (isVideo) videoStarting()
-        else if (previousWasVideo) videoEnding()
-    }
-
-    // wait for video receiver to change
-    setTimeout(() => {
-        // data is sent directly in output as well ??
-        send(OUTPUT, ["DATA"], { [id]: videoData })
-        if (data.startAt !== undefined) send(OUTPUT, ["TIME"], { [id]: data.startAt || 0 })
-    }, 600)
-
     return data
 }
 
-function videoEnding() {
-    setTimeout(() => {
-        customActionActivation("video_end")
-    })
-}
-function videoStarting() {
-    customActionActivation("video_start")
-}
+// function videoEnding() {
+//     setTimeout(() => {
+//         customActionActivation("video_end")
+//     })
+// }
+// function videoStarting(type: "foreground" | "background" | null) {
+//     customActionActivation("video_start")
+
+//     if (type === "foreground") customActionActivation("video_start_foreground")
+//     else if (type === "background") customActionActivation("video_start_background")
+// }
 
 export function startCamera(cam: API_camera) {
     setOutput("background", { name: cam.name || "", id: cam.id, cameraGroup: cam.groupId, type: "camera" })
@@ -287,6 +470,73 @@ export function startCamera(cam: API_camera) {
 
 export function startScreen(screen: API_screen) {
     setOutput("background", { name: screen.name || "", id: screen.id, type: "screen" })
+}
+
+export function startScene(id: string, specificOutputIds: string[] | null = null) {
+    if (get(outLocked)) return
+
+    const scene = get(scenes)[id]
+    if (!scene) return
+
+    const bindings = specificOutputIds?.length ? specificOutputIds : scene.bindings || []
+    const activeOutputIds = getAllActiveOutputIds()
+    const targetOutputIds = bindings.length ? activeOutputIds.filter((outputId) => isOutputBound(bindings, outputId)) : activeOutputIds
+    if (!targetOutputIds.length) return
+
+    const currentOutputs = get(outputs)
+    const isAlreadyOutputted = targetOutputIds.every((outputId) => currentOutputs[outputId]?.out?.scene?.id === id)
+    if (isAlreadyOutputted) return
+
+    outputScene(id, targetOutputIds)
+
+    // run action
+    const actionId = scene.action
+    if (actionId && get(actions)[actionId]) {
+        runAction({ ...get(actions)[actionId], id: actionId }, { source: "scene" })
+    }
+}
+
+export function updateActiveSceneOutputs(sceneId: string) {
+    const currentOutputs = get(outputs)
+    const matchingOutputIds = Object.keys(currentOutputs).filter((outputId) => currentOutputs[outputId]?.out?.scene?.id === sceneId)
+    if (!matchingOutputIds.length) return
+
+    outputScene(sceneId, matchingOutputIds)
+}
+
+function outputScene(sceneId: string, targetOutputIds: string[] = []) {
+    const scene = get(scenes)[sceneId]
+    if (!scene) return
+
+    const content = scene.content || {}
+
+    // output scene to target outputs
+    targetOutputIds.forEach((outputId) => {
+        setOutput("scene", { ...content, id: sceneId, name: scene.name }, false, outputId)
+    })
+}
+
+/// EFFECTS
+
+const FULLSCREEN_EFFECT_TYPES = ["mesh_gradient", "rays"]
+
+function getEffectFullscreenTypes(effectId: string): string[] {
+    const effect = get(effects)[effectId]
+    return effect?.items?.filter((item) => !item.hidden && FULLSCREEN_EFFECT_TYPES.includes(item.type)).map((item) => item.type) || []
+}
+
+// some effects take up the whole screen and would block each other, so clear out any other effects of same type to only keep one "fullscreen effect" active at once
+function clearDuplicateFullscreenEffects(activeEffectIds: string[], newEffectIds: string[], outputId: string): string[] {
+    const newTypes = newEffectIds.flatMap(getEffectFullscreenTypes)
+    if (!newTypes.length) return activeEffectIds
+
+    return activeEffectIds.filter((id) => {
+        if (newEffectIds.includes(id)) return true
+        const types = getEffectFullscreenTypes(id)
+        const hasConflict = types.some((t) => newTypes.includes(t))
+        if (hasConflict) clearOverlayTimer(outputId, id)
+        return !hasConflict
+    })
 }
 
 /// OVERLAY TIMERS
@@ -399,12 +649,8 @@ export function getFirstActiveOutput(_updater: any = null) {
 
 // DEPRECATED
 let sortedOutputs: (Output & { id: string })[] = []
+
 export function getActiveOutputs(updater: Outputs = get(outputs), hasToBeActive = true, removeKeyOutput = false, shouldRemoveStageOutput = false) {
-    // keyOutput is not in use anymore
-    // WIP cache outputs
-    // if (JSON.stringify(sortedOutputs.map(({ id }) => id)) !== JSON.stringify(Object.keys(updater))) {
-    //     sortedOutputs = sortByName(keysToID(updater || {}))
-    // }
     sortedOutputs = sortByName(keysToID(updater || {}))
 
     let enabled = sortedOutputs.filter((a) => a.enabled === true && (removeKeyOutput ? !(a as any).isKeyOutput : true) && (shouldRemoveStageOutput ? !a.stageOutput : true))
@@ -424,25 +670,35 @@ export function getActiveOutputs(updater: Outputs = get(outputs), hasToBeActive 
 export function findMatchingOut(id: string, updater: Outputs = get(outputs)): string | null {
     let match: string | null = null
 
-    // TODO: more than one active
-
     getActiveOutputs(updater, false, true, true).forEach((outputId: string) => {
         const output = updater[outputId]
         if (match === null && output.enabled) {
-            // TODO: index & layout: $outSlide?.index === i && $outSlide?.id === $activeShow?.id && $outSlide?.layout === activeLayout
-            // slides (edit) + slides
             if (output.out?.slide?.id === id) match = output.color
             else if ((output.out?.background?.path || output.out?.background?.id) === id) match = output.color
             else if (output.out?.overlays?.includes(id)) match = output.color
             else if (output.out?.effects?.includes(id)) match = output.color
+            else if (output.out?.scene?.id === id) match = output.color
         }
     })
 
-    // if (match && match === "#F0008C" && get(themes)[get(theme)]?.colors?.secondary) {
-    //   match = get(themes)[get(theme)]?.colors?.secondary
-    // }
-
     return match
+}
+
+export function getFirstOutputIdWithBackground(outputIds: string[] = [], _updater: any = null) {
+    if (!outputIds.length) outputIds = getAllNormalOutputs().map((a) => a.id)
+
+    return (
+        outputIds.find((id) => {
+            const output = get(outputs)[id]
+            if (!output || output.stageOutput) return false
+
+            const style = get(styles)[output.style || ""]
+            let layers = style?.layers
+            if (!Array.isArray(layers)) layers = ["background"]
+
+            return layers.includes("background")
+        }) || null
+    )
 }
 
 // used for checking if style template should be used as slide preview - only if all outputs have it
@@ -480,10 +736,12 @@ export function isOutCleared(key: string | null = null, updater: Outputs = get(o
 
         const output = updater[outputId]
         const keys: string[] = key ? [key] : Object.keys(output.out || {})
-        cleared = !keys.find((type: string) => {
+        cleared = !keys.some((type: string) => {
             if (!output.out?.[type]) return
+            if (key === null && type === "scene") return false
 
             if (type === "overlays") {
+                if (!Array.isArray(output.out.overlays)) return false
                 if (checkLocked && output.out.overlays?.length) return true
                 if (!checkLocked && output.out.overlays?.filter((id: string) => !get(overlays)[id]?.locked).length) return true
                 return false
@@ -526,16 +784,14 @@ export function outputSlideHasContent(output) {
     return !!getSlideText(currentSlide)?.length
 }
 
-// WIP style should override any slide resolution & color ? (it does not)
-
 // this actually gets aspect ratio
 export function getResolution(initial: Resolution | undefined | null = null, _updater: any = null, _getSlideRes = false, outputId = "", styleIdOverride = ""): Resolution {
-    if (initial) return initial
+    if (initial?.width) return initial
 
     if (!outputId) outputId = getFirstActiveOutput()?.id || ""
     const currentOutput = get(outputs)[outputId]
 
-    if (currentOutput?.stageOutput) return currentOutput.bounds
+    if (currentOutput?.stageOutput) return currentOutput.bounds ?? DEFAULT_BOUNDS
 
     const style = styleIdOverride || currentOutput?.style ? get(styles)[(styleIdOverride || currentOutput?.style)!] || null : null
     const styleRatio: any = style?.aspectRatio || style?.resolution
@@ -549,16 +805,27 @@ export function getResolution(initial: Resolution | undefined | null = null, _up
 export function getStageOutputId(_updater = get(outputs)) {
     return keysToID(_updater).find((a) => a.stageOutput && a.enabled)?.id || ""
 }
+
 export function getStageResolution(outputId = "", _updater = get(outputs)): Resolution {
-    if (!outputId) outputId = getStageOutputId()
-    return getOutputResolution(outputId)
+    if (!outputId) outputId = getStageOutputId(_updater)
+    return getOutputResolution(outputId, _updater)
 }
 
 // calculate actual output resolution based on style aspect ratio
 export const DEFAULT_BOUNDS = { width: 1920, height: 1080 }
+const outputResolutionCache = new Map<string, Resolution>()
+
 export function getOutputResolution(outputId: string, _updater = get(outputs), scaled = false, styleIdOverride = "") {
     const currentOutput = _updater[outputId]
-    const outputRes = clone(currentOutput?.bounds || DEFAULT_BOUNDS)
+    const effectiveStyleId = styleIdOverride || currentOutput?.style || ""
+    const currentStyle = effectiveStyleId ? get(styles)[effectiveStyleId] : null
+    const styleRatioVal: any = currentStyle?.aspectRatio || currentStyle?.resolution
+    const styleRatioKey = styleRatioVal ? `${styleRatioVal.width}x${styleRatioVal.height}_${styleRatioVal.outputResolutionAsRatio ? 1 : 0}` : ""
+    const cacheKey = `${outputId}_${scaled}_${effectiveStyleId}_${styleRatioKey}_${currentOutput?.bounds?.width || 0}_${currentOutput?.bounds?.height || 0}`
+    const cached = outputResolutionCache.get(cacheKey)
+    if (cached) return { ...cached }
+
+    const outputRes = clone(currentOutput?.bounds?.width ? currentOutput.bounds : DEFAULT_BOUNDS)
 
     const styleRatio = getResolution(null, null, false, outputId, styleIdOverride)
     const styleAspectRatio = styleRatio.width / styleRatio.height
@@ -575,47 +842,44 @@ export function getOutputResolution(outputId: string, _updater = get(outputs), s
         outputRes.height = Math.round(DEFAULT_BOUNDS.width / outputAspectRatio)
     }
 
-    if (!scaled) return outputRes
-
-    // return styleRatio
-
-    // output window size is narrow
-    //  && outputAspectRatio > 1
-    if (styleAspectRatio < 1) {
-        outputRes.width = Math.round(outputRes.height * styleAspectRatio)
-    } else {
-        outputRes.height = Math.round(outputRes.width / styleAspectRatio)
+    if (scaled) {
+        // output window size is narrow
+        if (styleAspectRatio < 1) {
+            outputRes.width = Math.round(outputRes.height * styleAspectRatio)
+        } else {
+            outputRes.height = Math.round(outputRes.width / styleAspectRatio)
+        }
     }
 
-    // WIP: correct values....
-    // const outputRes2 = clone(currentOutput?.bounds || DEFAULT_BOUNDS)
-    // const newAspectRatio = outputRes.width / outputRes.height
-    // if (outputRes2.width < outputRes2.height) {
-    //     outputRes2.height = Math.round(newAspectRatio < 1 && styleAspectRatio > 1 ? outputRes2.width * newAspectRatio : outputRes2.width / newAspectRatio)
-    //     // outputRes2.width = outputRes2.width
-    // } else {
-    //     outputRes2.width = Math.round(newAspectRatio < 1 && styleAspectRatio > 1 ? outputRes2.height / newAspectRatio : outputRes2.height * newAspectRatio)
-    // }
-
-    // if (newStyleAspectRatio < 1) {
-    //     outputRes2.height = Math.round(outputRes.width / newStyleAspectRatio)
-    // } else {
-    //     outputRes2.width = Math.round(outputRes.height * newStyleAspectRatio)
-    // }
-
-    return outputRes
+    if (outputResolutionCache.size > 200) outputResolutionCache.clear()
+    outputResolutionCache.set(cacheKey, outputRes)
+    return { ...outputRes }
 }
 
 export function stylePosToPercentage(stylesData: { [key: string]: any }) {
-    if (stylesData.left) stylesData.left = (Number(stylesData.left) / DEFAULT_BOUNDS.width) * 100
-    if (stylesData.top) stylesData.top = (Number(stylesData.top) / DEFAULT_BOUNDS.height) * 100
-    if (stylesData.width) stylesData.width = (Number(stylesData.width) / DEFAULT_BOUNDS.width) * 100
-    if (stylesData.height) stylesData.height = (Number(stylesData.height) / DEFAULT_BOUNDS.height) * 100
+    const res = { ...stylesData }
+    if (res.left) res.left = (Number(res.left) / DEFAULT_BOUNDS.width) * 100
+    if (res.top) res.top = (Number(res.top) / DEFAULT_BOUNDS.height) * 100
+    if (res.width) res.width = (Number(res.width) / DEFAULT_BOUNDS.width) * 100
+    if (res.height) res.height = (Number(res.height) / DEFAULT_BOUNDS.height) * 100
 
-    return stylesData
+    return res
 }
 
+const stylePosCache = new Map<string, string>()
+
 export function percentageStylePos(style: string, resolution: Resolution) {
+    if (!style || !resolution?.width || !resolution?.height) return style || ""
+
+    // Fast-path: if resolution has the standard 16:9 ratio, percentage pos conversion is identity
+    if (Math.abs(resolution.width / resolution.height - DEFAULT_BOUNDS.width / DEFAULT_BOUNDS.height) < 0.001) {
+        return style
+    }
+
+    const cacheKey = `${style}_${resolution.width}_${resolution.height}`
+    const cached = stylePosCache.get(cacheKey)
+    if (cached !== undefined) return cached
+
     let stylesData = getStyles(style, true)
     stylesData = stylePosToPercentage(stylesData)
 
@@ -623,13 +887,15 @@ export function percentageStylePos(style: string, resolution: Resolution) {
     const width = DEFAULT_BOUNDS.width
     const height = DEFAULT_BOUNDS.width / aspectRatio
 
-    style += ";"
-    if (stylesData.left) style += "left: " + width * (Number(stylesData.left) / 100) + "px;"
-    if (stylesData.top) style += "top: " + height * (Number(stylesData.top) / 100) + "px;"
-    if (stylesData.width) style += "width: " + width * (Number(stylesData.width) / 100) + "px;"
-    if (stylesData.height) style += "height: " + height * (Number(stylesData.height) / 100) + "px;"
+    let result = style + ";"
+    if (stylesData.left) result += "left: " + width * (Number(stylesData.left) / 100) + "px;"
+    if (stylesData.top) result += "top: " + height * (Number(stylesData.top) / 100) + "px;"
+    if (stylesData.width) result += "width: " + width * (Number(stylesData.width) / 100) + "px;"
+    if (stylesData.height) result += "height: " + height * (Number(stylesData.height) / 100) + "px;"
 
-    return style
+    if (stylePosCache.size > 500) stylePosCache.clear()
+    stylePosCache.set(cacheKey, result)
+    return result
 }
 
 export function percentageToAspectRatio(input: EditInput) {
@@ -651,13 +917,17 @@ export function checkWindowCapture(startup = false) {
     AudioAnalyser.recorderActivate()
 }
 
-// NDI | OutputShow | Stage CurrentOutput
+// NDI | OutputShow | Stage CurrentOutput | WebRTC
 export function shouldBeCaptured(outputId: string, startup = false) {
     const output = get(outputs)[outputId]
+    const stageConnectionIds = Object.keys(get(connections).STAGE || {})
     const captures = {
         ndi: !!output.ndi,
         server: !!(get(disabledServers).output_stream === false && (get(serverData)?.output_stream?.outputId || getFirstOutput()?.id) === outputId),
-        stage: !get(disabledServers).stage && Object.keys(get(connections).STAGE || {}).length > 0 && stageHasOutput(outputId)
+        // only capture while a connected stage client is actually viewing a "current output" mirror (text-only stage displays need no capture)
+        stage: !get(disabledServers).stage && stageConnectionIds.length > 0 && stageHasOutput(outputId) && hasStageStreamViewers(stageConnectionIds, outputId),
+        webrtc: !!output.webrtc,
+        rtmp: !!output.rtmp
     }
 
     // alert user that screen recording starts
@@ -675,10 +945,124 @@ function stageHasOutput(outputId: string) {
             if (!outputItem) return false
         }
 
-        return (outputItem?.currentOutput?.source || stageLayout.settings?.output || outputId) === outputId
+        const targetOutput = outputItem?.currentOutput?.source || stageLayout.settings?.output
+        const resolvedTarget = targetOutput ? resolveOutputId(targetOutput) : outputId
+        return (resolvedTarget || outputId) === outputId
 
         // WIP check that this stage layout is not disabled & used in a output or (web enabled (disabledServers) + has connection)!
     })
+}
+
+// Streaming
+
+export function startStreaming(outputId: string = "") {
+    const resolvedId = outputId ? resolveOutputId(outputId) || outputId : ""
+    const outputIds = resolvedId ? [resolvedId] : getAllActiveOutputIds()
+
+    outputIds.forEach((id) => updateOutputWebrtcData(id, "streaming", true))
+}
+
+export async function stopStreaming(outputId: string = "", confirmStop: boolean = false) {
+    if (confirmStop) {
+        const confirmed = await confirmCustom(translateText("output.confirm_stop"))
+        if (!confirmed) return
+    }
+
+    const resolvedId = outputId ? resolveOutputId(outputId) || outputId : ""
+    const outputIds = resolvedId ? [resolvedId] : getAllActiveOutputIds()
+
+    outputIds.forEach((id) => updateOutputWebrtcData(id, "streaming", false))
+}
+
+export function updateOutputWebrtcData(outputId: string, key: string, value: any) {
+    const resolvedId = resolveOutputId(outputId) || outputId
+    const output = get(outputs)[resolvedId]
+    if (!output) return null
+
+    const newData = { ...(output.webrtcData || {}), [key]: value }
+
+    if (key === "streaming" && (!output.webrtc || !output.webrtcData?.url)) return null
+
+    outputs.update((a: any) => {
+        if (!a[resolvedId]) return a
+        a[resolvedId].webrtcData = newData
+        return a
+    })
+
+    if (key === "streaming") {
+        if (value) AudioAnalyser.recorderActivate()
+        else AudioAnalyser.recorderDeactivate()
+    }
+
+    send(OUTPUT, ["SET_VALUE"], { id: resolvedId, key: "webrtcData", value: newData })
+    return newData
+}
+
+export function startRtmpStreaming(outputId: string = "") {
+    const resolvedId = outputId ? resolveOutputId(outputId) || outputId : ""
+    const outputIds = resolvedId ? [resolvedId] : getAllActiveOutputIds()
+    outputIds.forEach((id) => updateOutputRtmpData(id, "streaming", true))
+}
+
+export async function stopRtmpStreaming(outputId: string = "", confirmStop: boolean = false) {
+    if (confirmStop) {
+        const confirmed = await confirmCustom(translateText("output.confirm_stop"))
+        if (!confirmed) return
+    }
+
+    const resolvedId = outputId ? resolveOutputId(outputId) || outputId : ""
+    const outputIds = resolvedId ? [resolvedId] : getAllActiveOutputIds()
+    outputIds.forEach((id) => updateOutputRtmpData(id, "streaming", false))
+}
+
+export function updateOutputRtmpData(outputId: string, key: string, value: any) {
+    const output = get(outputs)[outputId]
+    if (!output) return null
+
+    const newData = { ...(output.rtmpData || {}), [key]: value }
+
+    if (key === "streaming" && (!output.rtmp || !hasStreamableDestination(newData))) return null
+
+    outputs.update((a: any) => {
+        if (!a[outputId]) return a
+        a[outputId].rtmpData = newData
+        return a
+    })
+
+    if (key === "streaming") {
+        if (value) AudioAnalyser.recorderActivate()
+        else AudioAnalyser.recorderDeactivate()
+    }
+
+    if (key === "encoder") {
+        sendMain(Main.SET_RTMP_ENCODER, { outputId, encoder: value })
+    }
+
+    send(OUTPUT, ["SET_VALUE"], { id: outputId, key: "rtmpData", value: newData })
+    return newData
+}
+
+export function addRtmpDestination(outputId: string) {
+    const existing = get(outputs)[outputId]?.rtmpData?.destinations || []
+    updateOutputRtmpData(outputId, "destinations", [...existing, createDestination()])
+}
+
+export function updateRtmpDestination(outputId: string, destinationId: string, key: keyof RtmpDestination, value: any) {
+    const existing = get(outputs)[outputId]?.rtmpData?.destinations || []
+    updateOutputRtmpData(
+        outputId,
+        "destinations",
+        existing.map((d) => (d.id === destinationId ? { ...d, [key]: value } : d))
+    )
+}
+
+export function removeRtmpDestination(outputId: string, destinationId: string) {
+    const existing = get(outputs)[outputId]?.rtmpData?.destinations || []
+    updateOutputRtmpData(
+        outputId,
+        "destinations",
+        existing.filter((d) => d.id !== destinationId)
+    )
 }
 
 // settings
@@ -693,14 +1077,17 @@ export const defaultOutput: Output = {
 }
 
 // WIP history
-export function addOutput(onlyFirst = false, styleId = "") {
-    if (onlyFirst && get(outputs).length) return
+export function addOutput(onlyFirst = false, styleId = "", enabled = true, name = "") {
+    if (onlyFirst && Object.keys(get(outputs)).length) return ""
 
+    let outputId = ""
     outputs.update((output) => {
         const id = uid()
+        outputId = id
         if (get(themes)[get(theme)]?.colors?.secondary) defaultOutput.color = get(themes)[get(theme)].colors.secondary!
         output[id] = clone(defaultOutput)
         if (styleId) output[id].style = styleId
+        if (name) output[id].name = name
 
         // set name
         let n = 0
@@ -709,14 +1096,38 @@ export function addOutput(onlyFirst = false, styleId = "") {
         if (onlyFirst) output[id].name = translateText("theme.primary")
 
         // show
-        // , rate: get(special).previewRate || "auto"
-        if (!onlyFirst) send(OUTPUT, ["CREATE"], { id, ...output[id] })
-        if (!onlyFirst && get(outputDisplay)) toggleOutput(id)
+        if (enabled && !onlyFirst) send(OUTPUT, ["CREATE"], { id, ...output[id] })
+        if (enabled && !onlyFirst && get(outputDisplay)) toggleOutput(id)
 
+        // set as active
         if (get(currentOutputSettings) !== id) currentOutputSettings.set(id)
+        // start rename
         activeRename.set("output_" + id)
+
         return output
     })
+
+    return outputId
+}
+
+export async function checkFFmpeg(): Promise<boolean> {
+    const res = await requestMain(Main.FFMPEG_CHECK)
+    if (res?.installed) return true
+
+    if (await confirmCustom("To create an RTMP output, FreeShow needs to download and install FFmpeg. Do you want to proceed?")) {
+        const downloadRes = await requestMain(Main.FFMPEG_DOWNLOAD)
+        if (downloadRes?.success) {
+            newToast("FFmpeg installed successfully!")
+
+            // probing encoders costs a few seconds of test encodes; warm it now so the first "Start streaming" is not stuck waiting for it
+            sendMain(Main.ENCODER_DETECT)
+            return true
+        } else {
+            newToast(translateText("Failed to download FFmpeg: ") + (downloadRes?.error || "Unknown error"))
+        }
+    }
+
+    return false
 }
 
 // WIP history
@@ -737,6 +1148,10 @@ export function enableStageOutput(options: any = {}) {
         }
 
         send(OUTPUT, ["CREATE"], { ...a[id], id })
+
+        // set as active
+        if (get(currentOutputSettings) !== id) currentOutputSettings.set(id)
+        // start rename
         activeRename.set("output_" + id)
 
         return a
@@ -748,7 +1163,8 @@ export function enableStageOutput(options: any = {}) {
 export function changeStageOutputLayout(data: API_stage_output_layout) {
     if (!data.stageLayoutId) return
 
-    const outputIds = data.outputId ? [data.outputId] : Object.keys(get(outputs))
+    const targetId = data.outputId ? resolveOutputId(data.outputId) : null
+    const outputIds = targetId ? [targetId] : Object.keys(get(outputs))
 
     outputs.update((a) => {
         outputIds.forEach((id) => {
@@ -760,58 +1176,46 @@ export function changeStageOutputLayout(data: API_stage_output_layout) {
     })
 }
 
-export function deleteOutput(outputId: string) {
-    if (Object.keys(get(outputs)).length <= 1) return
+// export async function clearPlayingVideo(clearOutput = "") {
+//     const mediaTransition: Transition = getCurrentMediaTransition()
 
-    outputs.update((a) => {
-        send(OUTPUT, ["REMOVE"], { id: outputId })
-        delete a[outputId]
+//     let duration = (mediaTransition?.duration || 0) + 200
+//     if (!clearOutput) duration /= 2.4 // a little less than half the time
 
-        currentOutputSettings.set(Object.keys(a)[0])
-        return a
-    })
-}
+//     return new Promise((resolve) => {
+//         setTimeout(() => {
+//             // remove from playing
+//             // playingVideos.update((playingVideo) => {
+//             //     let existing = -1
+//             //     do {
+//             //         existing = playingVideo.findIndex((a) => (clearOutput ? a.id === clearOutput : a.location === "output") || a.location === "preview")
+//             //         if (existing > -1) playingVideo.splice(existing, 1)
+//             //     } while (existing > -1)
 
-export async function clearPlayingVideo(clearOutput = "") {
-    const mediaTransition: Transition = getCurrentMediaTransition()
+//             //     return playingVideo
+//             // })
+//             // playingVideos.set([])
 
-    let duration = (mediaTransition?.duration || 0) + 200
-    if (!clearOutput) duration /= 2.4 // a little less than half the time
+//             //   let video = null
+//             const videoData = {
+//                 time: 0,
+//                 duration: 0,
+//                 paused: !!clearOutput,
+//                 muted: false,
+//                 loop: false
+//             }
 
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            // remove from playing
-            playingVideos.update((playingVideo) => {
-                let existing = -1
-                do {
-                    existing = playingVideo.findIndex((a) => (clearOutput ? a.id === clearOutput : a.location === "output") || a.location === "preview")
-                    if (existing > -1) playingVideo.splice(existing, 1)
-                } while (existing > -1)
+//             // if (!AudioAnalyser.shouldAnalyse()) {
+//             //     // wait for video to clear in output
+//             //     setTimeout(() => AudioPlayer.stopCheckLoop(), 5000)
+//             // }
 
-                return playingVideo
-            })
-            // playingVideos.set([])
+//             // send(OUTPUT, ["UPDATE_VIDEO"], { id: clearOutput, data: videoData, time: 0 })
 
-            //   let video = null
-            const videoData = {
-                time: 0,
-                duration: 0,
-                paused: !!clearOutput,
-                muted: false,
-                loop: false
-            }
-
-            // if (!AudioAnalyser.shouldAnalyse()) {
-            //     // wait for video to clear in output
-            //     setTimeout(() => AudioAnalyserMerger.stop(), 5000)
-            // }
-
-            // send(OUTPUT, ["UPDATE_VIDEO"], { id: clearOutput, data: videoData, time: 0 })
-
-            resolve(videoData)
-        }, duration)
-    })
-}
+//             resolve(videoData)
+//         }, duration)
+//     })
+// }
 
 export function getCurrentMediaTransition() {
     const transition: Transition = get(transitionData).media
@@ -955,7 +1359,7 @@ export function mergeWithTemplate(slideItems: Item[], templateItems: Item[], add
         })
     }
 
-    const sorted = sortItemsByType(templateItems)
+    const sorted = sortItemsByType(templateItems, true)
     const sortedTemplateItems = clone(sorted)
 
     const hasScriptureDynamicValue = Object.keys(customDynamicValues).length && templateItems?.some((item) => item?.lines?.some((line) => line?.text?.some((text) => text.value?.includes("{scripture") || text.value?.includes("{songbook"))))
@@ -975,8 +1379,10 @@ export function mergeWithTemplate(slideItems: Item[], templateItems: Item[], add
     slideItems.forEach((item: Item) => {
         if (!item) return
 
-        const type = item.type || "text"
+        let type: string = item.type || "text"
         if (type === "text" && hasScriptureDynamicValue) return
+
+        if (hasDynamicValue(item)) type = "text_dynamic"
 
         const templateItem = clone(sortedTemplateItems[type]?.shift())
         if (!templateItem) return finish()
@@ -1020,7 +1426,7 @@ export function mergeWithTemplate(slideItems: Item[], templateItems: Item[], add
         // remove exiting styling & add new if set in template
         // WIP some keys are probably missing here...
         // NOTE: textFit is already handled above in the auto/textFit logic block
-        const extraStyles = ["chords", "actions", "specialStyle", "scrolling", "bindings", "conditions", "clickReveal", "lineReveal", "fit", "filter", "flipped", "flippedY"]
+        const extraStyles = ["chords", "actions", "specialStyle", "scrolling", "bindings", "conditions", "clickReveal", "lineReveal", "fit", "filter", "flipped", "flippedY", "blend"]
         extraStyles.forEach((key) => {
             delete item[key]
             if (templateItem[key]) item[key] = templateItem[key]
@@ -1030,18 +1436,18 @@ export function mergeWithTemplate(slideItems: Item[], templateItems: Item[], add
 
         const textFormatSets = getTextFormatSets(item)
 
-        const hasDynamicValue = templateItem?.lines?.some((line) => line?.text?.some((text) => text.value?.includes("{")))
+        const templateItemHasDynamicValue = hasDynamicValue(templateItem)
 
         item.lines?.forEach((line, j) => {
             let templateLine = templateItem?.lines?.[j] || templateItem?.lines?.[0]
             if (!templateLine) return
 
             // remove empty text parts (if not completely empty)
-            if (templateLine.text.some((a) => a?.value?.trim().length)) templateLine.text = templateLine.text.filter((a) => a?.value?.trim().length)
+            if (templateLine.text?.some((a) => a?.value?.trim().length)) templateLine.text = templateLine.text.filter((a) => a?.value?.trim().length)
 
-            line.align = templateLine?.align || ""
+            line.align = templateLine.align || ""
             line.text?.forEach((text, k) => {
-                const templateText = templateLine?.text?.[k] || templateLine?.text?.[0]
+                const templateText = templateLine.text?.[k] || templateLine.text?.[0]
 
                 if (!text.customType?.includes("disableTemplate") && !/\{scripture(?:\d+)?_number\}/.test(templateText?.value || "")) {
                     let style = templateText?.style || ""
@@ -1053,7 +1459,7 @@ export function mergeWithTemplate(slideItems: Item[], templateItems: Item[], add
                 const firstChar = templateText?.value?.[0] || ""
 
                 // add dynamic values
-                if ((!text.value?.length || text.value?.includes("{")) && hasDynamicValue && templateItem?.lines?.[j]) {
+                if ((!text.value?.length || text.value?.includes("{")) && templateItemHasDynamicValue && templateItem?.lines?.[j]) {
                     text.value = templateText!.value
                 }
 
@@ -1080,12 +1486,12 @@ export function mergeWithTemplate(slideItems: Item[], templateItems: Item[], add
     })
 
     if (addOverflowTemplateItems || hasScriptureDynamicValue) {
-        const remainingTextTemplateItems = sorted.text?.slice(slideTextboxes) || []
+        const remainingTextTemplateItems = !templateClicked || hasScriptureDynamicValue ? sorted.text?.slice(slideTextboxes) || [] : sortedTemplateItems.text || []
 
         if (hasScriptureDynamicValue) {
             remainingTextTemplateItems.forEach((item) => {
                 // check if item has scripture value (and not {scripture_text})
-                const regex = /\{scripture(?:\d+)?_[^}]+\}/g
+                const regex = /\{scripture(?:\d+)?_[^}]*\}/g
                 const text = getItemText(item)
                 const isDecoration = (() => {
                     const matches = text?.match(regex)
@@ -1110,8 +1516,8 @@ export function mergeWithTemplate(slideItems: Item[], templateItems: Item[], add
         // })
     }
 
-    // remove textbox items
-    templateItems = templateItems.filter((a) => (a.type || "text") !== "text")
+    // remove (non dynamic value) textbox items
+    templateItems = templateItems.filter((a) => (a.type || "text") !== "text" || hasDynamicValue(a))
     // remove any duplicate values
     templateItems = templateItems.filter(
         (item) =>
@@ -1218,14 +1624,18 @@ function replaceScriptureValues(items: Item[], templateItems: Item[], customDyna
 
                                 const bibleIndex = parseInt(key.replace(/\D/g, "")) || 0
 
-                                value.forEach(([number, value], index) => {
+                                value.forEach(([number, verseText], index) => {
                                     if (number && number !== "0") {
                                         const size = verseNumberSize * (i === 0 ? 1.2 : 1)
                                         const numberStyle = `;${verseNumberStyles[bibleIndex] || verseNumberStyles[0] || verseNumberStyle}font-size: ${size}px;margin-right: 0.3em;`
                                         newTexts.push({ value: number, style: style + numberStyle, customType: "disableTemplate" })
                                     }
 
-                                    newTexts.push({ value, sourceDynamicKey: key + ":" + index, style: style + ";" + baseStyle })
+                                    // Add trailing space if there is a next item on the slide
+                                    const nextItem = (value as [string, string][])[index + 1]
+                                    const needsSpace = !!nextItem && !verseText.endsWith(" ") && !verseText.endsWith("\n") && !verseText.endsWith(">")
+                                    let val = needsSpace ? verseText + " " : verseText
+                                    newTexts.push({ value: val, sourceDynamicKey: key + ":" + index, style: style + ";" + baseStyle })
                                 })
                             }
                         })
@@ -1241,7 +1651,7 @@ function replaceScriptureValues(items: Item[], templateItems: Item[], customDyna
         // remove empty values
         items.forEach((item) => {
             item.lines?.forEach((line) => {
-                line.text = line.text?.filter((text) => text.value) || []
+                line.text = Array.isArray(line.text) ? line.text.filter((text) => text.value) : []
             }) 
         })
 
@@ -1401,19 +1811,30 @@ export function isEmpty(item: Item) {
     return !getItemText(item).length
 }
 
-export function sortItemsByType(items: Item[]) {
+export function sortItemsByType(items: Item[], dynamicValueType: boolean = false) {
     const sortedItems: { [key: string]: Item[] } = {}
 
     items.forEach((item) => {
         if (!item) return
 
-        const type = item.type || "text"
+        let type: string = item.type || "text"
+        if (dynamicValueType && hasDynamicValue(item)) type = "text_dynamic"
         if (!sortedItems[type]) sortedItems[type] = []
 
         sortedItems[type].push(item)
     })
 
     return sortedItems
+}
+
+function hasDynamicValue(item: Item) {
+    if (!item.lines) return false
+
+    // scripture dynamic values does not count as normal dynamic values
+    const hasScriptureDynamicValue = item?.lines?.some((line) => line?.text?.some((text) => text.value?.includes("{scripture")))
+    if (hasScriptureDynamicValue) return false
+
+    return item.lines.some((line) => line.text?.some((text) => text.value?.includes("{")))
 }
 
 export function getItemsCountByType(items: Item[]) {
@@ -1486,14 +1907,29 @@ export function getStyleTemplate(outSlide: OutSlide | null, currentStyle: Styles
     const translations: number = outSlide?.id === "temp" ? outSlide.translations || 1 : reference?.data?.translations || reference?.data?.version?.split("+")?.length || 1
     const translationKey = translations > 1 ? `_${translations}` : ""
 
-    const templateId = isScripture ? currentStyle[`templateScripture${translationKey}`] || currentStyle.templateScripture : currentStyle.template
-    const template = get(templates)[templateId || ""] || {}
+    let templateId = isScripture ? currentStyle[`templateScripture${translationKey}`] || currentStyle.templateScripture : currentStyle.template
+    let template = get(templates)[templateId || ""] || {}
+
+    // use custom first slide template on first slide
+    if (template?.settings?.firstSlideTemplate && outSlide?.index === 0 && outSlide?.id !== "temp") {
+        templateId = template?.settings?.firstSlideTemplate
+        if (get(templates)[templateId]) template = get(templates)[templateId]
+    }
 
     return template
 }
 
+function itemHasAutoSize(item: Item) {
+    return (item.textFit || "none") !== "none" || !!item.auto
+}
+
 export function slideHasAutoSizeItem(slide: Slide | Template) {
-    return slide?.items?.find((a) => a.auto)
+    return slide?.items?.some(itemHasAutoSize)
+}
+
+// the auto size text size has to be calculated if it is not stored yet
+export function itemNeedsAutoSize(item: Item) {
+    return itemHasAutoSize(item) && !item.autoFontSize
 }
 
 export function setTemplateStyle(outSlide: OutSlide | null, currentStyle: Styles, items: Item[] | undefined, outputId: string, slideDynamicValues?: { [key: string]: any }) {
@@ -1537,7 +1973,7 @@ export function setTemplateStyle(outSlide: OutSlide | null, currentStyle: Styles
     function checkSpecificOutput(item: Item) {
         if (!item) return false
         if (outSlide === null) return true // always show in slides preview
-        return !item.bindings?.length || item.bindings.includes(outputId)
+        return isOutputBound(item.bindings, outputId)
     }
 }
 
@@ -1557,7 +1993,7 @@ export function getOutputLines(outSlide: OutSlide, styleLines = 0) {
             .get()[0] || null
     const maxLines = showSlide ? getItemWithMostLines(showSlide) : 0
 
-    const clickRevealItems = (showSlide?.items || []).filter((a) => a.clickReveal)
+    const clickRevealItems = Array.isArray(showSlide?.items) ? showSlide.items.filter((a) => a?.clickReveal) : []
     const clickRevealed = clickRevealItems.length ? !!outSlide.itemClickReveal : true
 
     if (!maxLines) return { start: null, end: null, clickRevealed } // , index: 0, max: 0
@@ -1618,20 +2054,6 @@ function getHighestOutputLinePos() {
 
 // METADATA
 
-// WIP dynamic placeholder values??: {meta_title?No title}
-export const DEFAULT_META_LAYOUT = "Title: {meta_title?No title}; {meta_artist}; {meta_author}; {meta_year};\n{meta_copyright}"
-export function createMetadataLayout(layout: string, ref: any, _updater = 0) {
-    return replaceDynamicValues(layout, ref)
-}
-
-export interface OutputMetadata {
-    display?: string
-    style?: string
-    transition?: any
-    value?: string
-    media?: boolean
-    condition?: any
-}
 const defaultMetadataItemStyle = "top: 910px;left: 30px;width: 1860px;height: 150px;"
 const defaultMetadataTextStyle = "font-size: 30px;color: rgb(255 255 255 / 0.8);text-shadow: 2px 2px 4px rgb(0 0 0 / 80%);"
 export function getMetadata(show: Show | undefined, currentStyle: Styles, outSlide: OutSlide | null, _updater = get(templates)) {
@@ -1642,10 +2064,20 @@ export function getMetadata(show: Show | undefined, currentStyle: Styles, outSli
     const display = metadataValues.display || "never"
     if (typeof display !== "string" || display === "never") return null
 
+    const shouldDisplay = (slideRef: any) => {
+        // ignore disabled slides
+        if (!slideRef || slideRef.data?.disabled) return false
+        if (!metadataValues.ignoreEmpty) return true
+
+        // needs to have text content
+        const slide = show.slides?.[slideRef.id]
+        return !!slide?.items?.some((item) => item.lines?.some((line) => line.text?.some((text) => text.value?.length)))
+    }
+
     const ref = clone(_show(outSlide.id).layouts([outSlide.layout]).ref()[0] || [])
-    const firstActiveSlideIndex = ref.findIndex((a) => !a.data.disabled)
-    const lastActiveSlideIndex = ref.length - 1 - [...ref].reverse().findIndex((a) => !a.data.disabled)
-    const displayMetadata = display === "always" || (display.includes("first") && outSlide?.index === firstActiveSlideIndex) || (display.includes("last") && outSlide?.index === lastActiveSlideIndex)
+    const firstActiveSlideIndex = ref.findIndex(shouldDisplay)
+    const lastActiveSlideIndex = ref.length - 1 - [...ref].reverse().findIndex(shouldDisplay)
+    const displayMetadata = (display === "always" && shouldDisplay(ref[outSlide.index ?? -1])) || (display.includes("first") && outSlide?.index === firstActiveSlideIndex) || (display.includes("last") && outSlide?.index === lastActiveSlideIndex)
     if (!displayMetadata) return null
 
     // template

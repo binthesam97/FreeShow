@@ -1,15 +1,18 @@
 <script lang="ts">
-    import { Show } from "../../../../../types/Show"
+    import type { Show } from "../../../../../types/Show"
     import { translateText } from "../../../../utils/language"
     import Pdf from "../../../export/Pdf.svelte"
     import T from "../../../helpers/T.svelte"
     import MaterialButton from "../../../inputs/MaterialButton.svelte"
     import MaterialCheckbox from "../../../inputs/MaterialCheckbox.svelte"
+    import MaterialColorInput from "../../../inputs/MaterialColorInput.svelte"
     import MaterialDropdown from "../../../inputs/MaterialDropdown.svelte"
     import MaterialNumberInput from "../../../inputs/MaterialNumberInput.svelte"
 
     export let pdfOptions: any
     export let previewShow: Show | null
+    export let showCount = 1
+    export let exportType = ""
 
     let paper: any = null
 
@@ -26,7 +29,7 @@
             invert: false,
 
             grid: [3, 6],
-            oneFile: false,
+            oneFile: exportType === "project",
             originalTextSize: true,
             textSize: 80,
 
@@ -37,11 +40,16 @@
             showNotes: true,
             fontSize: 15,
             chordFontSize: 15,
+            chordColor: "#0066cc",
             margin: 20,
             spacing: 2,
             columnsPerPage: 2
         }
     }
+
+    // always one file if project type
+    $: pdfOptions.oneFile = exportType === "project"
+    console.log("Shows:", showCount)
 
     $: pdfTypeOptions = [{ value: "default", label: translateText("example.default") }, { value: "text", label: translateText("export.text") }, { value: "slides", label: translateText("export.slides") }, { value: "media", label: translateText("items.media") }, ...(showHasChords(previewShow) ? [{ value: "chordSheet", label: "Chord Sheet" }] : [])]
 
@@ -60,6 +68,10 @@
 <div style="display: flex;gap: 15px;">
     <div class="options" style="flex: 0 0 300px;">
         <MaterialDropdown label="clock.type" style="margin-bottom: 10px;" options={pdfTypeOptions} value={pdfOptions.type || "default"} on:change={(e) => (pdfOptions.type = e.detail)} />
+
+        <!-- {#if showCount > 1}
+            <MaterialCheckbox label="export.oneFile" style="margin-bottom: 10px;" checked={pdfOptions.oneFile} disabled={exportType === "project"} on:change={(e) => updatePdfOptions(e, "oneFile")} />
+        {/if} -->
 
         <!-- <MaterialCheckbox label="export.title" checked={pdfOptions.title} on:change={(e) => updatePdfOptions(e, "title")} /> -->
 
@@ -92,6 +104,7 @@
             <h5 style="margin: 10px 0;text-align: center;color: var(--text);"><T id="edit.chords" /></h5>
 
             <MaterialNumberInput label="edit.font_size" value={pdfOptions.chordFontSize} min={6} max={20} on:change={(e) => (pdfOptions.chordFontSize = e.detail)} />
+            <MaterialColorInput label="edit.color" value={pdfOptions.chordColor || "#0066cc"} defaultValue="#0066cc" on:change={(e) => (pdfOptions.chordColor = e.detail)} on:input={(e) => (pdfOptions.chordColor = e.detail)} />
         {/if}
     </div>
 
@@ -100,7 +113,7 @@
             <!-- <h4 style="text-align: center;"><T id="export.preview" /></h4> -->
             <!-- <div class="label">{translateText("export.preview")}</div> -->
 
-            <div class="paper" bind:this={paper}>
+            <div class="paper" bind:this={paper} style="--paper-aspect-ratio: {pdfOptions.type === 'media' ? '1920/1080' : '210/297'};">
                 <Pdf shows={previewShow ? [previewShow] : []} options={pdfOptions} />
             </div>
         </div>
@@ -111,16 +124,6 @@
         </div>
     </div>
 </div>
-
-<!-- all as one file ??-->
-<!-- {#if shows.length > 1 && format.id !== "project"}
-  <span>
-    <p><T id="export.oneFile" /></p>
-    <div class="alignRight">
-        <Checkbox disabled={shows.length < 2} checked={pdfOptions.oneFile} on:change={(e) => updatePdfOptions(e, "oneFile")} />
-    </div>
-  </span>
-{/if} -->
 
 <style>
     .previewBox {
@@ -157,7 +160,7 @@
         max-width: 900px;
         zoom: 0.4;
         overflow: auto;
-        aspect-ratio: 210/297;
+        aspect-ratio: var(--paper-aspect-ratio, 210/297);
         align-self: center;
     }
 

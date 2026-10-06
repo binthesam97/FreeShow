@@ -25,6 +25,8 @@ export interface Styles {
     aspectRatio?: AspectRatio
     cropping?: Cropping // pre 1.3.3
     lines?: number
+    showAsFaded?: boolean
+    lineOpacity?: number // default is 50%
     skipVirtualBreaks?: boolean // break on [_VB] chars only for templates with this option
     template?: string // slide
     templateScripture?: string
@@ -41,6 +43,7 @@ export interface Metadata {
     template?: string // default or last slide only
     templateFirst?: string // first slide only
     templateAll?: string // all slides (old "message")
+    ignoreEmpty?: boolean // only display on slides with text content
 }
 
 export interface Resolution {

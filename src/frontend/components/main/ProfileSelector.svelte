@@ -4,7 +4,7 @@
     import { translateText } from "../../utils/language"
     import { confirmCustom, promptCustom } from "../../utils/popup"
     import { checkPassword } from "../../utils/profile"
-    import { runActionId } from "../actions/actions"
+    import { checkStartupActions, runActionId } from "../actions/actions"
     import { keysToID, sortByName } from "../helpers/array"
     import Icon from "../helpers/Icon.svelte"
     import T from "../helpers/T.svelte"
@@ -34,7 +34,9 @@
 
         // run action
         const actionId = $profiles[id || "admin"]?.action
-        if (actionId) runActionId(actionId)
+        if (actionId) runActionId(actionId, "profile")
+
+        checkStartupActions()
 
         // store last used profile
         special.update((a) => {
@@ -96,6 +98,8 @@
     .flex {
         margin-top: 20px;
         display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
         gap: 20px;
     }
 

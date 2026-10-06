@@ -1,11 +1,11 @@
 <script lang="ts">
     import { onMount } from "svelte"
-    import { encodeFilePath } from "../../helpers/media"
+    import { encodeFilePath, isLocalFile } from "../../helpers/media"
 
     export let src: string
     export let updater = 0
     export let alt: string
-    export let transition = true
+    export let transition: boolean | number = false
 
     let loaded = false
     let image: HTMLImageElement | null = null
@@ -21,7 +21,7 @@
     function reload(e: any) {
         e.target.style.display = "none"
 
-        if (retryCount > 5) {
+        if (retryCount > 5 || isLocalFile(src)) {
             loaded = true
             return
         }
@@ -39,9 +39,11 @@
     }
 </script>
 
-{#key retryCount}
-    <img style={$$props.style} src="{encodeFilePath(src)}{updater ? '?' + updater : ''}" {alt} draggable="false" class:loaded class:transition bind:this={image} on:load={hasLoaded} on:error={reload} />
-{/key}
+{#if src}
+    {#key retryCount}
+        <img style="{$$props.style}{transition ? `transition: opacity ${typeof transition === 'number' ? transition : 500}ms ease-out;` : ''}" src="{encodeFilePath(src)}{updater ? '?' + updater : ''}" {alt} draggable="false" class:loaded bind:this={image} on:load={hasLoaded} on:error={reload} />
+    {/key}
+{/if}
 
 <style>
     img {
@@ -50,10 +52,6 @@
         position: absolute;
         top: 0;
         left: 0;
-    }
-
-    .transition {
-        transition: opacity 0.5s ease-out;
     }
 
     img.loaded {

@@ -1,7 +1,9 @@
 import { get } from "svelte/store"
 import { uid } from "uid"
-import { actionHistory, actions, audioPlaylists, audioStreams, runningActions, shows, stageShows, styles, triggers } from "../../stores"
+import { gainToDb, MIN_DB } from "../../audio/dBUtils"
+import { actionHistory, actions, audioPlaylists, audioRouting, audioStreams, outputs, runningActions, scenes, shows, stageShows, styles } from "../../stores"
 import { newToast, wait } from "../../utils/common"
+import { translateText } from "../../utils/language"
 import { getShowBPM } from "../drawer/audio/metronome"
 import { getDynamicValue } from "../edit/scripts/itemHelpers"
 import { clone, keysToID } from "../helpers/array"
@@ -15,20 +17,20 @@ import { API_ACTIONS } from "./api"
 import { sortByClosestMatch } from "./apiHelper"
 import { convertOldMidiToNewAction } from "./midi"
 
-export function runActionId(id: string) {
-    runAction(get(actions)[id])
+export function runActionId(id: string, source = "action") {
+    runAction(get(actions)[id], { source })
 }
 
-export function runActionByName(name: string) {
+export function runActionByName(name: string, source = "action") {
     if (name.includes("{")) name = getDynamicValue(name)
     const sortedActions = sortByClosestMatch(keysToID(get(actions)), name)
     if (!sortedActions.length) return
-    runAction(sortedActions[0])
+    runAction(sortedActions[0], { source })
 }
 
 const MAX_ACTION_HISTORY_ENTRIES = 200
 const loopPrevention = { actionId: "", count: 0, timeout: null as NodeJS.Timeout | null }
-export async function runAction(action, { midiIndex = -1, slideIndex = -1 } = {}, isCategoryAction = false) {
+export async function runAction(action, { midiIndex = -1, slideIndex = -1, source = "action" } = {}, isCategoryAction = false) {
     // console.log(action)
     if (!action) return
     action = convertOldMidiToNewAction(action)
@@ -105,7 +107,6 @@ export async function runAction(action, { midiIndex = -1, slideIndex = -1 } = {}
         API_ACTIONS[actionId](triggerData)
 
         // add to history
-        // WIP add source (Action/Event/Remote/API)
         actionHistory.update((a) => {
             const time = Date.now()
 
@@ -113,7 +114,7 @@ export async function runAction(action, { midiIndex = -1, slideIndex = -1 } = {}
             previous.count = 1
             previous.time = time
 
-            const data = { action: actionId, data: triggerData, time, count: 1 }
+            const data = { action: actionId, data: triggerData, time, count: 1, source }
             const matchingPrevious = JSON.stringify(previous) === JSON.stringify(data)
 
             if (matchingPrevious) {
@@ -145,7 +146,11 @@ export function toggleAction(data: API_toggle) {
     })
 }
 
+let startupActionsTriggered = false
 export function checkStartupActions() {
+    if (startupActionsTriggered) return
+    startupActionsTriggered = true
+
     customActionActivation("startup")
 }
 
@@ -157,13 +162,36 @@ export function customActionActivation(id: string, specificActivation: any = nul
         if (action.customActivation !== id || action.enabled === false) return
         if (specificActivation && action.specificActivation?.includes(id) && (!action.specificActivation.split("__")[1] || action.specificActivation.split("__")[1] !== specificActivation)) return
 
-        runAction(action)
+        runAction(action, { source: "custom_activation" })
         actionTriggered = true
     })
 
     if (actionTriggered && id === "startup") {
         newToast("toast.starting_action")
     }
+}
+
+export function isMatchingSlideAction(existingAction: any, triggerId: string, newActionValues: any = {}, canAddMultiple = false): boolean {
+    // different action triggers
+    const actionTriggerId = getActionTriggerId(existingAction?.triggers?.[0])
+    if (actionTriggerId !== triggerId) return false
+
+    // special handling for "start_scene" trigger: allow multiple if "bindings" are different
+    if (triggerId === "start_scene") {
+        const currentScenes = get(scenes)
+        const existingSceneId = existingAction.actionValues?.start_scene?.id
+        const newSceneId = newActionValues?.start_scene?.id ?? newActionValues?.id
+        const existingBindings = (currentScenes[existingSceneId]?.bindings || []).slice().sort()
+        const newBindings = (currentScenes[newSceneId]?.bindings || []).slice().sort()
+        return JSON.stringify(existingBindings) === JSON.stringify(newBindings)
+    }
+
+    // if action cannot have multiple instances, replace any existing
+    if (!canAddMultiple) return true
+
+    // if action can have multiple instances, only replace if values are exactly the same
+    const newValues = newActionValues?.[triggerId] !== undefined ? newActionValues : { [triggerId]: newActionValues }
+    return JSON.stringify(existingAction.actionValues) === JSON.stringify(newValues)
 }
 
 export function addSlideAction(slideIndex: number, actionId: string, actionValue: any = {}, allowMultiple = false) {
@@ -185,9 +213,9 @@ export function addSlideAction(slideIndex: number, actionId: string, actionValue
     const data = actionData[actionId]
     const canAddMultiple = data?.canAddMultiple || allowMultiple
 
-    const existingIndex = slideActions.slideActions.findIndex((a) => a.triggers?.[0] === actionId)
-    if (canAddMultiple || existingIndex < 0) slideActions.slideActions.push(action)
-    else slideActions.slideActions[existingIndex] = action
+    const existingIndex = slideActions.slideActions.findIndex((a) => isMatchingSlideAction(a, actionId, actionValues, canAddMultiple))
+    if (existingIndex > -1) slideActions.slideActions[existingIndex] = { ...action, id: slideActions.slideActions[existingIndex].id }
+    else slideActions.slideActions.push(action)
 
     history({ id: "SHOW_LAYOUT", newData: { key: "actions", data: slideActions, indexes: [slideIndex] } })
 }
@@ -215,10 +243,12 @@ export function getActionTriggerId(id: string) {
 const namedObjects = {
     run_action: () => get(actions),
     start_show: () => get(shows),
-    start_trigger: () => get(triggers),
+    id_select_show: () => get(shows),
+    start_scene: () => get(scenes),
     start_audio_stream: () => get(audioStreams),
     start_playlist: () => get(audioPlaylists),
-    id_select_stage_layout: () => get(stageShows)
+    id_select_stage_layout: () => get(stageShows),
+    start_output_recording: () => get(outputs)
 }
 export function getActionName(actionId: string, actionValue: any): string {
     if (!actionValue) return ""
@@ -234,7 +264,19 @@ export function getActionName(actionId: string, actionValue: any): string {
     }
 
     if (actionId === "change_volume") {
-        return (Number(actionValue.volume || 1) * 100).toString()
+        const chName = actionValue.channelId && actionValue.channelId !== "main" ? (get(audioRouting)?.channels?.find((c) => c.id === actionValue.channelId)?.name || actionValue.channelId) + ": " : ""
+        const rawVolume = Number(actionValue.volume ?? 1)
+        const volumeValue = rawVolume > 5 ? rawVolume / 100 : rawVolume
+        const dbValue = Math.max(MIN_DB, Math.min(6, gainToDb(volumeValue)))
+        return `${chName}${dbValue.toFixed(1)} dB`
+    }
+
+    if (actionId === "mute") {
+        const channelId = actionValue.id || "main"
+        const ch = get(audioRouting)?.channels?.find((c) => c.id === channelId)
+        const chName = ch?.name || (channelId === "main" ? translateText("audio.main") : channelId)
+        const state = typeof actionValue.value === "boolean" ? (actionValue.value ? translateText("actions.mute") : translateText("actions.unmute")) : "Toggle"
+        return `${chName}: ${state}`
     }
 
     if (!namedObjects[actionId]) return ""
