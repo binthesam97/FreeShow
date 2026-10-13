@@ -74,7 +74,7 @@ export function stopMediaRecorder(): Promise<void> {
 export function getRecordingFileName(label = "", extension = "webm"): string {
     const formattedLabel = label ? `${label.replace(/[\\/:*?"<>|]/g, "_")}_` : ""
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
-    return `FreeShow_${formattedLabel}${timestamp}.${extension}`
+    return `Kerusso_${formattedLabel}${timestamp}.${extension}`
 }
 
 async function handleStop() {

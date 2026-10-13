@@ -47,7 +47,7 @@
 </script>
 
 <div class="profiles" style="top: {isWindows ? '25px' : '0'};height: {isWindows ? 'calc(100% - 25px)' : '100%'};">
-    <h1>FreeShow</h1>
+    <h1>Kerusso</h1>
     <p style="opacity: 0.8;margin-bottom: 20px;"><T id="profile.choose_profile" /></p>
 
     <div class="flex">

@@ -1,15 +1,15 @@
 <p align='center'>
  <a href='https://freeshow.app/'>
-  <img src='https://github.com/ChurchApps/FreeShow/assets/17619496/02ac9807-1f47-47fc-b895-b35f857c2b57' width=150 />
+  <img src='public/import-logos/kerusso.webp' width=150 />
  </a>
 </p>
 
 <h1 align='center'>
-  FreeShow
+  Kerusso
 </h1>
 
 <p align='center'>
-  FreeShow is a free software with a user-friendly interface that offers powerful features for creating and editing slideshows. 
+  Kerusso is an open-source presentation app based on FreeShow by ChurchApps and modified by Breakforth Tech.
 </p>
 
 <p align='center'>
@@ -21,7 +21,9 @@
 </p>
 <br />
 
-## Get Started Using FreeShow
+> Kerusso is a modified version of FreeShow by ChurchApps. Modifications by Breakforth Tech dated 2026-10-14. This entire work is licensed under the GNU General Public License, version 3; see [LICENSE](LICENSE). The software is provided without warranty. Recipients may redistribute it under the same license.
+
+## Get Started Using Kerusso
 
 [![](https://markdown-videos.vercel.app/youtube/9_1lUNcrU1w)](https://youtu.be/9_1lUNcrU1w)
 
@@ -38,9 +40,9 @@
 
 ## Short description
 
-FreeShow is a free and open-source presentation program that makes it easy to show text on a big screen. It supports stage display, remote control, media, and many other advanced features. It is open-sourced meaning anyone can contribute.
+Kerusso is a free and open-source presentation program based on [FreeShow by ChurchApps](https://github.com/ChurchApps/FreeShow). It makes it easy to show text on a big screen and supports stage display, remote control, media, and many other features.
 
-FreeShow exists because the creator found that other similar programs were either expensive or complex to use. He wanted to create a program that is easy to use and affordable for everyone, from small churches to large venues. FreeShow is now used by people all over the world.
+Kerusso carries forward the original project's goal of providing accessible presentation software for churches and live events.
 
 ## Support Us
 

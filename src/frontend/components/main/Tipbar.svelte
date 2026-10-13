@@ -10,7 +10,7 @@
     const ONE_DAY = 1000 * 60 * 60 * 24
 
     const messages = {
-        donate: "FreeShow is free because of the generous gifts of our users. Would you consider donating to FreeShow? With your help we can continue to meet the tech needs of the Church."
+        donate: "Kerusso is free because of the generous gifts of our users. Would you consider supporting Kerusso? With your help we can continue to meet the tech needs of the Church."
         // welcome: "Welcome to FreeShow! We're glad to have you here. Explore the features and let us know if you need any help getting started.",
         // update: "FreeShow has been updated to the latest version! Check out the new features and improvements we've made for a better experience."
     }

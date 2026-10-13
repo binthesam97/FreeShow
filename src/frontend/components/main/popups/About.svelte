@@ -24,8 +24,8 @@
 
 <div style="text-align: center;">
     <div class="logo">
-        <img style="height: 35px;" src="./import-logos/freeshow.webp" alt="FreeShow-logo" draggable={false} />
-        <h1 style="color: var(--text);font-size: 1.7em;">FreeShow</h1>
+        <img style="height: 35px;" src="./import-logos/kerusso.webp" alt="Kerusso logo" draggable={false} />
+        <h1 style="color: var(--text);font-size: 1.7em;">Kerusso</h1>
     </div>
 
     <p style="font-size: 0.8em;margin-top: 2px;">
@@ -35,9 +35,6 @@
         </MaterialButton>
     </p>
 
-    <!-- <p>
-        <Link url="https://churchapps.org/">ChurchApps</Link>
-    </p> -->
 </div>
 
 <hr />
@@ -48,10 +45,8 @@
             • <T id="about.more" />
             <Link url="https://churchapps.org/">ChurchApps</Link>
         </div>
-        <div>
-            • <T id="about.report" />
-            <Link url="https://github.com/ChurchApps/FreeShow/issues">GitHub Issues</Link>
-        </div>
+        <div>• Original FreeShow copyright © its contributors; modifications © Breakforth Tech, 2026-10-14.</div>
+        <div>• Licensed under the GNU GPL v3. No warranty is provided. Recipients may redistribute this work under the same license. <Link url="https://www.gnu.org/licenses/gpl-3.0.html">View the license</Link></div>
         <div>
             • <T id="about.translate" />
             <Link url="https://app.transifex.com/nettbiter/freeshow/">Transifex</Link>

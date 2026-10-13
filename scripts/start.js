@@ -3,7 +3,7 @@ const { spawn, execSync } = require("child_process")
 // Set environment variables
 process.env.NODE_ENV = "development"
 
-console.log("Starting FreeShow development environment...")
+console.log("Starting Kerusso development environment...")
 
 // Kill any process on port 3000
 try {

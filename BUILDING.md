@@ -1,6 +1,6 @@
-# Building FreeShow
+# Building Kerusso
 
-This guide covers how to compile and package FreeShow for **macOS**, **Windows**, and **Linux** from source.
+This guide covers how to compile and package Kerusso for **macOS**, **Windows**, and **Linux** from source.
 
 ---
 
@@ -53,7 +53,7 @@ npx electron-builder --mac --arm64 --dir --config config/building/electron-build
 
 Replace `--arm64` with `--x64` for Intel Macs, or omit the arch flag to build both.
 
-Output: `dist/mac-arm64/FreeShow.app`
+Output: `dist/mac-arm64/Kerusso.app`
 
 #### Build DMG installer (signed)
 
@@ -107,7 +107,7 @@ brew install --cask wine-stable
 npx electron-builder --win --dir --config config/building/electron-builder.yaml
 ```
 
-Output: `dist/win-unpacked/FreeShow.exe`
+Output: `dist/win-unpacked/Kerusso.exe`
 
 #### Build NSIS installer (signed, from Windows)
 
@@ -115,7 +115,7 @@ Output: `dist/win-unpacked/FreeShow.exe`
 npx electron-builder --win --config config/building/electron-builder.yaml
 ```
 
-Output: `dist/FreeShow-<version>-<arch>.exe`
+Output: `dist/Kerusso-<version>-<arch>.exe`
 
  **Note:** Code signing is handled by `scripts/windows/sign.js`. It skips automatically
 > when the Azure credentials are absent, so local builds always work without any extra steps.
@@ -151,7 +151,7 @@ sudo dnf install fontconfig-devel         # Fedora / RHEL
 npx electron-builder --linux AppImage --config config/building/electron-builder.yaml
 ```
 
-Output: `dist/FreeShow-<version>.AppImage`
+Output: `dist/Kerusso-<version>.AppImage`
 
 #### Build all Linux targets (AppImage + deb + rpm)
 
@@ -160,9 +160,9 @@ npx electron-builder --linux --config config/building/electron-builder.yaml
 ```
 
 Output artifacts in `dist/`:
-- `FreeShow-<version>.AppImage`
-- `freeshow_<version>_amd64.deb`
-- `freeshow-<version>.x86_64.rpm`
+- `Kerusso-<version>.AppImage`
+- `kerusso_<version>_amd64.deb`
+- `kerusso-<version>.x86_64.rpm`
 
 > **Note:** Building `.deb` and `.rpm` on a non-Debian/non-RPM system may require
 > the respective packaging tools (`dpkg-deb`, `rpmbuild`) to be installed.
@@ -190,13 +190,13 @@ All packaged artifacts are placed in the `dist/` folder:
 
 | Platform | Directory / file |
 |---|---|
-| macOS (dir) | `dist/mac-arm64/FreeShow.app` |
-| macOS (DMG) | `dist/FreeShow-<version>-arm64.dmg` |
-| Windows (dir) | `dist/win-unpacked/FreeShow.exe` |
-| Windows (NSIS) | `dist/FreeShow-<version>-x64.exe` |
-| Linux AppImage | `dist/FreeShow-<version>.AppImage` |
-| Linux deb | `dist/freeshow_<version>_amd64.deb` |
-| Linux rpm | `dist/freeshow-<version>.x86_64.rpm` |
+| macOS (dir) | `dist/mac-arm64/Kerusso.app` |
+| macOS (DMG) | `dist/Kerusso-<version>-arm64.dmg` |
+| Windows (dir) | `dist/win-unpacked/Kerusso.exe` |
+| Windows (NSIS) | `dist/Kerusso-<version>-x64.exe` |
+| Linux AppImage | `dist/Kerusso-<version>.AppImage` |
+| Linux deb | `dist/kerusso_<version>_amd64.deb` |
+| Linux rpm | `dist/kerusso-<version>.x86_64.rpm` |
 
 ---
 
