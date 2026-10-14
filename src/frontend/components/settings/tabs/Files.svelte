@@ -316,14 +316,14 @@
             <!-- changing team directly without toggling "Enable sync" off/on -->
             <MaterialToggleSwitch label="cloud.read_only" title="cloud.readonly_tip" checked={$cloudSyncData.cloudMethod === "read_only"} defaultValue={false} on:change={(e) => updateCloudData("cloudMethod", e.detail ? "read_only" : "merge")} />
 
-            <!-- Documents/FreeShow/Media -->
+            <!-- Documents/Kerusso/Media -->
             <!-- This should only be needed if no custom media management is already existing -->
             <!-- Custom drives should work without as long as the path location is the same -->
             <!-- Files in this folder will automatically be checked to find missing files -->
             <MaterialToggleSwitch label="media.media_sync_folder" title="media.media_sync_folder_tip" style="width: 100%;" checked={$special.cloudSyncMediaFolder} defaultValue={false} on:change={toggleMediaFolder} />
 
             {#if $special.cloudSyncMediaFolder}
-                <MaterialFolderPicker label="media.media_sync_folder" value={mediaFolderPath} on:change={updateMediaFolderPath} allowEmpty={!mediaFolderPath.endsWith("Documents\\FreeShow\\Media") && !mediaFolderPath.endsWith("Documents/FreeShow/Media")} />
+                <MaterialFolderPicker label="media.media_sync_folder" value={mediaFolderPath} on:change={updateMediaFolderPath} allowEmpty={!mediaFolderPath.endsWith("Documents\\Kerusso\\Media") && !mediaFolderPath.endsWith("Documents/Kerusso/Media")} />
             {/if}
 
             <!-- <MaterialButton variant="outlined" icon="delete" on:click={deleteCloudData} red white>Delete cloud data</MaterialButton> -->

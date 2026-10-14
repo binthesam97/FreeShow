@@ -119,7 +119,7 @@ export class IcecastSender {
         client.connect(config.port, config.host, () => {
             this.isConnecting = false
 
-            let headerText = `PUT ${mountPath} HTTP/1.1\r\n` + `Host: ${config.host}:${config.port}\r\n` + `Authorization: Basic ${auth}\r\n` + `Content-Type: audio/ogg; codecs=opus\r\n` + `Ice-Name: Kerusso Audio Stream\r\n` + `Ice-Description: Live Audio Stream from Kerusso\r\n` + `Ice-Genre: Live\r\n` + `Ice-Public: 0\r\n` + `Expect: 100-continue\r\n` + `User-Agent: Kerusso/1.0\r\n`
+            let headerText = `PUT ${mountPath} HTTP/1.1\r\n` + `Host: ${config.host}:${config.port}\r\n` + `Authorization: Basic ${auth}\r\n` + `Content-Type: audio/ogg; codecs=opus\r\n` + `Ice-Name: Kerusso Audio Stream\r\n` + `Ice-Description: Live Audio Stream from Kerusso\r\n` + `Ice-Genre: Live\r\n` + `Ice-Public: 0\r\n` + `Expect: 100-continue\r\n` + `User-Agent: FreeShow/1.0\r\n`
 
             if (this.currentSongTitle) {
                 headerText += `Ice-Title: ${this.currentSongTitle}\r\n`

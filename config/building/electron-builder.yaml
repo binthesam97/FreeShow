@@ -32,6 +32,8 @@ win:
     target: NSIS
     icon: build/public/icon.png
     files:
+        # an explicit include stops electron-builder adding its "**/*" default (only-exclusion lists include the whole repo)
+        - build/electron/**
         - "!**/node_modules/openmediatransport/lib/{macos,linux-*,win-arm64}/**"
     asarUnpack:
         - "**/node_modules/macadam/**/*.node"
@@ -43,6 +45,8 @@ win:
 
 linux:
     files:
+        # an explicit include stops electron-builder adding its "**/*" default (only-exclusion lists include the whole repo)
+        - build/electron/**
         - "!**/node_modules/openmediatransport/lib/{macos,win-*}/**"
     asarUnpack:
         - "**/node_modules/grandiose/**"
@@ -70,6 +74,8 @@ deb:
 mac:
     icon: build/public/icon.png
     files:
+        # an explicit include stops electron-builder adding its "**/*" default (only-exclusion lists include the whole repo)
+        - build/electron/**
         - "!**/node_modules/openmediatransport/lib/{linux-*,win-*}/**"
     asarUnpack:
         - "**/node_modules/macadam/**/*.node"

@@ -20,7 +20,7 @@ export class StreamReceiverHost {
 
         const modulePath = join(__dirname, "streamReceiverProcess.js")
         if (DIAG) console.info("[stream-port] forking receive process:", modulePath)
-        this.child = utilityProcess.fork(modulePath, [], { serviceName: "FreeShow stream receiver" })
+        this.child = utilityProcess.fork(modulePath, [], { serviceName: "Kerusso stream receiver" })
         if (DIAG) this.child.on("spawn", () => console.info("[stream-port] receive process spawned"))
 
         this.child.on("message", (message: any) => this.onMessage(message))

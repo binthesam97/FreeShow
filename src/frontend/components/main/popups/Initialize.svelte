@@ -13,6 +13,7 @@
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
     import MaterialFolderPicker from "../../inputs/MaterialFolderPicker.svelte"
     import MaterialToggleSwitch from "../../inputs/MaterialToggleSwitch.svelte"
+    import Link from "../../inputs/Link.svelte"
 
     onMount(() => {
         if (!$dataPath) sendMain(Main.DATA_PATH)
@@ -67,6 +68,11 @@
 
     <MaterialFolderPicker PICK_ID="DATA_SHOWS" label={translateText("settings.data_location", $dictionary)} value={$dataPath} on:change={updateDataPath} openButton={false} />
 
+    <!-- only shown on first launch, as this popup never opens again once setup is done -->
+    <p class="notice">
+        Kerusso is based on <Link url="https://github.com/ChurchApps/FreeShow">FreeShow</Link>, free and open-source software by ChurchApps and Kristoffer Vassbø, and is distributed under the GNU GPL-3.0 license.
+    </p>
+
     <MaterialButton variant="outlined" class="start" style="font-size: 1.8em;padding: 15px;margin-top: 20px;" on:click={create} white>
         <Icon id="check" size={2.5} />
         <T id="setup.get_started" />
@@ -86,5 +92,14 @@
         flex-direction: column;
 
         width: 50vw;
+    }
+
+    .notice {
+        margin-top: 20px;
+        padding: 10px 14px;
+        font-size: 0.85em;
+        opacity: 0.8;
+        border-radius: 8px;
+        background-color: var(--primary-darker);
     }
 </style>

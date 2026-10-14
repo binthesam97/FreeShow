@@ -19,6 +19,7 @@ import { dataFolderNames, deleteFile, doesPathExist, getDataFolderPath, getDataF
 import { clone, wait } from "../utils/helpers"
 import "./contentProviders"
 import { defaultConfig, defaultSettings, defaultSyncedSettings } from "./defaults"
+import { migrateFromFreeShow, migratedFromFreeShow } from "./migrateFreeShow"
 
 // NOTE: defaults will always replace the keys with any in the default when they are removed
 
@@ -56,6 +57,9 @@ export const appDataPath = path.dirname(config.path)
 checkStores(appDataPath)
 
 export async function setupStores() {
+    migrateFromFreeShow(config)
+    if (migratedFromFreeShow) checkStores(appDataPath)
+
     const oldLocation = await migrateConfig()
     createStores(oldLocation, true)
 
@@ -146,7 +150,7 @@ function getWritableConfigPath(previousLocation?: string | null, setup = false):
     if (setup && previousLocation) return previousLocation
 
     const downloadsPath = getMediaFolderPath("downloads")
-    const downloadsDataPath = downloadsPath ? path.join(downloadsPath, "FreeShow") : ""
+    const downloadsDataPath = downloadsPath ? path.join(downloadsPath, "Kerusso") : ""
 
     const candidates = [getDataFolderRoot(), previousLocation || getDefaultDataFolderRoot(), downloadsDataPath, appDataPath].filter((p): p is string => !!p)
     const uniqueCandidates = [...new Set(candidates)]

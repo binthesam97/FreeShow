@@ -5,7 +5,7 @@
     import { send } from "../util/socket"
     import { _get, _update, dictionary, password } from "../util/stores"
 
-    const kerussoLogo = new URL("../../../../public/import-logos/kerusso.webp", import.meta.url).href
+    const freeshowLogo = new URL("../../../../public/import-logos/kerusso.webp", import.meta.url).href
 
     function submit() {
         const password = _get("password").stored
@@ -17,7 +17,7 @@
 <div class="auth-page">
     <div class="panel">
         <div class="brand">
-            <img class="logo" src={kerussoLogo} alt="Kerusso logo" draggable="false" />
+            <img class="logo" src={freeshowLogo} alt="Kerusso logo" draggable="false" />
             <h1>RemoteShow</h1>
         </div>
 

@@ -1,5 +1,8 @@
 import { app, screen, type BrowserWindow } from "electron"
 import { isProd, isWindows, setAutoProfile } from ".."
+import { FREESHOW_NOTICE, migratedFromFreeShow } from "../data/migrateFreeShow"
+import { ToMain } from "../../types/IPC/ToMain"
+import { sendToMain } from "../IPC/main"
 import { catchErrors } from "../IPC/responsesMain"
 import { OutputHelper } from "../output/OutputHelper"
 import { detectNewFiles } from "./files"
@@ -37,6 +40,9 @@ export function mainWindowInitialize() {
     detectNewFiles()
 
     initSpotify()
+
+    // data was carried over from FreeShow, so the first launch setup (with the notice) is skipped
+    if (migratedFromFreeShow) setTimeout(() => sendToMain(ToMain.ALERT, FREESHOW_NOTICE), 3000)
 
     if (!isProd) return
 

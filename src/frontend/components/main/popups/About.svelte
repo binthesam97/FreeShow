@@ -24,7 +24,7 @@
 
 <div style="text-align: center;">
     <div class="logo">
-        <img style="height: 35px;" src="./import-logos/kerusso.webp" alt="Kerusso logo" draggable={false} />
+        <img style="height: 35px;" src="./import-logos/kerusso.webp" alt="Kerusso-logo" draggable={false} />
         <h1 style="color: var(--text);font-size: 1.7em;">Kerusso</h1>
     </div>
 

@@ -8,7 +8,7 @@ import { convertOSISBible } from "./osisBible"
 import { convertZefaniaBible } from "./zefaniaBible"
 
 const bibleTypes = {
-    freeshow: { name: "FreeShow", func: importFSB },
+    freeshow: { name: "Kerusso", func: importFSB },
     zefania: { name: "Zefania", func: convertZefaniaBible },
     osis: { name: "OSIS", func: convertOSISBible },
     beblia: { name: "Beblia", func: convertBebliaBible },

@@ -351,12 +351,12 @@ export const dataFolderNames = {
     cloud: "Cloud"
 }
 
-// Documents/FreeShow
+// Documents/Kerusso
 export function getDefaultDataFolderRoot() {
     const documentsPath = getMediaFolderPath("documents")
     if (!documentsPath) return appDataPath
 
-    const appFolderName = "FreeShow"
+    const appFolderName = "Kerusso"
     const fullPath = path.join(documentsPath, appFolderName)
 
     try {

@@ -72,7 +72,7 @@ export const STT_CONTROLLER_SCHEMA = {
 // Chat
 
 export const CHAT_SYSTEM_PROMPT = `
-You are an AI assistant integrated into Kerusso, an open-source presentation software based on FreeShow and designed for churches, conferences, and live events.
+You are an AI assistant integrated into Kerusso, an open-source presentation software designed for churches, conferences, and live events.
 
 ### FREESHOW COMPREHENSIVE KNOWLEDGE BASE:
 

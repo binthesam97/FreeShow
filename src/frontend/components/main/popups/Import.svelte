@@ -17,13 +17,13 @@
     popupData.set({})
 
     const freeshow_formats = [
-        { name: "formats.show", title: "Kerusso / FreeShow Song/Presentation File", icon: "slide", extensions: ["show", "json"], id: "freeshow" },
-        { name: "formats.project", title: "Kerusso / FreeShow Project File", icon: "project", extensions: ["project", "shows", "json", "zip"], id: "freeshow_project" }, // , "fsproject", "fsp"
-        { name: "formats.template", title: "Kerusso / FreeShow Template File", icon: "templates", extensions: ["fstemplate", "fst", "template", "json", "zip"], id: "freeshow_template" },
-        { name: "formats.overlay", title: "Kerusso / FreeShow Overlay File", icon: "overlays", extensions: ["fsoverlay", "fso", "overlay", "json", "zip"], id: "freeshow_overlay" },
-        { name: "formats.action", title: "Kerusso / FreeShow Action File", icon: "actions", extensions: ["fsaction", "action", "json"], id: "freeshow_action" },
-        { name: "stage.stage_layout", title: "Kerusso / FreeShow Stage Layout File", icon: "stage", extensions: ["fsstage", "stage", "json"], id: "freeshow_stage" },
-        { name: "formats.theme", title: "Kerusso / FreeShow Theme File", icon: "theme", extensions: ["fstheme", "theme", "json"], id: "freeshow_theme" }
+        { name: "formats.show", title: "Kerusso Song/Presentation File", icon: "slide", extensions: ["show", "json"], id: "freeshow" },
+        { name: "formats.project", title: "Kerusso Project File", icon: "project", extensions: ["project", "shows", "json", "zip"], id: "freeshow_project" }, // , "fsproject", "fsp"
+        { name: "formats.template", title: "Kerusso Template File", icon: "templates", extensions: ["fstemplate", "fst", "template", "json", "zip"], id: "freeshow_template" },
+        { name: "formats.overlay", title: "Kerusso Overlay File", icon: "overlays", extensions: ["fsoverlay", "fso", "overlay", "json", "zip"], id: "freeshow_overlay" },
+        { name: "formats.action", title: "Kerusso Action File", icon: "actions", extensions: ["fsaction", "action", "json"], id: "freeshow_action" },
+        { name: "stage.stage_layout", title: "Kerusso Stage Layout File", icon: "stage", extensions: ["fsstage", "stage", "json"], id: "freeshow_stage" },
+        { name: "formats.theme", title: "Kerusso Theme File", icon: "theme", extensions: ["fstheme", "theme", "json"], id: "freeshow_theme" }
     ]
 
     const freeshow_primary_formats = freeshow_formats.filter((format) => ["freeshow", "freeshow_project"].includes(format.id))
@@ -149,7 +149,7 @@
                 <p>{translateText(format.name)}</p>
 
                 <div class="freeshow">
-                    <img style="height: 18px;padding: 0;" src="./import-logos/kerusso.webp" alt="Kerusso logo" draggable={false} />
+                    <img style="height: 18px;padding: 0;" src="./import-logos/kerusso.webp" alt="Kerusso-logo" draggable={false} />
                 </div>
             </MaterialButton>
         {/each}
@@ -245,7 +245,7 @@
                 <p>{translateText(format.name)}</p>
 
                 <div class="freeshow">
-                    <img style="height: 18px;padding: 0;" src="./import-logos/kerusso.webp" alt="Kerusso logo" draggable={false} />
+                    <img style="height: 18px;padding: 0;" src="./import-logos/kerusso.webp" alt="Kerusso-logo" draggable={false} />
                 </div>
             </MaterialButton>
         {/each}
