@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, tick } from "svelte"
-    import { activeSongBookSong, outLocked, outputs, songBooks, templates, songbookShowTransliterated } from "../../../stores"
+    import { activeSongBookSong, activeStyle, outLocked, outputs, songBooks, styles, templates, songbookShowTransliterated, songbookUseTransliteration } from "../../../stores"
+    import { isSingleSongbookLayout } from "./songbookFitter"
     import { setDefaultSongbookTemplates } from "../../../utils/createData"
     import { getFirstActiveOutput } from "../../helpers/output"
     import { OutputHelper } from "../../helpers/OutputHelper"
@@ -75,6 +76,18 @@
     $: originalVerses = selectedSong ? normalizeLyrics(selectedSong.Lyrics?.original) : []
     $: transliterationVerses = selectedSong ? normalizeLyrics(selectedSong.Lyrics?.transliteration) : []
     $: hasTransliteration = transliterationVerses.length > 0
+    // a single text box template only shows one language, so let the user choose which one
+    $: singleBoxTemplate = hasTransliteration && hasSingleBoxTemplate($outputs, $styles, $templates, $activeStyle)
+
+    // arguments are only used to update when the output style or templates change
+    function hasSingleBoxTemplate(..._updaters: any[]) {
+        return isSingleSongbookLayout(true)
+    }
+
+    function toggleUseTransliteration() {
+        songbookUseTransliteration.set(!$songbookUseTransliteration)
+        if (isActiveInOutput) playSong()
+    }
 
     $: sortedOriginalVerses = [...originalVerses].sort((a, b) => a.order - b.order)
     $: sortedTransliterationVerses = [...transliterationVerses].sort((a, b) => a.order - b.order)
@@ -228,6 +241,15 @@
         </MaterialButton>
 
         <div class="divider" />
+
+        {#if singleBoxTemplate}
+            <MaterialButton isActive={$songbookUseTransliteration} title="songbooks.use_transliteration_tip" on:click={toggleUseTransliteration}>
+                <Icon size={1.1} id="translate" white={!$songbookUseTransliteration} />
+                <T id="songbooks.transliteration" />
+            </MaterialButton>
+
+            <div class="divider" />
+        {/if}
 
         <MaterialButton title="songbooks.convert_to_show" on:click={handleCreateShow}>
             <Icon size={1.1} id="slide" white />

@@ -341,6 +341,8 @@ export const scriptureSettings: Writable<any> = writable({
 export const songBooks: Writable<{ [key: string]: { name: string; songs: any[] } }> = writable({})
 export const activeSongBookSong: Writable<{ song: any; showTransliteration: boolean } | null> = writable(null)
 export const songbookShowTransliterated: Writable<boolean> = writable(false)
+// feed the transliteration (instead of the original) into a single text box songbook template
+export const songbookUseTransliteration: Writable<boolean> = writable(false)
 
 // DRAWER
 export const drawerTabsData: Writable<DrawerTabs> = writable({}) // {default}

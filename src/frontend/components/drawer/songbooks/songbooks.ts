@@ -2,7 +2,7 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Item } from "../../../../types/Show"
 import { ShowObj } from "../../../classes/Show"
-import { activeProject, drawerTabsData, outLocked, activeSongBookSong, showsCache } from "../../../stores"
+import { activeProject, drawerTabsData, outLocked, activeSongBookSong, showsCache, songbookUseTransliteration } from "../../../stores"
 import { getFirstActiveOutput, setOutput } from "../../helpers/output"
 import { history } from "../../helpers/history"
 import { requestMain } from "../../../IPC/main"
@@ -344,10 +344,16 @@ export function playSong() {
     const transliterationVerses = normalizeLyrics(song.Lyrics?.transliteration)
     const hasTransliteration = transliterationVerses.length > 0 && songData.showTransliteration
 
-    const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration, {
-        songBookName: song.Song_Book || "",
-        songNumber: song.Song_No
-    })
+    const fitResult = fitSongbookSlides(
+        originalVerses,
+        transliterationVerses,
+        hasTransliteration,
+        {
+            songBookName: song.Song_Book || "",
+            songNumber: song.Song_No
+        },
+        get(songbookUseTransliteration)
+    )
 
     if (!fitResult.slides.length) return
 
@@ -391,17 +397,23 @@ export function createSongShow() {
     const songData = get(activeSongBookSong)
     if (!songData) return
 
-    return createSongShowFromData(songData.song, songData.showTransliteration)
+    return createSongShowFromData(songData.song, songData.showTransliteration, get(songbookUseTransliteration))
 }
 
-export function createSongShowFromData(song: any, showTransliteration: boolean = false) {
+export function createSongShowFromData(song: any, showTransliteration: boolean = false, useTransliterationInSingleBox: boolean = false) {
     const originalVerses = normalizeLyrics(song.Lyrics?.original)
     const transliterationVerses = normalizeLyrics(song.Lyrics?.transliteration)
     const hasTransliteration = transliterationVerses.length > 0 && showTransliteration
-    const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration, {
-        songBookName: song.Song_Book || "",
-        songNumber: song.Song_No
-    })
+    const fitResult = fitSongbookSlides(
+        originalVerses,
+        transliterationVerses,
+        hasTransliteration,
+        {
+            songBookName: song.Song_Book || "",
+            songNumber: song.Song_No
+        },
+        useTransliterationInSingleBox
+    )
     if (!fitResult.slides.length) return
 
     const layoutID = uid()
@@ -411,7 +423,7 @@ export function createSongShowFromData(song: any, showTransliteration: boolean =
     
     show.settings.template = null
 
-    show.name = `${song.Song_No}. ${song.Title}`
+    show.name = `${song.Song_No}. ${fitResult.transliterationOnly && song.Transliterated_Title ? song.Transliterated_Title : song.Title}`
     show.meta = {
         artist: song.Author || "",
         title: song.Title || ""

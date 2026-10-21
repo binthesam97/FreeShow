@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { activeEdit, activePage, activeSongBookSong, activeStyle, outputs, styles, templates } from "../../../stores"
+    import { activeEdit, activePage, activeSongBookSong, activeStyle, outputs, songbookUseTransliteration, styles, templates } from "../../../stores"
     import { fitSongbookSlides } from "./songbookFitter"
     import { normalizeLyrics } from "./songbooks"
     import { clone } from "../../helpers/array"
@@ -37,10 +37,16 @@
     let previewLabel = ""
 
     $: if (song && originalVerses.length && templateId && styleId) {
-        const fitResult = fitSongbookSlides(originalVerses, transliterationVerses, hasTransliteration, {
-            songBookName: song.Song_Book || "",
-            songNumber: song.Song_No
-        })
+        const fitResult = fitSongbookSlides(
+            originalVerses,
+            transliterationVerses,
+            hasTransliteration,
+            {
+                songBookName: song.Song_Book || "",
+                songNumber: song.Song_No
+            },
+            $songbookUseTransliteration
+        )
         previewItems = fitResult.slides[0]?.items || []
         previewLabel = fitResult.slides[0]?.label || ""
     } else {

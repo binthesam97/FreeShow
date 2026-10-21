@@ -226,7 +226,7 @@ export const API_ACTIONS = {
     // SHOWS
     id_select_show: (data: API_id) => selectShowById(data.id),
     name_select_show: (data: API_strval) => selectShowByName(data.value), // BC
-    create_songbook_show: (data: any) => createSongShowFromData(data?.song || data, data?.showTransliteration),
+    create_songbook_show: (data: any) => createSongShowFromData(data?.song || data, data?.showTransliteration, data?.useTransliteration),
     start_show: (data: API_id) => startShowSync(data.id),
     change_layout: (data: API_layout) => changeShowLayout(data),
     set_plain_text: (data: API_id_value) => formatText(data.value, data.id),

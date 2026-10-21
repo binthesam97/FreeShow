@@ -47,6 +47,7 @@ export interface SongbookFitSlide {
 export interface SongbookFitResult {
     context: SongbookFitContext
     slides: SongbookFitSlide[]
+    transliterationOnly: boolean
 }
 
 interface SongbookTextBox {
@@ -77,17 +78,19 @@ interface MeasurementResult {
 
 let measureRoot: HTMLElement | null = null
 
-export function fitSongbookSlides(verses: SongVerse[], transliterationVerses: SongVerse[], withTransliteration: boolean, footerData: SongbookFooterData = {}): SongbookFitResult {
+export function fitSongbookSlides(verses: SongVerse[], transliterationVerses: SongVerse[], withTransliteration: boolean, footerData: SongbookFooterData = {}, useTransliterationInSingleBox = false): SongbookFitResult {
     const context = resolveSongbookFitContext(withTransliteration, footerData)
     const sortedOriginal = [...verses].sort((a, b) => a.order - b.order)
     const sortedTransliteration = [...transliterationVerses].sort((a, b) => a.order - b.order)
+    // a single text box template can only show one of the languages
+    const transliterationOnly = withTransliteration && context.layoutMode === "single" && useTransliterationInSingleBox
 
     const slides: SongbookFitSlide[] = []
 
     sortedOriginal.forEach((verse, index) => {
         const transliterationVerse = withTransliteration ? sortedTransliteration[index] : undefined
         const baseLabel = getVerseLabel(verse)
-        const versePairs = createLinePairs(verse.content, transliterationVerse?.content || "")
+        const versePairs = transliterationOnly ? createLinePairs(transliterationVerse?.content || verse.content, "") : createLinePairs(verse.content, transliterationVerse?.content || "")
         const fittedChunks = fitPairsRecursive(versePairs, context)
         const totalChunks = fittedChunks.length
 
@@ -106,7 +109,12 @@ export function fitSongbookSlides(verses: SongVerse[], transliterationVerses: So
         })
     })
 
-    return { context, slides }
+    return { context, slides, transliterationOnly }
+}
+
+// whether the songbook template used for the current output style has only one lyrics text box
+export function isSingleSongbookLayout(withTransliteration: boolean) {
+    return resolveSongbookFitContext(withTransliteration, {}).layoutMode === "single"
 }
 
 function resolveSongbookFitContext(hasTransliteration: boolean, footerData: SongbookFooterData): SongbookFitContext {
