@@ -3,7 +3,8 @@ import fs from "fs"
 import path from "path"
 import { ToMain } from "../../types/IPC/ToMain"
 import { sendToMain } from "../IPC/main"
-import { getDataFolderPath, makeDir, readFile, writeFile } from "../utils/files"
+import { app } from "electron"
+import { doesPathExist, getDataFolderPath, makeDir, readFile, readFolder, writeFile } from "../utils/files"
 
 type AssetType = "songbook" | "bible"
 
@@ -35,6 +36,57 @@ export function getR2SongBooksCacheDir() {
     const { songBooksCacheDir } = getCachePaths()
     makeDir(songBooksCacheDir)
     return songBooksCacheDir
+}
+
+export function getBundledSongBooksDir(): string | null {
+    const candidates = [
+        path.join(app.getAppPath(), "public", "songBooks"),
+        path.join(process.resourcesPath, "app.asar.unpacked", "public", "songBooks"),
+        path.join(process.resourcesPath, "public", "songBooks"),
+        path.join(process.resourcesPath, "songBooks"),
+        // dev: build/electron/data/ → ../../../public/songBooks
+        path.join(__dirname, "..", "..", "..", "public", "songBooks")
+    ]
+
+    return findFirstDirWithFiles(candidates, [".json"])
+}
+
+// app.asar still contains public/songBooks & public/localBible (README only), and the R2 cache dirs are
+// created empty on first run, so a dir only counts if it actually holds data files
+export function findFirstDirWithFiles(candidates: string[], extensions: string[]): string | null {
+    for (const dir of candidates) {
+        if (!doesPathExist(dir)) continue
+        try {
+            if (readFolder(dir).some((name) => extensions.includes(path.extname(name).toLowerCase()))) return dir
+        } catch {
+            // unreadable, try next
+        }
+    }
+
+    return null
+}
+
+export function listSongBookJsonFiles(dir: string): string[] {
+    if (!dir || !doesPathExist(dir)) return []
+
+    return readFolder(dir)
+        .filter((name) => name.toLowerCase().endsWith(".json"))
+        .map((name) => path.join(dir, name))
+}
+
+export function listAvailableSongBookFiles(): string[] {
+    const filesByName = new Map<string, string>()
+
+    listSongBookJsonFiles(getBundledSongBooksDir() || "").forEach((filePath) => {
+        filesByName.set(path.basename(filePath).toLowerCase(), filePath)
+    })
+
+    // Cached/R2 copies win so testers pick up newer remote books when available
+    listSongBookJsonFiles(getR2SongBooksCacheDir()).forEach((filePath) => {
+        filesByName.set(path.basename(filePath).toLowerCase(), filePath)
+    })
+
+    return [...filesByName.values()]
 }
 
 export function getR2BiblesCacheDir() {
@@ -164,8 +216,17 @@ function getR2Config() {
 }
 
 function loadDotEnvFallback() {
-    const envPath = path.join(process.cwd(), ".env")
-    if (!fs.existsSync(envPath)) return {}
+    const candidates = [path.join(process.cwd(), ".env"), path.join(__dirname, "..", "..", "..", ".env")]
+
+    try {
+        candidates.push(path.join(app.getAppPath(), ".env"))
+        candidates.push(path.join(process.resourcesPath, ".env"))
+    } catch {
+        // app is not ready yet
+    }
+
+    const envPath = candidates.find((candidate) => fs.existsSync(candidate))
+    if (!envPath) return {}
 
     const output: Record<string, string> = {}
     const lines = readFile(envPath)

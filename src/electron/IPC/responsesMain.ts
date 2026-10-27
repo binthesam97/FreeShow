@@ -25,7 +25,7 @@ import { listBundledLocalBibleFiles, syncBundledBiblesFromR2 } from "../data/bun
 import { getLocalIPs } from "../data/bonjour"
 import { checkIfMediaDownloaded, downloadLessonsMedia, downloadMedia } from "../data/downloadMedia"
 import { importShow } from "../data/import"
-import { ensureR2AssetsSynced, getR2SongBooksCacheDir } from "../data/r2Assets"
+import { ensureR2AssetsSynced, listAvailableSongBookFiles } from "../data/r2Assets"
 import { save } from "../data/save"
 import { _store, appDataPath, config, createStores, getStore, getStoreValue, setStoreValue } from "../data/store"
 import { captureSlide, doesMediaExist, getThumbnail, getThumbnailFolderPath, pdfToImage, saveImage } from "../data/thumbnails"
@@ -38,7 +38,7 @@ import { downloadFfmpeg, resolveFfmpegPath } from "../streaming/ffmpegManager"
 import { processAudioData, timecodeStart, timecodeStop, updateTimecodeValue } from "../timecode/timecode"
 import { apiReturnData, emitOSC, startWebSocketAndRest, stopApiListener } from "../utils/api"
 import { closeMain } from "../utils/close"
-import { addToMediaFolder, bundleMediaFiles, createFolder, doesPathExist, getDataFolderPath, getDataFolderRoot, getFileInfo, getMediaCodec, getMediaSyncFolderPath, getMediaTracks, getPaths, getSimularPaths, loadFile, loadShowsAsync, locateMediaFile, openInSystem, readExifData, readFile, readFolder, readFolderContent, selectFiles, selectFilesDialog, selectFolder, setMediaSyncFolderPath, writeFile } from "../utils/files"
+import { addToMediaFolder, bundleMediaFiles, createFolder, getDataFolderPath, getDataFolderRoot, getFileInfo, getMediaCodec, getMediaSyncFolderPath, getMediaTracks, getPaths, getSimularPaths, loadFile, loadShowsAsync, locateMediaFile, openInSystem, readExifData, readFile, readFolder, readFolderContent, selectFiles, selectFilesDialog, selectFolder, setMediaSyncFolderPath, writeFile } from "../utils/files"
 import { listGraphicsDevices } from "../utils/gpu"
 import { getMachineId } from "../utils/helpers"
 import { LyricSearch } from "../utils/LyricSearch"
@@ -367,43 +367,17 @@ async function readBiblesFolder() {
     return [...fromBundled, ...fromUser]
 }
 
-function bundledSongBooksDir(): string | null {
-    const candidates = [
-        path.join(process.cwd(), "public", "songBooks"),
-        path.join(app.getAppPath(), "public", "songBooks"),
-        path.join(process.resourcesPath, "app.asar.unpacked", "public", "songBooks"),
-        path.join(process.resourcesPath, "public", "songBooks"),
-        path.join(__dirname, "..", "..", "..", "public", "songBooks")
-    ]
-    for (const c of candidates) {
-        if (doesPathExist(c)) return c
-    }
-    return null
-}
-
 async function readSongBooksFolder() {
-    // Run R2 sync in background so it doesn't block the IPC response
-    ensureR2AssetsSynced().catch((err) => {
-        console.error("R2 sync error during songbooks load:", err)
-    })
+    const localFiles = listAvailableSongBookFiles()
+    if (localFiles.length) {
+        // Keep remote sync in the background so the drawer can open immediately
+        ensureR2AssetsSynced().catch((err) => console.error("Failed to sync songbooks from R2:", err))
+        return localFiles
+    }
 
     try {
-        const r2Path = getR2SongBooksCacheDir()
-        
-        // Check if there are any JSON files in the R2 cache
-        const r2Exists = r2Path && doesPathExist(r2Path)
-        const r2Files = r2Exists ? readFolder(r2Path) : []
-        const hasR2Books = r2Files.some((name) => name.toLowerCase().endsWith(".json"))
-        
-        let songBooksPath = hasR2Books ? r2Path : bundledSongBooksDir()
-        
-        if (!songBooksPath || !doesPathExist(songBooksPath)) {
-            console.warn("No songBooks folder found (R2 empty, local missing)")
-            return []
-        }
-        
-        const names = readFolder(songBooksPath)
-        return names.filter((name) => name.toLowerCase().endsWith(".json")).map((name) => path.join(songBooksPath!, name))
+        await ensureR2AssetsSynced()
+        return listAvailableSongBookFiles()
     } catch (err) {
         console.error("Failed to read songBooks folder:", err)
         return []

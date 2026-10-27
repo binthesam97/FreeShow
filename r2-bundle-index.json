@@ -1,0 +1,402 @@
+{
+  "songBooks/Aao_Stuthi_Kare.json": {
+    "sha256": "b6f24916ae718bf1435c103b4dc02459cd25b48a5ea8c4d3d24d1edf241fb394",
+    "size": 1424478,
+    "updatedAt": "2026-09-19T05:24:07.800Z"
+  },
+  "songBooks/Aathmeeya_Geethangal.json": {
+    "sha256": "71f8f22e930e7c083e0d817656aa30df97fdcc7979e30361398a1b75ba68598c",
+    "size": 7391701,
+    "updatedAt": "2026-09-19T05:24:07.806Z"
+  },
+  "songBooks/Aatmik_Geetmala.json": {
+    "sha256": "c3561bc04a27e55dd54ad8cdc141a9a8d3339143f370bc3ceded4aaca68cfd6c",
+    "size": 1629744,
+    "updatedAt": "2026-09-19T05:24:07.808Z"
+  },
+  "songBooks/Believers_Hymn_Book.json": {
+    "sha256": "1c48b196df03d8e0c9d6a923565afe415ab3833d04f6a3f9226f0cf59274963b",
+    "size": 827283,
+    "updatedAt": "2026-09-19T05:24:07.809Z"
+  },
+  "songBooks/Canticles.json": {
+    "sha256": "88ccdf33a73a3ba710d28d082dbf9cc1ea6fb478065addb7b0bfec99af1ebc32",
+    "size": 996673,
+    "updatedAt": "2026-09-19T05:24:07.810Z"
+  },
+  "songBooks/Celebrational Hymns.json": {
+    "sha256": "9e884fd8a6e1bf342304179997e9c378432d0fdfdd88e0f2bfc1943a04707b7c",
+    "size": 842396,
+    "updatedAt": "2026-09-19T05:24:07.811Z"
+  },
+  "songBooks/Christava_Sunada_Keerthanalu.json": {
+    "sha256": "ce768cdc45313833a17a6f8b01ad364c28f03baa970a6a303a5f3b79e9b8aa37",
+    "size": 4060513,
+    "updatedAt": "2026-09-19T05:24:07.814Z"
+  },
+  "songBooks/Geethangalum_Keerthanaigalum.json": {
+    "sha256": "63f4cec401e1b35bcf89d7deec65b2fd8154aa39d42c83a8e52b7ddd27997028",
+    "size": 2953847,
+    "updatedAt": "2026-09-19T05:24:07.817Z"
+  },
+  "songBooks/Golden_Bells.json": {
+    "sha256": "b5c03d54bb93e864598905b93f3de9706622ca266487d637b2fc64036d9911e6",
+    "size": 1319204,
+    "updatedAt": "2026-09-19T05:24:07.818Z"
+  },
+  "songBooks/Masih_Geet_Sangrah.json": {
+    "sha256": "cca8ccc3e34315d2d8cf01b81bcd314eb670d536165388bd322eba02963dcb52",
+    "size": 568060,
+    "updatedAt": "2026-09-19T05:24:07.819Z"
+  },
+  "songBooks/Remembrance_and_Worship.json": {
+    "sha256": "edfe7eff588d4b3d257915e17c40a4a61f74631f4206c830c9560db77a9bbcdf",
+    "size": 395351,
+    "updatedAt": "2026-09-19T05:24:07.820Z"
+  },
+  "songBooks/Songs_of_Zion.json": {
+    "sha256": "135fce408c1417791943ccf03ef47ccdb7adf065e41ba9074514ca6c637fbb66",
+    "size": 797334,
+    "updatedAt": "2026-09-19T05:24:07.821Z"
+  },
+  "songBooks/Sunday_School_Borivali.json": {
+    "sha256": "2260d3b00a9672d82a38733dcb96ce69e8c58f1a01cede1e62fa24faf25ec090",
+    "size": 225380,
+    "updatedAt": "2026-09-19T05:24:07.821Z"
+  },
+  "songBooks/Vandana_Geet_English.json": {
+    "sha256": "ea214cb8c1046245ed0921964fdbbd5b951c6e6ac8944c160c7d1212e4e6e9f9",
+    "size": 260900,
+    "updatedAt": "2026-09-19T05:24:07.822Z"
+  },
+  "songBooks/Vandana_Geet_Hindi.json": {
+    "sha256": "4c9ca55a083aebacec6358b1d1efb6c8cc82ed9d6280fb112bb5cf928b066624",
+    "size": 1492170,
+    "updatedAt": "2026-09-19T05:24:07.823Z"
+  },
+  "bibles/21st Century KJV.xml": {
+    "sha256": "7e0f07b5b9b272b25a7790361b3a299929737ae190b39a3a3df15302cb692f1b",
+    "size": 5119962,
+    "updatedAt": "2026-09-19T05:24:07.826Z"
+  },
+  "bibles/A Conservative Version.xml": {
+    "sha256": "4c6371b099ab6adb5d86f33cf633e25318a9fa78a1dc6b7b9428f768436aaae1",
+    "size": 5043020,
+    "updatedAt": "2026-09-19T05:24:07.830Z"
+  },
+  "bibles/American King James Version (1999).xml": {
+    "sha256": "a517c4a1b5b102a31740e98ae03790d737dbaee8c9ff133c9c333f3718e56927",
+    "size": 5064273,
+    "updatedAt": "2026-09-19T05:24:07.834Z"
+  },
+  "bibles/American Standard Version (1901).xml": {
+    "sha256": "a841e23e6328e27b37c40511d87e6d76f9b82cbc8acfb83931febb42f93e1beb",
+    "size": 5122871,
+    "updatedAt": "2026-09-19T05:24:07.838Z"
+  },
+  "bibles/AMP_2001.xml": {
+    "sha256": "18b9d760c53dcbbadf1f910d3c6ecf55713b921a4ab65c9f6457bdc945eb48f4",
+    "size": 5725329,
+    "updatedAt": "2026-09-19T05:24:07.843Z"
+  },
+  "bibles/Amplified Bible (1965).xml": {
+    "sha256": "88ea58a1f5f384ab3997382a52a51f635825d8b8b4450a1a28bb6890d7487277",
+    "size": 5725327,
+    "updatedAt": "2026-09-19T05:24:07.847Z"
+  },
+  "bibles/Apostles' Bible Complete (2004).xml": {
+    "sha256": "b41eea758bc9badd8f7535a6925ce45a5001a7d99cfb2a5264074bb170ac4fab",
+    "size": 5136613,
+    "updatedAt": "2026-09-19T05:24:07.851Z"
+  },
+  "bibles/Bengali Bible.xml": {
+    "sha256": "223ef4d4db4d989592dfd84b7f2095e017694bfd76dbe12c9612f906dd27b6b8",
+    "size": 11185162,
+    "updatedAt": "2026-09-19T05:24:07.860Z"
+  },
+  "bibles/Bible in Basic English (1964).xml": {
+    "sha256": "2cd8cebf1f9f451d73036eb202ecf1c35faeac7bce96d89421e31ef14d47ce78",
+    "size": 5147797,
+    "updatedAt": "2026-09-19T05:24:07.865Z"
+  },
+  "bibles/Bishop's Bible.xml": {
+    "sha256": "b85c89ae3d6cbd8e09da55c38d0181878e6b29849bb2056e0c9eca1dbcb2d15e",
+    "size": 5277398,
+    "updatedAt": "2026-09-19T05:24:07.869Z"
+  },
+  "bibles/Brenton's English Septuagint.xml": {
+    "sha256": "0895a2c774035faf55be8bee90fb51e775923ea19787e1a6a093e410e86fba48",
+    "size": 4274512,
+    "updatedAt": "2026-09-19T05:24:07.872Z"
+  },
+  "bibles/Complementary English Version (1995).xml": {
+    "sha256": "3ff4e032c3d970e3cfdce53cfd095583f628168430d23f7c041c21c387668fd3",
+    "size": 4532864,
+    "updatedAt": "2026-09-19T05:24:07.876Z"
+  },
+  "bibles/Coverdale Bible (1535).xml": {
+    "sha256": "fdd12073da661b6a04079343a828fa20535730569d4529caa3feba07f50b2b58",
+    "size": 5123706,
+    "updatedAt": "2026-09-19T05:24:07.880Z"
+  },
+  "bibles/Easy to Read Revised Version (2005).xml": {
+    "sha256": "a9bbc281744edc6916c5a29cbc0c365b21dce4be590f3f95501bf1064f10060e",
+    "size": 5311610,
+    "updatedAt": "2026-09-19T05:24:07.884Z"
+  },
+  "bibles/English Jubilee 2000 Bible (2000).xml": {
+    "sha256": "14c3febb560807805abb5c27a1a2c4a902268b640737791774cc555800c07ab7",
+    "size": 5138946,
+    "updatedAt": "2026-09-19T05:24:07.888Z"
+  },
+  "bibles/English Lo Parishuddha Grandham.xml": {
+    "sha256": "c8c8794e9e54e5fbdc581c6f5e2077a8756bdef66e5ae1fca4c9f2b480c642e9",
+    "size": 5642543,
+    "updatedAt": "2026-09-19T05:24:07.892Z"
+  },
+  "bibles/English Standard Version (2001).xml": {
+    "sha256": "4bc8ab6c9446fe3e14b15f6ecf14cd0387cb057a370ddca37c5cfcd064b51a8a",
+    "size": 4908236,
+    "updatedAt": "2026-09-19T05:24:07.895Z"
+  },
+  "bibles/esv.xml": {
+    "sha256": "2690b0e73691afb9a162a3ea957f9c9dd8c8506c405dc3e335c86e7ce4dd2eba",
+    "size": 4908248,
+    "updatedAt": "2026-09-19T05:24:07.899Z"
+  },
+  "bibles/Geneva Bible (1599).xml": {
+    "sha256": "05c8f85d4bd14d15e44bb252e444341a3dedfa24916359a2ad127add08d47b79",
+    "size": 5158491,
+    "updatedAt": "2026-09-19T05:24:07.903Z"
+  },
+  "bibles/Hebrew Names Version.xml": {
+    "sha256": "7b1168471985a5e03abf7f2bc5bb86468d2f9b407855c4a10810afd7a49f3cc5",
+    "size": 5026842,
+    "updatedAt": "2026-09-19T05:24:07.907Z"
+  },
+  "bibles/Hindi Bible.xml": {
+    "sha256": "cadd8851cc084dc2a2b245438b2c269f26d145904d9f65d836b1c5726266ca96",
+    "size": 10346805,
+    "updatedAt": "2026-09-19T05:24:07.914Z"
+  },
+  "bibles/Holman Christian Standard Bible (2004).xml": {
+    "sha256": "7a4a2077454f3a337fee039e7201672263bb41674691d96c47f131b33ede7c50",
+    "size": 4818612,
+    "updatedAt": "2026-09-19T05:24:07.917Z"
+  },
+  "bibles/Holy Bible Revised Version (1885).xml": {
+    "sha256": "81870a7de6bbd257fd973f05fd56c261632edf5399640cc2d4c5f0a08d8ef738",
+    "size": 5125462,
+    "updatedAt": "2026-09-19T05:24:07.921Z"
+  },
+  "bibles/Kannada Bible.xml": {
+    "sha256": "52d179b9e720c8ab88305213cd09aa5d4acecf1a45f886170c5cfb25bb8ca100",
+    "size": 11683993,
+    "updatedAt": "2026-09-19T05:24:07.929Z"
+  },
+  "bibles/King James Version (1769).xml": {
+    "sha256": "95bd9e8d158298c77b931a62d0340b4f6a17c4da98c1254292c14cfa1004c671",
+    "size": 5189316,
+    "updatedAt": "2026-09-19T05:24:07.933Z"
+  },
+  "bibles/Literal Translation of Holy Bible (2000).xml": {
+    "sha256": "934c2a0e9afbcb23e4edd54494defcd7f82d2dda0dec87aae6176e3593aaad16",
+    "size": 4996054,
+    "updatedAt": "2026-09-19T05:24:07.936Z"
+  },
+  "bibles/Malayalam Bible.xml": {
+    "sha256": "5cc81d46f639a61f3564891ed6879abbeaea82c50252f92b77e8a73b89992f3c",
+    "size": 12588184,
+    "updatedAt": "2026-09-19T05:24:07.944Z"
+  },
+  "bibles/Modern King James Version (1962).xml": {
+    "sha256": "e425bf7f37420d4c1b62c0af5b3cb9f364cd6fb04cd42e325930244a7482ed25",
+    "size": 4973396,
+    "updatedAt": "2026-09-19T05:24:07.947Z"
+  },
+  "bibles/MSG.xml": {
+    "sha256": "469579f0a586463292d473d331252c6490555e5c6f7af52ec6dcbeb52042f108",
+    "size": 4952314,
+    "updatedAt": "2026-09-19T05:24:07.951Z"
+  },
+  "bibles/NASB.xml": {
+    "sha256": "74d23b75b5b64c36c4b65bcaad1a1579e9569e05b6aa5bd4aadd9d394bd438d7",
+    "size": 5047581,
+    "updatedAt": "2026-09-19T05:24:07.954Z"
+  },
+  "bibles/New American Bible.xml": {
+    "sha256": "c37f4ff4a9f090b9126b77de85e1ed01dceff0841b7b45c3752060173641755e",
+    "size": 4833344,
+    "updatedAt": "2026-09-19T05:24:07.958Z"
+  },
+  "bibles/New American Standard Bible (1995).xml": {
+    "sha256": "7852dc5761d9219397cd6dcc3acf00d295cd5d5ea92cb9b4944b5e472c37994f",
+    "size": 5047562,
+    "updatedAt": "2026-09-19T05:24:07.961Z"
+  },
+  "bibles/New Century Version (1991).xml": {
+    "sha256": "9e2527ac7d86986b1ece4f8d4340ab3b51c6a2299354652d6c434dcafebdf2d6",
+    "size": 4797421,
+    "updatedAt": "2026-09-19T05:24:07.965Z"
+  },
+  "bibles/New English Translation (2005).xml": {
+    "sha256": "35b9267e588b9690c51f6d110415f53e53c395cb9ff117a0e0cbb0efb87c862c",
+    "size": 4995437,
+    "updatedAt": "2026-09-19T05:24:07.968Z"
+  },
+  "bibles/New International Reader's Version (1998).xml": {
+    "sha256": "cf515c4c89cd6ad87ae28768cadc4f43e51eaee37d689ccb22f69764ad5b0f1a",
+    "size": 5378702,
+    "updatedAt": "2026-09-19T05:24:07.973Z"
+  },
+  "bibles/New International Version (1984) (US).xml": {
+    "sha256": "5fbe1d7bc934f0e118f53ed111fae334b3c1d78219e32ce6007e41401d39951c",
+    "size": 4794584,
+    "updatedAt": "2026-09-19T05:24:07.976Z"
+  },
+  "bibles/New International Version (UK).xml": {
+    "sha256": "149dac9f6f8fc8c54a77d0759d9628770d224791b5bea84e62b3f62de9690a0c",
+    "size": 4795200,
+    "updatedAt": "2026-09-19T05:24:07.980Z"
+  },
+  "bibles/New King James Version (1982).xml": {
+    "sha256": "61a4f26bf371c1a0703c28192458f8f3b93abc390e748d32789e13349e17860a",
+    "size": 5082589,
+    "updatedAt": "2026-09-19T05:24:07.983Z"
+  },
+  "bibles/New Life Version (1969).xml": {
+    "sha256": "dd58de5f041d1daf0da696a6264f589650be8848a4b2fe83bc4b14368eab3dd2",
+    "size": 5009469,
+    "updatedAt": "2026-09-19T05:24:07.988Z"
+  },
+  "bibles/New Living Translation (1996).xml": {
+    "sha256": "a93ba56d55f682169ae96cfad9dd9c0a7aea099fbde3962c02dbe0b19d91f57c",
+    "size": 4991814,
+    "updatedAt": "2026-09-19T05:24:07.991Z"
+  },
+  "bibles/New Revised Standard Version (1989).xml": {
+    "sha256": "eb97e3d532c9a9a906913d4b053d222980275107450c6d5e3700c267cdfce869",
+    "size": 4886688,
+    "updatedAt": "2026-09-19T05:24:07.994Z"
+  },
+  "bibles/NIRV.xml": {
+    "sha256": "91e9b7ca58a5c7e48f087a86a732ea3f51f4f80e4a2b0065588acd847105bca7",
+    "size": 5541311,
+    "updatedAt": "2026-09-19T05:24:07.998Z"
+  },
+  "bibles/NKJV.xml": {
+    "sha256": "47ff6a3f436e55702948e8bcc559fa9c62e83cd25addf65c8ac9f78d50b331b9",
+    "size": 5082636,
+    "updatedAt": "2026-09-19T05:24:08.002Z"
+  },
+  "bibles/NLT.xml": {
+    "sha256": "18b12819a224f2330e26aad8204f41efa71c28ac73de4487d724557d2d301e0b",
+    "size": 4991835,
+    "updatedAt": "2026-09-19T05:24:08.006Z"
+  },
+  "bibles/Restored Name KJV.xml": {
+    "sha256": "e9f3a01284c290f870bc24692f17a79111ec787351a44f816572e9b711122309",
+    "size": 5098989,
+    "updatedAt": "2026-09-19T05:24:08.010Z"
+  },
+  "bibles/Revised Standard Version (1952).xml": {
+    "sha256": "fd5cbd4959465e9f063d735d479add9802edfc4f9e83e06bec0b0fd9a74c4f9b",
+    "size": 4901269,
+    "updatedAt": "2026-09-19T05:24:08.014Z"
+  },
+  "bibles/Revised Version (1881-1885).xml": {
+    "sha256": "ecf31c294aaf4c00bef8c4368a59637e0105dfefd3de3a40928f987b8332bfaf",
+    "size": 5188354,
+    "updatedAt": "2026-09-19T05:24:08.018Z"
+  },
+  "bibles/Revised Webster Update (1995).xml": {
+    "sha256": "0d2257940a77a935705570e5e416956ae619af655ef236c5a5fc3d5d64dd3fc2",
+    "size": 5121805,
+    "updatedAt": "2026-09-19T05:24:08.023Z"
+  },
+  "bibles/Rotherhams Emphasized Bible (1902).xml": {
+    "sha256": "52f3db94fd969db2656a43ee9cf4cc7c217335696f85c4570e1d68acec91057a",
+    "size": 5322069,
+    "updatedAt": "2026-09-19T05:24:08.027Z"
+  },
+  "bibles/Tamil Bible.xml": {
+    "sha256": "fa01e69aae10126b0e7b314dbf793979e1653e6f927192217fe7072cb1cd1c88",
+    "size": 13394298,
+    "updatedAt": "2026-09-19T05:24:08.038Z"
+  },
+  "bibles/Telugu Bible (BSI).xml": {
+    "sha256": "20d0732834a0bdb5dbd2f4c234fef922e610ef0989f2f898d40c14af9ac5e9c0",
+    "size": 11180729,
+    "updatedAt": "2026-09-19T05:24:08.046Z"
+  },
+  "bibles/Telugu Bible (WBTC).xml": {
+    "sha256": "ec30fe648fe11932a88a0c9a881724227cbeb31f6cc1c7c35c92142bce5589e5",
+    "size": 12681734,
+    "updatedAt": "2026-09-19T05:24:08.056Z"
+  },
+  "bibles/The Complete Jewish Bible (1998).xml": {
+    "sha256": "50f84bc45a5a715997d6bb71d910b75114a1f7b107abbbd1c2b1eda90b7d57de",
+    "size": 4956319,
+    "updatedAt": "2026-09-19T05:24:08.059Z"
+  },
+  "bibles/The Darby Bible (1890).xml": {
+    "sha256": "62f0130bab9e8e6693e5075410a9348a915adf5da32f7437770425ea8597abb8",
+    "size": 5082035,
+    "updatedAt": "2026-09-19T05:24:08.063Z"
+  },
+  "bibles/The Douay-Rheims American Bible (1899).xml": {
+    "sha256": "bcc7a4b142442a40c49a1d36d9ba98f76aea09090aec4ed6300b1983703a92f7",
+    "size": 5081864,
+    "updatedAt": "2026-09-19T05:24:08.066Z"
+  },
+  "bibles/The Holy Bible, New International Version®.xml": {
+    "sha256": "1fde6aa49348cf5b1d48b13d4a83b82848ffd165dec1aac842552cf335b5de1b",
+    "size": 4292833,
+    "updatedAt": "2026-09-19T05:24:08.070Z"
+  },
+  "bibles/The Message Bible (2002).xml": {
+    "sha256": "9e0df7da4dffe75d8696f943445ff7fd19b1be147cce731f5df71f5d2d3434e0",
+    "size": 4952316,
+    "updatedAt": "2026-09-19T05:24:08.073Z"
+  },
+  "bibles/The New Jerusalem Bible.xml": {
+    "sha256": "e8af58b361be848af0963f8e8772d5d9da51b23fea87ef577a1f220364c37a93",
+    "size": 4917784,
+    "updatedAt": "2026-09-19T05:24:08.077Z"
+  },
+  "bibles/The Webster Bible (1833).xml": {
+    "sha256": "2268cb9e90efd9925b909e5fd0e056221624c463d2d4ef594696c6386af86a9d",
+    "size": 5126507,
+    "updatedAt": "2026-09-19T05:24:08.080Z"
+  },
+  "bibles/Third Millennium Bible (1998).xml": {
+    "sha256": "14156caf66dc8c87a572646ec346ddca014b68a6016318ee3e51bd45769be444",
+    "size": 5120695,
+    "updatedAt": "2026-09-19T05:24:08.085Z"
+  },
+  "bibles/Today's English Version (Good News Bible) (1992).xml": {
+    "sha256": "7cfec0ed6ebef78be9b44e41c6d2cd8ab8cc8f3d3fdf804d2dbb3921b27b6a59",
+    "size": 4791631,
+    "updatedAt": "2026-09-19T05:24:08.088Z"
+  },
+  "bibles/Today's New International Version (2005).xml": {
+    "sha256": "380e6f3f2063b831bbb07a96276eb4629c069195eb3a28f4b36a7f941bc19899",
+    "size": 4818888,
+    "updatedAt": "2026-09-19T05:24:08.092Z"
+  },
+  "bibles/Tyndale Bible (1534).xml": {
+    "sha256": "36911b8f1f9be4a78791356b7f46e90ea2e933c1ab11e7598b1e2213f87c11bf",
+    "size": 2163077,
+    "updatedAt": "2026-09-19T05:24:08.094Z"
+  },
+  "bibles/Tyndale-Rogers-Coverdale-Cranmer Bible (1537).xml": {
+    "sha256": "48fc0fc0bc3709db20e67787ec2ac609a61cc565e237870e6e1d25a32efcbd35",
+    "size": 5177259,
+    "updatedAt": "2026-09-19T05:24:08.097Z"
+  },
+  "bibles/Updated Bible (2006).xml": {
+    "sha256": "f5e5285d8ce5c50269248a6e787b20bde1a41386f11cfd046eabc856ca472f0f",
+    "size": 4819362,
+    "updatedAt": "2026-09-19T05:24:08.100Z"
+  }
+}

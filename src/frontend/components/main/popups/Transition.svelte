@@ -11,6 +11,7 @@
     import { history } from "../../helpers/history"
     import { getLayoutRef } from "../../helpers/show"
     import { _show } from "../../helpers/shows"
+    import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
     import InputRow from "../../input/InputRow.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
@@ -282,6 +283,32 @@
     $: correctedSlideDirection = getCorrectedDirection(slideDirection, selectedSpecific)
 
     let showMore = false
+
+    // SET AS DEFAULT
+    // save the transition picked here (slide, item or style) as the global default
+    const isGlobal = !isItem && !isSlide && !isStyle && !$popupData.trigger
+    $: isAlreadyDefault = JSON.stringify(getComparable(currentTransitionFull)) === JSON.stringify(getComparable($transitionData[selectedType]))
+    function getComparable(transition: Transition | undefined) {
+        if (!transition) return {}
+        const { type, duration, easing, custom, fadeInOffset, in: inTransition, out, between } = transition as any
+        return { type, duration, easing, custom: custom || {}, fadeInOffset, in: inTransition, out, between }
+    }
+
+    $: defaultSummary = getSummary($transitionData[selectedType])
+    function getSummary(transition: Transition | undefined) {
+        const type = transitionTypes.find((a) => a.id === (transition?.type || "fade"))
+        const name = translateText(type?.name || "transition.fade")
+        if (transition?.type === "none") return name
+        return `${name} · ${(transition?.duration ?? 500) / 1000}s`
+    }
+
+    function setAsDefault() {
+        const value = clone(currentTransitionFull)
+        transitionData.update((a: any) => {
+            a[selectedType] = value
+            return a
+        })
+    }
 </script>
 
 <MaterialButton class="popup-options {showMore ? 'active' : ''}" icon="options" iconSize={1.3} title={showMore ? "actions.close" : "create_show.more_options"} on:click={() => (showMore = !showMore)} white />
@@ -334,6 +361,28 @@
     <MaterialNumberInput label="transition.fade_in_offset (%)" disabled={isDisabled} value={currentTransition?.fadeInOffset ?? 50} defaultValue={50} max={100} step={10} on:change={(e) => changeTransition(selectedType, "fadeInOffset", e.detail)} />
 {/if}
 
+<!-- DEFAULT -->
+
+{#if !isGlobal}
+    <div class="default-row">
+        {#key isAlreadyDefault}
+            {#if isAlreadyDefault}
+                <span class="default-status confirmed">
+                    <Icon id="check" size={0.95} white />
+                    <T id="transition.is_default" />
+                </span>
+            {:else}
+                <span class="default-status">
+                    <T id="transition.default" />: {defaultSummary}
+                </span>
+                <button class="make-default" title={translateText("transition.set_as_default_tip")} on:click={setAsDefault}>
+                    <T id="transition.set_as_default" />
+                </button>
+            {/if}
+        {/key}
+    </div>
+{/if}
+
 <style>
     .types {
         display: flex;
@@ -341,6 +390,81 @@
         justify-content: center;
         gap: 5px;
         padding: 15px 0;
+    }
+
+    /* secondary scope action: a quiet footer, not a second primary button */
+    .default-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 38px;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--primary-lighter);
+    }
+
+    .default-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        opacity: 0.6;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        animation: settle 180ms ease-out;
+    }
+    .default-status.confirmed {
+        opacity: 0.85;
+    }
+    .default-status.confirmed :global(svg) {
+        fill: var(--secondary);
+    }
+
+    .make-default {
+        flex-shrink: 0;
+        padding: 7px 16px;
+        border-radius: 999px;
+        border: 1px solid var(--primary-lighter);
+        background: var(--primary-darker);
+        color: var(--text);
+        font-family: inherit;
+        font-size: 0.85em;
+        cursor: pointer;
+        transition:
+            background-color 120ms ease-out,
+            border-color 120ms ease-out,
+            transform 100ms ease-out;
+        animation: settle 180ms ease-out;
+    }
+    .make-default:hover {
+        background: var(--primary-lighter);
+        border-color: var(--secondary-opacity);
+    }
+    /* respond on press, not on release */
+    .make-default:active {
+        transform: scale(0.97);
+    }
+    .make-default:focus-visible {
+        outline: 2px solid var(--secondary);
+        outline-offset: 2px;
+    }
+
+    @keyframes settle {
+        from {
+            opacity: 0;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .default-status,
+        .make-default {
+            animation: none;
+        }
+        .make-default:active {
+            transform: none;
+        }
     }
 
     .types :global(button) {

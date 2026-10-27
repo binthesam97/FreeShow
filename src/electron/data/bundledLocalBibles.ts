@@ -7,7 +7,7 @@ import { app } from "electron"
 import { XMLParser } from "fast-xml-parser"
 import path from "path"
 import { detectFileType } from "./bibleDetecter"
-import { ensureR2AssetsSynced, getR2BiblesCacheDir } from "./r2Assets"
+import { ensureR2AssetsSynced, findFirstDirWithFiles, getR2BiblesCacheDir } from "./r2Assets"
 import { doesPathExist, getDataFolderPath, getExtension, readFile, readFolder, writeFile } from "../utils/files"
 
 const SUPPORTED_EXTENSIONS = new Set(["xml", "xmm", "json", "fsb"])
@@ -20,13 +20,14 @@ export function bundledLocalBibleDir(): string | null {
         path.join(app.getAppPath(), "public", "localBible"),
         path.join(process.resourcesPath, "app.asar.unpacked", "public", "localBible"),
         path.join(process.resourcesPath, "public", "localBible"),
+        path.join(process.resourcesPath, "localBible"),
         // dev: build/electron/data/ → ../../../public/localBible
         path.join(__dirname, "..", "..", "..", "public", "localBible")
     ]
-    for (const dir of candidates) {
-        if (doesPathExist(dir)) return dir
-    }
-    return null
+    return findFirstDirWithFiles(
+        candidates,
+        [...SUPPORTED_EXTENSIONS].map((ext) => "." + ext)
+    )
 }
 
 /** Stable, deterministic ID for a bundled Bible (based on filename so it never changes). */

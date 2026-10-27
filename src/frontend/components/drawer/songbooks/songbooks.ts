@@ -2,7 +2,7 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Item } from "../../../../types/Show"
 import { ShowObj } from "../../../classes/Show"
-import { activeProject, drawerTabsData, outLocked, activeSongBookSong, showsCache } from "../../../stores"
+import { activeProject, drawerTabsData, outLocked, activeSongBookSong } from "../../../stores"
 import { getFirstActiveOutput, setOutput } from "../../helpers/output"
 import { history } from "../../helpers/history"
 import { requestMain } from "../../../IPC/main"
@@ -298,11 +298,11 @@ export async function loadSongBooks(): Promise<{ [id: string]: SongBook }> {
     const books: { [id: string]: SongBook } = {}
 
     try {
-        let fileNames: string[] = (await requestMain(Main.READ_SONGBOOKS)) || []
+        let fileNames: string[] = (await requestMain(Main.READ_SONGBOOKS, undefined, undefined, 60000)) || []
 
         for (const filePath of fileNames) {
             try {
-                const fileContent = (await requestMain(Main.READ_FILE, { path: filePath }))?.content
+                const fileContent = (await requestMain(Main.READ_FILE, { path: filePath }, undefined, 60000))?.content
                 if (!fileContent) continue
                 const data = JSON.parse(fileContent)
                 const fileName = filePath.split(/[/\\]/).pop() || filePath
@@ -406,9 +406,6 @@ export function createSongShowFromData(song: any, showTransliteration: boolean =
 
     const layoutID = uid()
     const show = new ShowObj(false, null, layoutID, Date.now(), false)
-    console.log("[Created new show] Show id: ", show.id);
-    console.log("[Created new show] Show object: ", show);
-    
     show.settings.template = null
 
     show.name = `${song.Song_No}. ${song.Title}`

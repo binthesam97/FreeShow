@@ -1664,7 +1664,11 @@
         "spin": "Spin",
         "slide": "Slide",
         "lyric_scroll": "Lyric Scroll",
-        "fade_in_offset": "Fade in offset"
+        "fade_in_offset": "Fade in offset",
+        "default": "Default",
+        "set_as_default": "Make default",
+        "set_as_default_tip": "Use this transition for all slides that don't have their own",
+        "is_default": "This is the default transition"
     },
     "easings": {
         "linear": "Linear",

@@ -77,6 +77,7 @@ import {
     showsCache,
     spellcheck,
     stageShows,
+    songBooks,
     statusIndicator,
     templates,
     textCache,
@@ -93,6 +94,7 @@ import { newToast } from "../utils/common"
 import { translateText } from "../utils/language"
 import { confirmCustom } from "../utils/popup"
 import { initializeClosing, saveComplete } from "../utils/save"
+import { loadSongBooks } from "../components/drawer/songbooks/songbooks"
 import { invalidateSearchIndex } from "../utils/searchFast"
 import { updateSettings, updateSyncedSettings, updateThemeValues } from "../utils/updateSettings"
 import type { MainReturnPayloads } from "./../../types/IPC/Main"
@@ -302,6 +304,9 @@ export const mainResponses: MainResponses = {
         }
         if (data.status === "ready") {
             statusIndicator.set("synced")
+            loadSongBooks().then((books) => {
+                if (Object.keys(books).length) songBooks.set(books)
+            })
             return
         }
         statusIndicator.set("error")

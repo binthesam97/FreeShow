@@ -23,7 +23,6 @@
     import PdfOutput from "./layers/PdfOutput.svelte"
     import SceneMedia from "./layers/SceneMedia.svelte"
     import SlideContent from "./layers/SlideContent.svelte"
-    import NextVersePreview from "./layers/NextVersePreview.svelte"
     import Window from "./Window.svelte"
 
     export let outputId = ""
@@ -203,31 +202,25 @@
         }
     }
 
-    // next slide preview (for lyric scroll)
-    let nextSlideItems: any[] = []
-    $: updateNextSlideItems(slide, currentLayout)
-    function updateNextSlideItems(slide: OutSlide | null, layout: LayoutRef[]) {
-        if (!slide || !layout?.length) {
-            nextSlideItems = []
+    // upcoming slides (for lyric scroll)
+    const UPCOMING_SLIDES = 2
+    let upcomingSlides: Item[][] = []
+    $: updateUpcomingSlides(slide, currentLayout, currentStyle, transitions.text?.type === "lyric_scroll")
+    function updateUpcomingSlides(slide: OutSlide | null, layout: LayoutRef[], style: Styles, lyricScroll: boolean) {
+        if (!slide || !lyricScroll) {
+            upcomingSlides = []
             return
         }
 
-        // For temp/scripture slides, use the existing nextSlides field
-        if ((slide.id === "temp" || slide.id === "tempText") && slide.nextSlides?.length) {
-            nextSlideItems = clone(slide.nextSlides[0] || [])
-            return
+        let slidesItems: Item[][] = []
+        if (slide.id === "temp" || slide.id === "tempText") {
+            slidesItems = clone((slide.nextSlides || []).slice(0, UPCOMING_SLIDES))
+        } else {
+            const nextRefs = (layout || []).slice((slide.index ?? -1) + 1).filter((ref) => ref?.id && !ref.data?.disabled)
+            slidesItems = nextRefs.slice(0, UPCOMING_SLIDES).map((ref) => clone(_show(slide.id).slides([ref.id]).get()[0]?.items || []))
         }
 
-        // For regular shows, look up the next slide in the layout
-        const nextIndex = (slide.index ?? -1) + 1
-        const nextRef = layout[nextIndex]
-        if (!nextRef?.id) {
-            nextSlideItems = []
-            return
-        }
-
-        const nextSlide = _show(slide.id).slides([nextRef.id]).get()[0]
-        nextSlideItems = clone(nextSlide?.items || [])
+        upcomingSlides = slidesItems.map((items) => setTemplateStyle(slide, style, items, outputId))
     }
 
     // slide styling
@@ -235,7 +228,6 @@
     $: resolution = getResolution(null, { currentOutput, currentStyle }, false, outputId, styleId)
     $: transitions = getOutputTransitions(slideData, currentStyle.transition, $transitionData, mirror && !preview)
     $: slideFilter = getSlideFilter(slideData)
-    $: showNextPreview = transitions.text?.type === "lyric_scroll" && nextSlideItems?.length > 0
 
     // custom template
     // WIP revert to old style when output style is reverted to no style (REFRESH OUTPUT)
@@ -434,12 +426,7 @@
             {/if}
         </span>
     {:else if actualSlide && actualSlide?.type !== "pdf"}
-        <SlideContent {outputId} outSlide={actualSlide} isClearing={isSlideClearing} slideData={actualSlideData} currentSlide={actualCurrentSlide} {currentStyle} {animationData} currentLineId={actualCurrentLineId} {lines} {ratio} {mirror} {preview} transition={textTransition} transitionEnabled={!mirror || preview} styleIdOverride={styleIdOverride || sceneStyleId} />
-
-        <!-- next verse preview (lyric scroll) -->
-        {#if showNextPreview && !isSlideClearing}
-            <NextVersePreview nextItems={nextSlideItems} {ratio} {mirror} />
-        {/if}
+        <SlideContent {outputId} outSlide={actualSlide} isClearing={isSlideClearing} slideData={actualSlideData} currentSlide={actualCurrentSlide} {currentStyle} {animationData} currentLineId={actualCurrentLineId} {lines} {ratio} {mirror} {preview} transition={textTransition} transitionEnabled={!mirror || preview} styleIdOverride={styleIdOverride || sceneStyleId} {upcomingSlides} />
 
         <!-- metadata -->
         <Overlay overlay={{ items: currentMetadataItems }} isClearing={isMetadataClearing || isSlideClearing} {outputId} transition={textTransition} styleIdOverride={styleIdOverride || sceneStyleId} />

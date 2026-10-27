@@ -8,11 +8,23 @@ files:
     - public/**
     - "!node_modules/@napi-rs"
 
+beforePack: scripts/bundleR2Assets.js
+
 extraResources:
     - from: node_modules/slideshow/
       to: slideshow
       filter:
           - connector-*
+    - from: public/songBooks
+      to: songBooks
+      filter:
+          - "*.json"
+    - from: public/localBible
+      to: localBible
+      filter:
+          - "*.xml"
+          - "*.json"
+          - "*.fsb"
 
 # linux
 

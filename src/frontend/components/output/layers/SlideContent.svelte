@@ -8,8 +8,10 @@
     import { clone } from "../../helpers/array"
     import { loadCustomFonts } from "../../helpers/fonts"
     import { getStyleTemplate, itemNeedsAutoSize, slideHasAutoSizeItem } from "../../helpers/output"
+    import { getStyles } from "../../helpers/style"
     import Textbox from "../../slide/Textbox.svelte"
     import { SlideTimeline } from "../../timeline/SlideTimeline"
+    import { lyricReel, UPCOMING_OPACITY } from "../transitions/lyricScroll"
     import SlideItemTransition from "../transitions/SlideItemTransition.svelte"
 
     export let outputId: string
@@ -30,6 +32,8 @@
     export let transition: any = {}
     export let transitionEnabled = false
     export let styleIdOverride = ""
+    // lyric scroll: items of the slides after this one
+    export let upcomingSlides: Item[][] = []
 
     let origin = ""
     $: if (outSlide.id) updateShow()
@@ -200,7 +204,8 @@
                 slideData: clone(slideData),
                 currentSlide: clone(currentSlide),
                 lines: clone(lines),
-                currentStyle: clone(currentStyle)
+                currentStyle: clone(currentStyle),
+                upcomingSlides: clone(upcomingSlides)
             }
 
             // wait for items to properly clear
@@ -231,7 +236,9 @@
         if (currentTransition?.type === "none") currentTransition.duration = 0
 
         let currentTransitionDuration = transitionEnabled ? (itemTransitionDuration ?? currentTransition?.duration ?? 0) : 0
-        let waitToShow = currentTransitionDuration * ((currentTransition?.fadeInOffset ?? 50) / 100)
+        // lyric_scroll: in and out must start simultaneously for the continuous-scroll illusion
+        const isLyricScroll = currentTransition?.type === "lyric_scroll"
+        let waitToShow = isLyricScroll ? 0 : currentTransitionDuration * ((currentTransition?.fadeInOffset ?? 50) / 100)
 
         // Identify items that are unchanged and have no lines content (to keep outputted without fade)
         const newPersistentIndexes: number[] = []
@@ -274,7 +281,8 @@
                 slideData: clone(slideData),
                 currentSlide: clone(currentSlide),
                 lines: clone(lines),
-                currentStyle: clone(currentStyle)
+                currentStyle: clone(currentStyle),
+                upcomingSlides: clone(upcomingSlides)
             }
             // Keep currentItems in sync but don't toggle show
             currentItems = clone(currentSlide.items || [])
@@ -300,7 +308,8 @@
                     slideData: clone(slideData),
                     currentSlide: clone(currentSlide),
                     lines: clone(lines),
-                    currentStyle: clone(currentStyle)
+                    currentStyle: clone(currentStyle),
+                    upcomingSlides: clone(upcomingSlides)
                 }
 
                 // wait until half transition duration of previous items have passed as it looks better visually
@@ -316,6 +325,45 @@
                 }, waitToShow)
             })
         })
+    }
+
+    // LYRIC SCROLL
+    // the main lyrics item gets the upcoming slides stacked below it, and scrolls up as one reel
+    $: lyricScrollActive = transitionEnabled && (transition?.between || transition?.in || transition)?.type === "lyric_scroll"
+    // with multiple lyric boxes (original + transliteration), the reel sits on the lowest box,
+    // while the upcoming slides always preview the original text (the first lyric box)
+    $: lyricIndexes = lyricScrollActive ? getLyricIndexes(currentItems) : []
+    $: lyricItemIndex = getLowestItemIndex(currentItems, lyricIndexes)
+    $: lyricPreviewIndex = lyricIndexes[0] ?? -1
+
+    function isLyricItem(item: Item | undefined) {
+        return !!item && (item.type || "text") === "text" && hasLinesContent(item)
+    }
+
+    // lyric boxes, ignoring small labels/footers
+    function getLyricIndexes(items: Item[]) {
+        const lengths = items.map((item) => (isLyricItem(item) ? getItemText(item).length : 0))
+        const longest = Math.max(0, ...lengths)
+        if (!longest) return []
+        return lengths.map((length, index) => (length && length >= longest * 0.4 ? index : -1)).filter((index) => index > -1)
+    }
+
+    function getLowestItemIndex(items: Item[], indexes: number[]) {
+        let lowestIndex = -1
+        let lowestBottom = -Infinity
+        indexes.forEach((index) => {
+            const style = getStyles(items[index]?.style)
+            const bottom = (parseFloat(style.top) || 0) + (parseFloat(style.height) || 0)
+            if (bottom > lowestBottom) {
+                lowestBottom = bottom
+                lowestIndex = index
+            }
+        })
+        return lowestIndex
+    }
+
+    function getUpcomingItems(slides: Item[][] | undefined, index: number): Item[] {
+        return (slides || []).map((items) => (isLyricItem(items?.[index]) ? items[index] : items?.find(isLyricItem))).filter((item): item is Item => !!item)
     }
 
     // OUTPUT SLIDE TIMELINE
@@ -436,27 +484,36 @@
             <!-- Transitioning item: render with animation wrapper inside {#key} -->
             {#key show}
                 {#if show}
-                    <SlideItemTransition {preview} {transitionEnabled} {transitioningBetween} {isClearing} {incomingNeedsAutoSize} globalTransition={transition} currentSlide={current.currentSlide} {item} outSlide={current.outSlide} lines={current.lines} currentStyle={current.currentStyle} let:customSlide let:customItem let:customLines let:customOut let:transition>
-                        <Textbox
-                            backdropFilter={current.slideData?.["backdrop-filter"] || ""}
-                            chords={customItem.chords?.enabled}
-                            animationStyle={animationData.style || {}}
-                            item={timelineItems.get(`${customOut?.id}-${customOut?.layout}-${customOut?.index}`)?.[index] || customItem}
-                            {transition}
-                            {ratio}
-                            {outputId}
-                            ref={{ type: "show", showId: customOut?.id, slideId: customSlide?.id, id: customSlide?.id || "", layoutId: customOut?.layout, origin }}
-                            linesStart={customLines?.[currentLineId || ""]?.[item.lineReveal ? "linesStart" : "start"]}
-                            linesEnd={customLines?.[currentLineId || ""]?.[item.lineReveal ? "linesEnd" : "end"]}
-                            clickRevealed={!!customLines?.[currentLineId || ""]?.clickRevealed}
-                            outputStyle={current.currentStyle}
-                            {mirror}
-                            {preview}
-                            slideIndex={customOut?.index}
-                            {styleIdOverride}
-                            autoSizeKey={createAutoSizeKey(item, index)}
-                            updateDynamicValues={!isClearing}
-                        />
+                    <SlideItemTransition {preview} {transitionEnabled} {transitioningBetween} {isClearing} {incomingNeedsAutoSize} globalTransition={transition} currentSlide={current.currentSlide} {item} outSlide={current.outSlide} lines={current.lines} currentStyle={current.currentStyle} upcoming={index === lyricItemIndex ? getUpcomingItems(current.upcomingSlides, lyricPreviewIndex) : null} let:customSlide let:customItem let:customLines let:customOut let:customUpcoming let:transition>
+                        <div class="lyric-reel" class:active={!!customUpcoming} data-slide-index={customOut?.index ?? ""} use:lyricReel={!!customUpcoming}>
+                            <div class="lyric-layer">
+                                <Textbox
+                                    backdropFilter={current.slideData?.["backdrop-filter"] || ""}
+                                    chords={customItem.chords?.enabled}
+                                    animationStyle={animationData.style || {}}
+                                    item={timelineItems.get(`${customOut?.id}-${customOut?.layout}-${customOut?.index}`)?.[index] || customItem}
+                                    {transition}
+                                    {ratio}
+                                    {outputId}
+                                    ref={{ type: "show", showId: customOut?.id, slideId: customSlide?.id, id: customSlide?.id || "", layoutId: customOut?.layout, origin }}
+                                    linesStart={customLines?.[currentLineId || ""]?.[item.lineReveal ? "linesStart" : "start"]}
+                                    linesEnd={customLines?.[currentLineId || ""]?.[item.lineReveal ? "linesEnd" : "end"]}
+                                    clickRevealed={!!customLines?.[currentLineId || ""]?.clickRevealed}
+                                    outputStyle={current.currentStyle}
+                                    {mirror}
+                                    {preview}
+                                    slideIndex={customOut?.index}
+                                    {styleIdOverride}
+                                    autoSizeKey={createAutoSizeKey(item, index)}
+                                    updateDynamicValues={!isClearing}
+                                />
+                            </div>
+                            {#each customUpcoming || [] as upcomingItem, upcomingIndex}
+                                <div class="lyric-layer upcoming" style="opacity: {UPCOMING_OPACITY[upcomingIndex] ?? 0};">
+                                    <Textbox item={upcomingItem} chords={upcomingItem.chords?.enabled} {ratio} {outputId} outputStyle={current.currentStyle} {mirror} {preview} {styleIdOverride} ref={{ type: "show", showId: customOut?.id, slideId: customSlide?.id, id: customSlide?.id || "", layoutId: customOut?.layout, origin }} updateDynamicValues={false} />
+                                </div>
+                            {/each}
+                        </div>
                     </SlideItemTransition>
                 {/if}
             {/key}
@@ -473,6 +530,18 @@
 {/if}
 
 <style>
+    /* lyric scroll reel: wrappers only take up space when the reel is active */
+    .lyric-reel,
+    .lyric-layer {
+        display: contents;
+    }
+    .lyric-reel.active,
+    .lyric-reel.active .lyric-layer {
+        display: block;
+        position: absolute;
+        inset: 0;
+    }
+
     /* park precompute textboxes far off-screen so they never flash during transitions */
     .autosize-precompute {
         position: absolute;

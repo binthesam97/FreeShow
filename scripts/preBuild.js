@@ -57,3 +57,8 @@ function getPdfWorkerFile() {
 
 if (process.env.NODE_ENV === "production") generateProdConfigs()
 getPdfWorkerFile()
+
+if (process.env.NODE_ENV === "production") {
+    const { execSync } = require("child_process")
+    execSync("node scripts/bundleR2Assets.js", { stdio: "inherit", cwd: join(__dirname, "..") })
+}

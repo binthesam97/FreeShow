@@ -4,6 +4,7 @@ import type { TransitionType } from "./../../types/Show"
 import { backInOut, bounceInOut, circInOut, cubicInOut, elasticInOut, linear, sineInOut } from "svelte/easing"
 import type { API_transition } from "../components/actions/api"
 import { transitionData } from "../stores"
+import { lyricScroll } from "../components/output/transitions/lyricScroll"
 
 // https://stackoverflow.com/questions/70531875/svelte-crossfade-transition-between-pages
 // export const crossfade = cfade({})
@@ -55,18 +56,7 @@ export const transitions: { [key in TransitionType]: any } = {
             css: (t: any) => `opacity: ${t * o}; transform: rotate(${t * 360}deg);`
         }
     },
-    lyric_scroll: (_node: any, _customData: any) => {
-        return {
-            css: (t: number) => {
-                // t goes from 0 to 1 for "in", and 1 to 0 for "out"
-                // For both in and out: content scrolls upward
-                // Out: translate from 0% to -100% (scroll up off screen)
-                // In: translate from 100% to 0% (scroll up from below)
-                const pos = (1 - t) * 100
-                return `transform: translateY(${pos}%);`
-            }
-        }
-    }
+    lyric_scroll: (node: HTMLElement, _customData: any, options: any) => lyricScroll(node, options)
 }
 
 export const easings: any[] = [
@@ -84,8 +74,8 @@ export const easings: any[] = [
 ]
 
 // : Transition
-export function custom(node: any, { type = "fade", duration = 500, easing = "sine", delay = 0, custom: customData = {} }: any) {
-    const customTransition = { ...transitions[type as TransitionType](node, customData), duration: type === "none" ? 0 : duration, easing: easings.find((a) => a.value === easing)?.function || linear, delay }
+export function custom(node: any, { type = "fade", duration = 500, easing = "sine", delay = 0, custom: customData = {} }: any, options: { direction?: "in" | "out" | "both" } = {}) {
+    const customTransition = { ...transitions[type as TransitionType](node, customData, options), duration: type === "none" ? 0 : duration, easing: easings.find((a) => a.value === easing)?.function || linear, delay }
     // if (type === "crossfade") customTransition.key = "a"
     return customTransition
 }

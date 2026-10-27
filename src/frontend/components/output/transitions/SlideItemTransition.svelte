@@ -19,6 +19,8 @@
     export let outSlide: any = {}
     export let lines: any[] = []
     export let currentStyle: any = {}
+    // lyric scroll: upcoming slide items shown below this item (null when not used)
+    export let upcoming: Item[] | null = null
 
     let currentlyTransitioning: { [key: string]: any } = {}
 
@@ -51,7 +53,7 @@
         const lastStateId = Object.keys(currentlyTransitioning).pop()
         if (lastStateId) {
             const lastState = currentlyTransitioning[lastStateId]
-            if (JSON.stringify(lastState.item) === JSON.stringify(item) && JSON.stringify(lastState.lines) === JSON.stringify(lines) && JSON.stringify(lastState.outSlide) === JSON.stringify(outSlide) && JSON.stringify(lastState.currentSlide) === JSON.stringify(currentSlide)) {
+            if (JSON.stringify(lastState.item) === JSON.stringify(item) && JSON.stringify(lastState.lines) === JSON.stringify(lines) && JSON.stringify(lastState.outSlide) === JSON.stringify(outSlide) && JSON.stringify(lastState.currentSlide) === JSON.stringify(currentSlide) && JSON.stringify(lastState.upcoming) === JSON.stringify(upcoming)) {
                 return
             }
         }
@@ -68,6 +70,7 @@
         let inTransition = clone(transition.in || transition)
         let outTransition = clone(transition.out || transition)
         let transitionBetween = clone(transition.between || transition)
+
         if (transitioningBetween) inTransition = clone(transitionBetween)
 
         let inDelay = 0
@@ -124,6 +127,7 @@
             lines: clone(lines),
             outSlide: clone(outSlide),
             currentSlide: clone(currentSlide),
+            upcoming: clone(upcoming),
             inTransition,
             outTransition,
             transitionBetween,
@@ -155,6 +159,6 @@
 {#each Object.values(currentOut) as transitioning}
     {@const outTransition = !transitionEnabled ? null : isClearing ? clearingOutTransition : getOutTransition(transitioning, incomingNeedsAutoSize, transitioningBetween)}
     <OutputTransition inTransition={transitionEnabled ? transitioning.inTransition : null} {outTransition}>
-        <slot customItem={transitioning.item} customLines={transitioning.lines} customOut={transitioning.outSlide} customSlide={transitioning.currentSlide} transition={transitionEnabled ? transitioning.inTransition : null} />
+        <slot customItem={transitioning.item} customLines={transitioning.lines} customOut={transitioning.outSlide} customSlide={transitioning.currentSlide} customUpcoming={transitioning.upcoming} transition={transitionEnabled ? transitioning.inTransition : null} />
     </OutputTransition>
 {/each}

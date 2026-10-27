@@ -8,10 +8,11 @@
 
     $: activeSubTab = $drawerTabsData.songbooks?.activeSubTab || ""
 
-    // Load songbooks on mount if not already loaded
-    $: if (!Object.keys($songBooks).length) loadBooks()
+    let loadAttempted = false
+    $: if (!Object.keys($songBooks).length && !loadAttempted) loadBooks()
 
     async function loadBooks() {
+        loadAttempted = true
         const books = await loadSongBooks()
         songBooks.set(books)
     }
